@@ -28,228 +28,186 @@ https://fustyles.github.io/webduino/WebSerial.html
 <body>
 	<div id="title">台科大林上智教授團隊智慧枕墊資料收集系統</div>
 
-	<table>
-		<tr>
-			<td style="vertical-align:top">
-				<table>
-					<tr>
-						<td>
-							<label for="yAxisMax">Y軸最大值:</label>
-							<input type="number" id="yAxisMax" value="9000000">
-						</td>
-						<td>
-							<label for="yAxisMin">Y軸最小值:</label>
-							<input type="number" id="yAxisMin" value="80000">
-						</td>
-						<td>
-							<button id="updateChart">更新圖表</button>
-						</td>
-					</tr>
-
-					<tr>
-						<td>
-							<button id="serial_close_port">Disconnect</button> <button id="serial_request_port">Connect
-								BLE</button>
-						</td>
-
-					</tr>
-
-					<tr>
-						<td>
-							<input type="text" id="serial_text">
-							<select id="serial_newline">
-								<option value=""></option>
-								<option value="\r">\r</option>
-								<option value="\n">\n</option>
-								<option value="\r\n">\r\n</option>
-							</select>
-						</td>
-						<td>
-							<button id="serial_sendText">Send Text</button>
-						</td>
-					</tr>
-					<tr>
-						<td>
-							<input type="text" id="serial_uint8" value="">
-						</td>
-						<td>
-							<button id="serial_sendUint8">Send Uint8Array</button>
-						</td>
-					</tr>
-					<tr>
-						<td>
-							<label>State: </label>
-							<input type="text" id="systemStateDisplay" readonly
-								style="width: 150px; text-align: center;">
-						</td>
-						<td>
-							<div class="indicator-container">
-								<div id="led_s1" class="indicator" title="Motor">S1</div>
-								<div id="led_s2" class="indicator" title="Detect Valve">S2</div>
-								<div id="led_s3" class="indicator" title="Neck Valve">S3</div>
-								<div id="led_s4" class="indicator" title="Head Valve">S4</div>
-								<div id="led_s5" class="indicator" title="Pump In">S5</div>
-								<div id="led_s6" class="indicator" title="Pump In">S6</div>
-							</div>
-						</td>
-					</tr>
-					<tr>
-						<td>
-							<button id="syncTime">Sync UTC Time</button>
-						</td>
-						<td>
-							<button id="exportData">Export Data</button>
-						</td>
-					</tr>
-					<tr>
-						<td colspan="2">
-							<hr>
-						</td>
-					</tr>
-					<tr>
-						<td colspan="2">
-							<form id="userForm">
-								<div class="form-group">
-									<label>生理性別：</label>
-									<input type="radio" name="gender" value="female" id="female" required>
-									<label for="female">女</label>
-									<input type="radio" name="gender" value="male" id="male" required>
-									<label for="male">男</label>
-								</div>
-								<div class="form-group">
-									<label for="age">年齡：</label>
-									<input type="number" id="age" required>
-								</div>
-								<div class="form-group">
-									<label for="height">身高（公分）：</label>
-									<input type="number" id="height" required>
-								</div>
-								<div class="form-group">
-									<label for="weight">體重（公斤）：</label>
-									<input type="number" id="weight" required>
-								</div>
-								<button type="button" id="userSet">設定</button>
-							</form>
-
-							<button id="openModalBtn">微調</button>
-
-							<div id="modal" class="modal">
-								<div class="modal-content">
-									<div id="screen1" class="screen">
-										<h1>生物力學調整模式</h1>
-										<p>1.頸椎狀態</p>
-										<form id="radioForm">
-											<label>
-												<input type="radio" name="condition" value="1" checked> 健康
-											</label><br>
-											<label>
-												<input type="radio" name="condition" value="2"> 輕度退化
-											</label><br>
-											<label>
-												<input type="radio" name="condition" value="3"> 中度退化
-											</label><br>
-											<label>
-												<input type="radio" name="condition" value="4"> 重度退化
-											</label><br>
-											<label>
-												<input type="radio" name="condition" value="5"> 有開刀過
-											</label>
-										</form>
-										<button id="switchScreenBtn1">切換到第二畫面</button>
-									</div>
-									<div id="screen2" class="screen" style="display:none;">
-										<h1>生物力學調整模式</h1>
-										<p>2.仰躺高度微調</p>
-										<div id="imagePlaceholder"
-											style="width: 100%; height: 100px; background-color: #ddd; margin-bottom: 20px; object-fit: contain;">
-											<!-- 預留圖片位置 -->
-											<img src="s.png" style="height: 100%">
-										</div>
-										<div>
-											<label for="numberInput1">仰躺頭部高度:</label>
-											<input type="number" id="numberInput1" value="7" min="5" max="20"
-												style="width: 50px;">
-											<button id="increaseBtn1">+</button>
-											<button id="decreaseBtn1">-</button>
-										</div>
-										<div>
-											<label for="numberInput2">仰躺頸部高度:</label>
-											<input type="number" id="numberInput2" value="10" min="5" max="20"
-												style="width: 50px;">
-											<button id="increaseBtn2">+</button>
-											<button id="decreaseBtn2">-</button>
-										</div>
-										<div class="button-container">
-											<button id="backBtn1">回到上一頁</button>
-											<button id="switchScreenBtn2">切換到第三畫面</button>
-										</div>
-									</div>
-									<div id="screen3" class="screen" style="display:none;">
-										<h1>生物力學調整模式</h1>
-										<p>3.側躺高度微調</p>
-										<div id="imagePlaceholder3"
-											style="width: 100%; height: 100px; background-color: #ddd; margin-bottom: 20px; object-fit: contain;">
-											<!-- 預留圖片位置 -->
-											<img src="l.png" style="height: 100%">
-										</div>
-										<div>
-											<label for="numberInput3">側躺頭部高度:</label>
-											<input type="number" id="numberInput3" value="14" min="5" max="20"
-												style="width: 50px;">
-											<button id="increaseBtn3">+</button>
-											<button id="decreaseBtn3">-</button>
-										</div>
-										<div>
-											<label for="numberInput4">側躺頸部高度:</label>
-											<input type="number" id="numberInput4" value="16" min="5" max="20"
-												style="width: 50px;">
-											<button id="increaseBtn4">+</button>
-											<button id="decreaseBtn4">-</button>
-										</div>
-										<div class="button-container">
-											<button id="backBtn2">回到上一頁</button>
-											<button id="closeBtn">結束</button>
-										</div>
-									</div>
-								</div>
-							</div>
-						</td>
-					</tr>
-					<tr>
-						<td colspan="2">
-							<div id="serial_status"
-								style="width:400px;height:300px;border:2px black solid;overflow: auto;"></div>
-							<div>
-								<label><input type="radio" name="scrollControl" value="auto" checked> 自動滾動</label>
-								<label><input type="radio" name="scrollControl" value="fixed"> 固定滾動</label>
-							</div>
-						</td>
-					</tr>
-					<tr>
-						<td>
-						</td>
-						<td align="right">
-							<button id="serial_clearText">Clear Text</button>
-						</td>
-					</tr>
-					<tr style="height:150px"></tr>
-				</table>
-			</td>
-			<td style="vertical-align:top">
-
-				<div style="height: 250px">
-					<canvas id="pressureChart"></canvas>
-					<canvas id="averChart"></canvas>
-					<canvas id="diffChart"></canvas>
-					<canvas id="prev5Chart"></canvas>
-					<canvas id="stateChart"></canvas>
-					<canvas id="onoffChart"></canvas>
-					<canvas id="pPoseChart"></canvas>
-					<canvas id="poseChart"></canvas>
+	<main class="app-layout">
+		<aside class="left-panel">
+			<section class="panel-card">
+				<h2>圖表設定</h2>
+				<div class="field-grid">
+					<label for="yAxisMax">Y軸最大值</label>
+					<input type="number" id="yAxisMax" value="9000000">
+					<label for="yAxisMin">Y軸最小值</label>
+					<input type="number" id="yAxisMin" value="80000">
 				</div>
-			</td>
-		</tr>
-	</table>
+				<button id="updateChart" class="full">更新圖表</button>
+			</section>
+
+			<section class="panel-card">
+				<h2>裝置連線</h2>
+				<div class="button-row">
+					<button id="serial_request_port" class="primary">Connect BLE</button>
+					<button id="serial_close_port">Disconnect</button>
+				</div>
+				<div class="field-row">
+					<input type="text" id="serial_text" placeholder="輸入文字指令">
+					<select id="serial_newline">
+						<option value=""></option>
+						<option value="\r">\r</option>
+						<option value="\n">\n</option>
+						<option value="\r\n">\r\n</option>
+					</select>
+				</div>
+				<button id="serial_sendText" class="full">Send Text</button>
+
+				<div class="field-row">
+					<input type="text" id="serial_uint8" value="" placeholder="例如: 1,2,3">
+				</div>
+				<button id="serial_sendUint8" class="full">Send Uint8Array</button>
+			</section>
+
+			<section class="panel-card">
+				<h2>系統狀態</h2>
+				<label for="systemStateDisplay">State</label>
+				<input type="text" id="systemStateDisplay" readonly>
+				<div class="indicator-container">
+					<div id="led_s1" class="indicator" title="Motor">S1</div>
+					<div id="led_s2" class="indicator" title="Detect Valve">S2</div>
+					<div id="led_s3" class="indicator" title="Neck Valve">S3</div>
+					<div id="led_s4" class="indicator" title="Head Valve">S4</div>
+					<div id="led_s5" class="indicator" title="Pump In">S5</div>
+					<div id="led_s6" class="indicator" title="Pump In">S6</div>
+				</div>
+				<div class="button-row">
+					<button id="syncTime">Sync UTC Time</button>
+					<button id="exportData">Export Data</button>
+				</div>
+			</section>
+
+			<section class="panel-card">
+				<h2>使用者資料</h2>
+				<form id="userForm">
+					<div class="form-group">
+						<label>生理性別：</label>
+						<input type="radio" name="gender" value="female" id="female" required>
+						<label for="female">女</label>
+						<input type="radio" name="gender" value="male" id="male" required>
+						<label for="male">男</label>
+					</div>
+					<div class="form-group">
+						<label for="age">年齡：</label>
+						<input type="number" id="age" required>
+					</div>
+					<div class="form-group">
+						<label for="height">身高（公分）：</label>
+						<input type="number" id="height" required>
+					</div>
+					<div class="form-group">
+						<label for="weight">體重（公斤）：</label>
+						<input type="number" id="weight" required>
+					</div>
+					<div class="button-row">
+						<button type="button" id="userSet">設定</button>
+						<button id="openModalBtn" type="button">微調</button>
+					</div>
+				</form>
+			</section>
+
+			<section class="panel-card">
+				<h2>訊息紀錄</h2>
+				<div id="serial_status"></div>
+				<div class="scroll-options">
+					<label><input type="radio" name="scrollControl" value="auto" checked> 自動滾動</label>
+					<label><input type="radio" name="scrollControl" value="fixed"> 固定滾動</label>
+				</div>
+				<button id="serial_clearText" class="full">Clear Text</button>
+			</section>
+		</aside>
+
+		<section class="right-panel">
+			<div class="chart-card large"><canvas id="pressureChart"></canvas></div>
+			<div class="chart-card"><canvas id="averChart"></canvas></div>
+			<div class="chart-card"><canvas id="diffChart"></canvas></div>
+			<div class="hidden-canvas">
+				<canvas id="prev5Chart"></canvas>
+				<canvas id="stateChart"></canvas>
+				<canvas id="onoffChart"></canvas>
+				<canvas id="pPoseChart"></canvas>
+				<canvas id="poseChart"></canvas>
+			</div>
+		</section>
+	</main>
+
+	<div id="modal" class="modal">
+		<div class="modal-content">
+			<div id="screen1" class="screen">
+				<h1>生物力學調整模式</h1>
+				<p>1.頸椎狀態</p>
+				<form id="radioForm">
+					<label>
+						<input type="radio" name="condition" value="1" checked> 健康
+					</label><br>
+					<label>
+						<input type="radio" name="condition" value="2"> 輕度退化
+					</label><br>
+					<label>
+						<input type="radio" name="condition" value="3"> 中度退化
+					</label><br>
+					<label>
+						<input type="radio" name="condition" value="4"> 重度退化
+					</label><br>
+					<label>
+						<input type="radio" name="condition" value="5"> 有開刀過
+					</label>
+				</form>
+				<button id="switchScreenBtn1">切換到第二畫面</button>
+			</div>
+			<div id="screen2" class="screen" style="display:none;">
+				<h1>生物力學調整模式</h1>
+				<p>2.仰躺高度微調</p>
+				<div id="imagePlaceholder" style="width: 100%; height: 100px; background-color: #ddd; margin-bottom: 20px; object-fit: contain;">
+					<img src="s.png" style="height: 100%">
+				</div>
+				<div>
+					<label for="numberInput1">仰躺頭部高度:</label>
+					<input type="number" id="numberInput1" value="7" min="5" max="20" style="width: 50px;">
+					<button id="increaseBtn1">+</button>
+					<button id="decreaseBtn1">-</button>
+				</div>
+				<div>
+					<label for="numberInput2">仰躺頸部高度:</label>
+					<input type="number" id="numberInput2" value="10" min="5" max="20" style="width: 50px;">
+					<button id="increaseBtn2">+</button>
+					<button id="decreaseBtn2">-</button>
+				</div>
+				<div class="button-container">
+					<button id="backBtn1">回到上一頁</button>
+					<button id="switchScreenBtn2">切換到第三畫面</button>
+				</div>
+			</div>
+			<div id="screen3" class="screen" style="display:none;">
+				<h1>生物力學調整模式</h1>
+				<p>3.側躺高度微調</p>
+				<div id="imagePlaceholder3" style="width: 100%; height: 100px; background-color: #ddd; margin-bottom: 20px; object-fit: contain;">
+					<img src="l.png" style="height: 100%">
+				</div>
+				<div>
+					<label for="numberInput3">側躺頭部高度:</label>
+					<input type="number" id="numberInput3" value="14" min="5" max="20" style="width: 50px;">
+					<button id="increaseBtn3">+</button>
+					<button id="decreaseBtn3">-</button>
+				</div>
+				<div>
+					<label for="numberInput4">側躺頸部高度:</label>
+					<input type="number" id="numberInput4" value="16" min="5" max="20" style="width: 50px;">
+					<button id="increaseBtn4">+</button>
+					<button id="decreaseBtn4">-</button>
+				</div>
+				<div class="button-container">
+					<button id="backBtn2">回到上一頁</button>
+					<button id="closeBtn">結束</button>
+				</div>
+			</div>
+		</div>
+	</div>
 
 	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
