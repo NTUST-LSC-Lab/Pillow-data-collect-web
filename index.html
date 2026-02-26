@@ -85,12 +85,18 @@ https://fustyles.github.io/webduino/WebSerial.html
 			<section class="panel-card">
 				<h2>使用者資料</h2>
 				<form id="userForm">
-					<div class="form-group">
-						<label>生理性別：</label>
-						<input type="radio" name="gender" value="female" id="female" required>
-						<label for="female">女</label>
-						<input type="radio" name="gender" value="male" id="male" required>
-						<label for="male">男</label>
+					<div class="form-group gender-group">
+						<span class="gender-label">生理性別：</span>
+						<div class="gender-options">
+							<label for="female">
+								<input type="radio" name="gender" value="female" id="female" required>
+								女
+							</label>
+							<label for="male">
+								<input type="radio" name="gender" value="male" id="male">
+								男
+							</label>
+						</div>
 					</div>
 					<div class="form-group">
 						<label for="age">年齡：</label>

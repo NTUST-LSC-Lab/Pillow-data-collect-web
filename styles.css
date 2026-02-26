@@ -11,10 +11,17 @@
   --ok: #00c86f;
   --shadow: 0 14px 30px rgba(7, 32, 73, 0.12);
   --radius: 14px;
+  --ui-scale: 1;
+  --font-size-adjust: -2px;
 }
 
 * {
   box-sizing: border-box;
+}
+
+html {
+  font-size: calc(16px + var(--font-size-adjust));
+  height: 100%;
 }
 
 body {
@@ -26,41 +33,63 @@ body {
     var(--bg);
   color: var(--text);
   font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif;
+  font-size: 1rem;
+  zoom: var(--ui-scale);
+  min-height: 100vh;
+  overflow: auto;
+}
+
+@supports not (zoom: 1) {
+  body {
+    transform: scale(var(--ui-scale));
+    transform-origin: top left;
+    width: calc(100% / var(--ui-scale));
+  }
 }
 
 #title {
   background: linear-gradient(120deg, #0b4fd4 0%, #173f9f 55%, #0e2a68 100%);
   color: #fff;
-  font-size: clamp(24px, 2.3vw, 44px);
+  font-size: clamp(calc(24px + var(--font-size-adjust)), 2.1vw, calc(44px + var(--font-size-adjust)));
   font-weight: 900;
+  height: auto;
   text-align: center;
-  padding: 20px 24px;
+  padding: 14px 24px;
   border-radius: 16px;
   box-shadow: var(--shadow);
   letter-spacing: 0.04em;
 }
 
 .app-layout {
-  margin-top: 12px;
+  margin-top: 8px;
   display: grid;
-  grid-template-columns: 420px 1fr;
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
   align-items: start;
 }
 
 .left-panel,
 .right-panel {
   display: grid;
-  gap: 12px;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.right-panel {
+  overflow: hidden;
+  grid-template-rows: auto auto auto;
 }
 
 .left-panel {
   grid-template-columns: 1fr 1fr;
   grid-template-areas:
-    "card1 card2"
-    "card3 card4"
+    "card1 card3"
+    "card2 card4"
     "card5 card5";
+  grid-template-rows: auto auto auto;
   align-content: start;
+  align-items: start;
 }
 
 .left-panel > .panel-card:nth-child(1) { grid-area: card1; }
@@ -69,43 +98,49 @@ body {
 .left-panel > .panel-card:nth-child(4) { grid-area: card4; }
 .left-panel > .panel-card:nth-child(5) { grid-area: card5; }
 
+
 .panel-card,
 .chart-card {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 14px;
+  padding: 10px;
+}
+
+.left-panel > .panel-card {
+  overflow: visible;
+  min-height: 0;
 }
 
 .panel-card h2 {
-  margin: 0 0 10px;
-  font-size: 18px;
+  margin: 0 0 8px;
+  font-size: calc(18px + var(--font-size-adjust));
   color: #143265;
   border-left: 4px solid var(--primary);
   padding-left: 8px;
 }
 
 .left-panel > .panel-card:not(:nth-child(5)) {
-  min-height: 210px;
+  min-height: 200px;
 }
 
 .left-panel > .panel-card:nth-child(5) {
-  min-height: 340px;
+  min-height: 380px;
 }
 
 .field-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px 10px;
-  margin-bottom: 10px;
+  gap: 6px 8px;
+  margin-bottom: 8px;
 }
 
 .field-row {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 6px;
+  margin-bottom: 6px;
 }
 
 label {
@@ -120,7 +155,7 @@ select {
   border: 1px solid #bdcbdf;
   border-radius: 9px;
   padding: 8px 10px;
-  font-size: 15px;
+  font-size: calc(15px + var(--font-size-adjust));
   background: #f8fbff;
   color: #12233f;
 }
@@ -163,16 +198,16 @@ button.full {
 .button-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 6px;
+  margin-bottom: 6px;
 }
 
 .form-group {
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: center;
-  gap: 6px 8px;
-  margin-bottom: 8px;
+  gap: 4px 6px;
+  margin-bottom: 6px;
 }
 
 .form-group input[type="radio"] {
@@ -180,11 +215,39 @@ button.full {
   margin: 0 2px 0 0;
 }
 
+#userForm .gender-group {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+#userForm .gender-label {
+  font-weight: 600;
+  color: #1f355a;
+}
+
+#userForm .gender-options {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+#userForm .gender-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+#userForm .gender-options input[type="radio"] {
+  margin: 0;
+}
+
 .indicator-container {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: 6px;
-  margin-bottom: 10px;
+  gap: 4px;
+  margin-bottom: 8px;
 }
 
 .indicator {
@@ -197,7 +260,7 @@ button.full {
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 12px;
+  font-size: calc(12px + var(--font-size-adjust));
   font-weight: 700;
   font-family: 'IBM Plex Mono', monospace;
 }
@@ -208,27 +271,31 @@ button.full {
 }
 
 #serial_status {
-  min-height: 220px;
-  max-height: 380px;
+  min-height: 300px;
+  max-height: 520px;
+  height: auto;
   border: 1px solid #afc0da;
   border-radius: 10px;
   overflow: auto;
   background: #0f1b31;
   color: #c8ffd7;
-  padding: 10px;
+  padding: 8px;
   font-family: 'IBM Plex Mono', monospace;
   line-height: 1.45;
 }
 
 .scroll-options {
-  margin: 10px 0;
+  margin: 6px 0;
   color: var(--muted);
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
 
 .chart-card {
   height: 240px;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
 }
 
 .chart-card.large {
@@ -238,6 +305,8 @@ button.full {
 .chart-card canvas {
   width: 100% !important;
   height: 100% !important;
+  max-width: 100% !important;
+  display: block;
 }
 
 .hidden-canvas {
@@ -288,9 +357,47 @@ button.full {
 }
 
 @media (max-width: 1080px) {
+  body {
+    overflow: auto;
+    display: block;
+    min-height: 0;
+  }
+
+  #title {
+    height: auto;
+    padding: 14px 18px;
+  }
+
   .app-layout {
-    grid-template-columns: 420px minmax(760px, 1fr);
-    overflow-x: auto;
+    margin-top: 8px;
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .left-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "card1 card2"
+      "card3 card4"
+      "card5 card5";
+    grid-template-rows: auto;
+    gap: 8px;
+  }
+
+  .left-panel > .panel-card:nth-child(5) {
+    grid-area: card5;
+    display: block;
+  }
+
+  .right-panel {
+    width: 100%;
+    grid-template-rows: auto;
+  }
+}
+
+@media (max-width: 780px) {
+  .app-layout {
+    gap: 10px;
   }
 
   .left-panel {
@@ -301,5 +408,23 @@ button.full {
       "card3"
       "card4"
       "card5";
+  }
+
+  .button-row {
+    grid-template-columns: 1fr;
+  }
+
+  .field-row {
+    grid-template-columns: 1fr;
+  }
+
+  .indicator-container {
+    grid-template-columns: repeat(3, 1fr);
+    justify-items: center;
+  }
+
+  .chart-card,
+  .chart-card.large {
+    height: 220px;
   }
 }
