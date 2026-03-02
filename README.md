@@ -1,4 +1,4 @@
-﻿# standalone_jintao_ble
+﻿# Pillow-data-collect-web
 
 此專案目前包含兩個版本：
 
@@ -13,7 +13,7 @@
 ## 目錄結構
 
 ```text
-standalone_jintao_ble/
+Pillow-data-collect-web/
 ├─ spp3_BLE/
 │  ├─ index.html
 │  ├─ styles.css
