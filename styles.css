@@ -11,8 +11,8 @@
   --ok: #00c86f;
   --shadow: 0 14px 30px rgba(7, 32, 73, 0.12);
   --radius: 10px;
-  --top-card-height: 170px;
-  --log-height: 300px;
+  --top-card-height: clamp(140px, 20vh, 170px);
+  --log-height: clamp(170px, 28vh, 300px);
   --ui-scale: 1;
   --font-size-adjust: -2px;
 }
@@ -37,8 +37,13 @@ body {
   font-family: 'Noto Sans TC', 'Microsoft JhengHei', sans-serif;
   font-size: 1rem;
   zoom: var(--ui-scale);
-  min-height: 100vh;
-  overflow: auto;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  overflow: hidden;
 }
 
 @supports not (zoom: 1) {
@@ -63,11 +68,14 @@ body {
 }
 
 .app-layout {
-  margin-top: 8px;
+  margin-top: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
-  align-items: start;
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .left-panel,
@@ -133,7 +141,7 @@ body {
 }
 
 .left-panel > .panel-card:nth-child(5) {
-  min-height: 380px;
+  min-height: 0;
 }
 
 .field-grid {
@@ -337,14 +345,14 @@ button.full {
 }
 
 .chart-card {
-  height: 240px;
+  height: clamp(180px, 30vh, 240px);
   overflow: hidden;
   min-width: 0;
   min-height: 0;
 }
 
 .chart-card.large {
-  height: 290px;
+  height: clamp(220px, 36vh, 290px);
 }
 
 .chart-card canvas {
@@ -399,6 +407,26 @@ button.full {
 
 .screen .button-container button {
   flex: 1;
+}
+
+@media (min-width: 1081px) {
+  .left-panel {
+    overflow: auto;
+    padding-right: 2px;
+    height: 100%;
+  }
+
+  .right-panel {
+    overflow: hidden;
+    grid-template-rows: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+    height: 100%;
+  }
+
+  .chart-card,
+  .chart-card.large {
+    height: auto;
+    min-height: 0;
+  }
 }
 
 @media (max-width: 1080px) {
