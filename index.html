@@ -64,19 +64,23 @@ https://fustyles.github.io/webduino/WebSerial.html
 				<button id="serial_sendUint8" class="full">Send Uint8Array</button>
 			</section>
 
-			<section class="panel-card">
+			<section class="panel-card status-card">
 				<h2>系統狀態</h2>
-				<label for="systemStateDisplay">State</label>
-				<input type="text" id="systemStateDisplay" readonly>
-				<div class="indicator-container">
-					<div id="led_s1" class="indicator" title="Motor">S1</div>
-					<div id="led_s2" class="indicator" title="Detect Valve">S2</div>
-					<div id="led_s3" class="indicator" title="Neck Valve">S3</div>
-					<div id="led_s4" class="indicator" title="Head Valve">S4</div>
-					<div id="led_s5" class="indicator" title="Pump In">S5</div>
-					<div id="led_s6" class="indicator" title="Pump In">S6</div>
+				<div class="status-grid">
+					<div class="status-state">
+						<label for="systemStateDisplay">State:</label>
+						<input type="text" id="systemStateDisplay" readonly>
+					</div>
+					<div class="indicator-container">
+						<div id="led_s1" class="indicator" title="Motor">S1</div>
+						<div id="led_s2" class="indicator" title="Detect Valve">S2</div>
+						<div id="led_s3" class="indicator" title="Neck Valve">S3</div>
+						<div id="led_s4" class="indicator" title="Head Valve">S4</div>
+						<div id="led_s5" class="indicator" title="Pump In">S5</div>
+						<div id="led_s6" class="indicator" title="Pump In">S6</div>
+					</div>
 				</div>
-				<div class="button-row">
+				<div class="status-actions">
 					<button id="syncTime">Sync UTC Time</button>
 					<button id="exportData">Export Data</button>
 				</div>

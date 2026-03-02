@@ -10,7 +10,9 @@
   --primary-strong: #083ea7;
   --ok: #00c86f;
   --shadow: 0 14px 30px rgba(7, 32, 73, 0.12);
-  --radius: 14px;
+  --radius: 10px;
+  --top-card-height: 170px;
+  --log-height: 300px;
   --ui-scale: 1;
   --font-size-adjust: -2px;
 }
@@ -50,12 +52,12 @@ body {
 #title {
   background: linear-gradient(120deg, #0b4fd4 0%, #173f9f 55%, #0e2a68 100%);
   color: #fff;
-  font-size: clamp(calc(24px + var(--font-size-adjust)), 2.1vw, calc(44px + var(--font-size-adjust)));
+  font-size: clamp(calc(18px + var(--font-size-adjust)), 1.7vw, calc(32px + var(--font-size-adjust)));
   font-weight: 900;
   height: auto;
   text-align: center;
-  padding: 14px 24px;
-  border-radius: 16px;
+  padding: 8px 10px;
+  border-radius: 12px;
   box-shadow: var(--shadow);
   letter-spacing: 0.04em;
 }
@@ -122,7 +124,12 @@ body {
 }
 
 .left-panel > .panel-card:not(:nth-child(5)) {
-  min-height: 200px;
+  min-height: 0;
+}
+
+.left-panel > .panel-card:nth-child(1),
+.left-panel > .panel-card:nth-child(3) {
+  min-height: var(--top-card-height);
 }
 
 .left-panel > .panel-card:nth-child(5) {
@@ -161,8 +168,8 @@ select {
 }
 
 #systemStateDisplay {
-  text-align: center;
-  margin: 6px 0 10px;
+  text-align: left;
+  margin: 0;
 }
 
 button {
@@ -250,6 +257,42 @@ button.full {
   margin-bottom: 8px;
 }
 
+.status-card .status-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 12px;
+  margin-bottom: 6px;
+  align-items: start;
+}
+
+.status-card .status-state label {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.status-card .indicator-container {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 0;
+  justify-content: flex-end;
+}
+
+.status-card .indicator {
+  width: 30px;
+  height: 30px;
+}
+
+.status-card .status-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.status-card .status-actions button {
+  padding: 5px 10px;
+  justify-self: start;
+}
+
 .indicator {
   width: 34px;
   height: 34px;
@@ -271,17 +314,19 @@ button.full {
 }
 
 #serial_status {
-  min-height: 300px;
-  max-height: 520px;
-  height: auto;
+  height: var(--log-height);
+  min-height: var(--log-height);
+  max-height: var(--log-height);
   border: 1px solid #afc0da;
   border-radius: 10px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   background: #0f1b31;
   color: #c8ffd7;
   padding: 8px;
   font-family: 'IBM Plex Mono', monospace;
   line-height: 1.45;
+  word-break: break-word;
 }
 
 .scroll-options {
@@ -365,7 +410,8 @@ button.full {
 
   #title {
     height: auto;
-    padding: 14px 18px;
+    font-size: clamp(calc(18px + var(--font-size-adjust)), 4vw, calc(28px + var(--font-size-adjust)));
+    padding: 10px 14px;
   }
 
   .app-layout {
@@ -396,6 +442,31 @@ button.full {
 }
 
 @media (max-width: 780px) {
+  .left-panel > .panel-card:nth-child(1),
+  .left-panel > .panel-card:nth-child(3) {
+    min-height: 0;
+  }
+
+  .status-card .status-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .status-card .indicator-container {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .status-card .status-actions {
+    grid-template-columns: 1fr;
+  }
+
+  #title {
+    font-size: calc(20px + var(--font-size-adjust));
+    padding: 8px 10px;
+    letter-spacing: 0.02em;
+  }
+
   .app-layout {
     gap: 10px;
   }
