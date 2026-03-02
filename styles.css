@@ -99,7 +99,7 @@ body {
     "card5 card5";
   grid-template-rows: auto auto auto;
   align-content: start;
-  align-items: start;
+  align-items: stretch;
 }
 
 .left-panel > .panel-card:nth-child(1) { grid-area: card1; }
@@ -121,6 +121,7 @@ body {
 .left-panel > .panel-card {
   overflow: visible;
   min-height: 0;
+  width: 100%;
 }
 
 .panel-card h2 {
@@ -444,18 +445,31 @@ button.full {
 
   .app-layout {
     margin-top: 8px;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(420px, 1fr) minmax(620px, 1fr);
+    min-width: 1080px;
     min-height: 0;
   }
 
   .left-panel {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-template-areas:
-      "card1 card2"
-      "card3 card4"
-      "card5 card5";
-    grid-template-rows: auto;
-    gap: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    height: calc(100vh - 96px);
+    height: calc(100dvh - 96px);
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
+  }
+
+  .left-panel > .panel-card {
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+
+  .left-panel > .panel-card:nth-child(1),
+  .left-panel > .panel-card:nth-child(3) {
+    min-height: 0;
   }
 
   .left-panel > .panel-card:nth-child(5) {
@@ -496,6 +510,8 @@ button.full {
   }
 
   .app-layout {
+    grid-template-columns: 1fr;
+    min-width: 0;
     gap: 10px;
   }
 
