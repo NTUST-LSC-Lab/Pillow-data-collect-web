@@ -432,7 +432,8 @@ button.full {
 
 @media (max-width: 1080px) {
   body {
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
     display: block;
     min-height: 0;
   }
@@ -445,8 +446,7 @@ button.full {
 
   .app-layout {
     margin-top: 8px;
-    grid-template-columns: minmax(420px, 1fr) minmax(620px, 1fr);
-    min-width: 1080px;
+    grid-template-columns: minmax(360px, 0.95fr) minmax(0, 1.05fr);
     min-height: 0;
   }
 
