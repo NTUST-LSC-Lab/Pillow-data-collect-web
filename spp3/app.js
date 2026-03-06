@@ -73,7 +73,7 @@
 					x: {
 						ticks: {
 							font: {
-								size: 8, // 閮剖? x 頠豢?蝐斤?摮?憭批?
+								size: 8, // 設定 x 軸標籤的字體大小
 							},
 							autoSkip: false,
 						}
@@ -142,7 +142,7 @@
 					x: {
 						ticks: {
 							font: {
-								size: 8, // 閮剖? x 頠豢?蝐斤?摮?憭批?
+								size: 8, // 設定 x 軸標籤的字體大小
 							},
 							autoSkip: false,
 						}
@@ -186,7 +186,7 @@
 					x: {
 						ticks: {
 							font: {
-								size: 8, // 閮剖? x 頠豢?蝐斤?摮?憭批?
+								size: 8, // 設定 x 軸標籤的字體大小
 							},
 							autoSkip: false,
 						}
@@ -206,7 +206,7 @@
 		});
 
 		// indexeddb
-		// indexedDB??璅∠?
+		// indexedDB操作模組
 		const DBModule = (function () {
 			let dbName;
 			const storeName = 'dataStore';
@@ -283,8 +283,8 @@
 
 					// const txtContent = serial_status.innerHTML.replace(/<[^>]*>/g, ''); // Remove HTML tags
 					const txtContent = serial_status.innerHTML
-						.replace(/<br\s*\/?>/gi, '\n') // 撠?<br> ??<br/> 頧???銵泵??
-						.replace(/<[^>]*>/g, ''); // 蝘駁?拚???HTML 璅惜
+						.replace(/<br\s*\/?>/gi, '\n') // 將 <br> 和 <br/> 轉換成換行符號
+						.replace(/<[^>]*>/g, ''); // 移除剩餘的 HTML 標籤
 
 					const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
 					const txtBlob = new Blob([txtContent], { type: 'text/plain;charset=utf-8;' });
@@ -562,8 +562,8 @@
 		});
 
 		serial_syncTime.addEventListener('click', async () => {
-			const now = Math.floor(Date.now() / 1000); // ??UNIX????
-			const utcString = now;//now.toISOString(); // ??UTC??摮葡
+			const now = Math.floor(Date.now() / 1000); // 生成UNIX時間戳
+			const utcString = now;//now.toISOString(); // 生成UTC時間字串
 			if (serial_port && serial_writer) {
 				try {
 					var msg = "synctime," + utcString + serial_newline.value;
@@ -587,8 +587,8 @@
 		});
 
 		serial_userSet.addEventListener('click', async () => {
-			const now = Math.floor(Date.now() / 1000); // ??UNIX????
-			const utcString = now;//now.toISOString(); // ??UTC??摮葡
+			const now = Math.floor(Date.now() / 1000); // 生成UNIX時間戳
+			const utcString = now;//now.toISOString(); // 生成UTC時間字串
 			if (serial_port && serial_writer) {
 				try {
 					let gender = document.querySelector('input[name="gender"]:checked').value === 'female' ? '0' : '1';
@@ -650,10 +650,10 @@
 			return true;
 		}
 
-		// P?誘?: 銝?憯??潛?瘚桅????隞?”: ??葫 ?賊 ?剝
-		// I?誘?: 銝??折霈???隞?”:
+		// P指令回傳: 三組壓力值的浮點數 分別代表: 監測 頸部 頭部
+		// I指令回傳: 七組內部變數值 分別代表:
 		//         differential, state, onoff_event, last5pointAvg, prev5pointAvg, predict_Pose, Pose_event
-		// 鞈?摨急?雿?
+		// 資料庫欄位:
 		//         pressure1, pressure2, pressure3, differential, last5pointAvg, prev5pointAvg, state, onoff_event, predict_Pose, Pose_event
 		let pressure1, pressure2, pressure3, differential, state, onoff_event, last5pointAvg, prev5pointAvg, predict_Pose, Pose_event;
 
@@ -674,7 +674,7 @@
 		let parsedData = {};
 
 		function serial_message(msg, colour) {
-			// 雿輻 insertAdjacentHTML ????innerHTML
+			// 使用 insertAdjacentHTML 而不是 innerHTML
 			serial_status.insertAdjacentHTML('beforeend', "<font color='" + colour + "'>" + msg + "</font><br>");
 			var scrollControl = document.querySelector('input[name="scrollControl"]:checked').value;
 			if (scrollControl === "auto") {
@@ -979,7 +979,7 @@
 					screen3.style.display = 'block';
 					if (parsedData.HLF) numberInput3.value = parsedData.HLF;
 					if (parsedData.N1LF) numberInput4.value = parsedData.N1LF;
-				}, 1000); // 蝑?1蝘?
+				}, 1000); // 等待1秒鐘
 
 			});
 
