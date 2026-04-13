@@ -15,6 +15,7 @@
   --log-height: clamp(170px, 28vh, 300px);
   --ui-scale: 1;
   --font-size-adjust: -2px;
+  --status-right-col: minmax(300px, 48%);
 }
 
 * {
@@ -96,8 +97,9 @@ body {
   grid-template-areas:
     "card1 card3"
     "card2 card4"
-    "card5 card5";
-  grid-template-rows: auto auto auto;
+    "card5 card5"
+    "card6 card6";
+  grid-template-rows: max-content max-content max-content max-content;
   align-content: start;
   align-items: stretch;
 }
@@ -107,6 +109,7 @@ body {
 .left-panel > .panel-card:nth-child(3) { grid-area: card3; }
 .left-panel > .panel-card:nth-child(4) { grid-area: card4; }
 .left-panel > .panel-card:nth-child(5) { grid-area: card5; }
+.left-panel > .panel-card:nth-child(6) { grid-area: card6; }
 
 
 .panel-card,
@@ -132,7 +135,10 @@ body {
   padding-left: 8px;
 }
 
-.left-panel > .panel-card:not(:nth-child(5)) {
+.left-panel > .panel-card:nth-child(1),
+.left-panel > .panel-card:nth-child(2),
+.left-panel > .panel-card:nth-child(3),
+.left-panel > .panel-card:nth-child(4) {
   min-height: 0;
 }
 
@@ -142,7 +148,14 @@ body {
 }
 
 .left-panel > .panel-card:nth-child(5) {
-  min-height: 0;
+  min-height: max-content;
+  height: max-content;
+  align-self: start;
+}
+
+.left-panel > .panel-card:nth-child(6) {
+  min-height: max-content;
+  align-self: start;
 }
 
 .field-grid {
@@ -213,7 +226,7 @@ button.full {
 
 .button-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   gap: 6px;
   margin-bottom: 6px;
 }
@@ -343,6 +356,124 @@ button.full {
   color: var(--muted);
   display: flex;
   gap: 8px;
+}
+
+.calib-top-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--status-right-col);
+  gap: 10px;
+  align-items: start;
+}
+
+.state-table {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 10px;
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.anchor-info-block {
+  margin-top: 0;
+}
+
+.pose-pred-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--status-right-col);
+  gap: 10px;
+  align-items: start;
+}
+
+.pose-pred-row > .info-block,
+.pose-pred-row > details.info-block {
+  margin-top: 8px;
+}
+
+.anchor-info-block .kv,
+.pose-pred-row .kv {
+  font-size: calc(17px + var(--font-size-adjust));
+  line-height: 1.55;
+}
+
+.anchor-info-block .info-title,
+.pose-pred-row .info-title {
+  font-size: calc(18px + var(--font-size-adjust));
+}
+
+.pred-block > summary {
+  font-size: calc(18px + var(--font-size-adjust));
+  font-weight: 700;
+  color: #183560;
+  margin-bottom: 6px;
+}
+
+.pill {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: calc(12px + var(--font-size-adjust));
+  font-weight: 700;
+  border: 1px solid #9bb2d8;
+  background: #e9f1ff;
+  color: #1d3f79;
+}
+
+.pill-pending {
+  background: #fff2dc;
+  border-color: #e8c990;
+  color: #8a5b0b;
+}
+
+.pill-ok {
+  background: #defbe9;
+  border-color: #9adab2;
+  color: #0f6b33;
+}
+
+.info-block {
+  border: 1px solid #d4deeb;
+  border-radius: 8px;
+  padding: 8px;
+  margin-top: 8px;
+  background: #f8fbff;
+}
+
+.info-title {
+  font-weight: 700;
+  color: #183560;
+  margin-bottom: 6px;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  margin-bottom: 4px;
+  align-items: baseline;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: calc(12px + var(--font-size-adjust));
+}
+
+.kv span:last-child {
+  word-break: break-word;
+}
+
+.left-panel > .panel-card:nth-child(6) #serial_status {
+  min-height: clamp(220px, 30vh, 320px);
+}
+
+.calib-image-box {
+  width: 100%;
+  height: 100px;
+  background-color: #ddd;
+  margin-bottom: 20px;
+  object-fit: contain;
+}
+
+.calib-hint {
+  min-height: 20px;
+  color: #1f355a;
+  font-weight: 600;
 }
 
 .chart-card {
@@ -477,6 +608,11 @@ button.full {
     display: block;
   }
 
+  .left-panel > .panel-card:nth-child(6) {
+    grid-area: card6;
+    display: block;
+  }
+
   .right-panel {
     width: 100%;
     grid-template-rows: auto;
@@ -484,6 +620,16 @@ button.full {
 }
 
 @media (max-width: 780px) {
+  .calib-top-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .pose-pred-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
   .left-panel > .panel-card:nth-child(1),
   .left-panel > .panel-card:nth-child(3) {
     min-height: 0;
@@ -522,7 +668,8 @@ button.full {
       "card2"
       "card3"
       "card4"
-      "card5";
+      "card5"
+      "card6";
   }
 
   .button-row {

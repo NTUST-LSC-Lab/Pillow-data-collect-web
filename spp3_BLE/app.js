@@ -476,6 +476,9 @@
 					serial_newline.value = serial_newline.value.replace(/\\n/g, "\n");
 					serial_newline.value = serial_newline.value.replace(/\\r/g, "\r");
 					var msg = serial_text.value + serial_newline.value;
+					if (!serial_newline.value) {
+						msg += "\n";
+					}
 					logCommand(msg);
 					serial_message(msg, "orange");
 					serial_text.value = "";
@@ -519,15 +522,11 @@
 			const utcString = now;//now.toISOString(); // 生成UTC時間字串
 			if (rxCharacteristic) {
 				try {
-					var msg = "synctime," + utcString + serial_newline.value;
+					var msg = "synctime," + utcString;
 					logCommand(msg);
 					serial_message(msg, "orange");
 					serial_text.value = "";
-
-					let encoder = new TextEncoder();
-					bleQueue.add(async () => {
-						await rxCharacteristic.writeValue(encoder.encode(msg));
-					});
+					queueBleWrite(normalizeCommand(msg));
 				} catch (error) {
 					serial_message(error.message, "red");
 				}
@@ -535,8 +534,6 @@
 		});
 
 		serial_userSet.addEventListener('click', async () => {
-			const now = Math.floor(Date.now() / 1000); // 生成UNIX時間戳
-			const utcString = now;//now.toISOString(); // 生成UTC時間字串
 			if (rxCharacteristic) {
 				try {
 					let gender = document.querySelector('input[name="gender"]:checked').value === 'female' ? '0' : '1';
@@ -549,11 +546,7 @@
 					logCommand(msg);
 					serial_message(msg, "orange");
 					serial_text.value = "";
-
-					let encoder = new TextEncoder();
-					bleQueue.add(async () => {
-						await rxCharacteristic.writeValue(encoder.encode(msg));
-					});
+					queueBleWrite(normalizeCommand(msg));
 				} catch (error) {
 					serial_message(error.message, "red");
 				}
@@ -618,10 +611,270 @@
 
 		let debugDataBuffer = ""; // Static variable to hold incomplete debug data
 		let parsedData = {};
+		const WORKFLOW = {
+			UNCALIBRATED: "未校正",
+			SUPINE: "仰躺校正中",
+			SIDE: "側躺校正中",
+			CLASSIFYING: "分類中",
+			AUTOCONTROL: "自動控制中"
+		};
+
+		const workflowStateBadge = document.getElementById('workflowStateBadge');
+		const anchorBshsStatus = document.getElementById('anchorBshsStatus');
+		const anchorBlhlStatus = document.getElementById('anchorBlhlStatus');
+		const anchorStateValue = document.getElementById('anchorStateValue');
+		const anchorTargetValue = document.getElementById('anchorTargetValue');
+		const anchorBshsValue = document.getElementById('anchorBshsValue');
+		const anchorBlhlValue = document.getElementById('anchorBlhlValue');
+		const poseSmoothLabel = document.getElementById('poseSmoothLabel');
+		const poseRawLabel = document.getElementById('poseRawLabel');
+		const poseUpdateTime = document.getElementById('poseUpdateTime');
+		const scoreEValue = document.getElementById('scoreEValue');
+		const scoreSupineValue = document.getElementById('scoreSupineValue');
+		const scoreSideMeanValue = document.getElementById('scoreSideMeanValue');
+		const scorePmRuleValue = document.getElementById('scorePmRuleValue');
+		const predStageValue = document.getElementById('predStageValue');
+		const predNeckDelta = document.getElementById('predNeckDelta');
+		const predHeadDelta = document.getElementById('predHeadDelta');
+
+		let workflowState = WORKFLOW.UNCALIBRATED;
+		let anchorDone = { BSHS: false, BLHL: false };
+		let anchorDataByTarget = { BSHS: null, BLHL: null };
+		let anchorPollingTarget = "NONE";
+		let pendingAnchorTarget = null;
+		let classifyStarted = false;
+		let classifyStartRequested = false;
+		let predEnabled = false;
+		let sideStandbyWatchActive = false;
+		let sideStandbyConsecutive = 0;
+		let sideStandbyTimer = null;
+		let awaitingInitMode = null;
+
+		function safeSetText(el, text) {
+			if (el) {
+				el.textContent = text;
+			}
+		}
+
+		function setWorkflowState(nextState) {
+			workflowState = nextState;
+			safeSetText(workflowStateBadge, nextState);
+		}
+
+		function applyAnchorBadge(el, done) {
+			if (!el) {
+				return;
+			}
+			el.classList.remove('pill-ok', 'pill-pending');
+			el.classList.add(done ? 'pill-ok' : 'pill-pending');
+			el.textContent = done ? "完成" : "未完成";
+		}
+
+		function refreshAnchorBadgeUI() {
+			applyAnchorBadge(anchorBshsStatus, anchorDone.BSHS);
+			applyAnchorBadge(anchorBlhlStatus, anchorDone.BLHL);
+		}
+
+		function renderAnchorValue(target) {
+			const data = anchorDataByTarget[target];
+			if (!data) {
+				return;
+			}
+			const text = `pm:${data.pm} pn:${data.pn} ph:${data.ph} head:${data.head} neck:${data.neck}`;
+			if (target === "BSHS") {
+				safeSetText(anchorBshsValue, text);
+			}
+			if (target === "BLHL") {
+				safeSetText(anchorBlhlValue, text);
+			}
+		}
+
+		function enableSideCalibrationControls(enabled) {
+			const ids = ['sideHeadInput', 'sideNeckInput', 'sideHeadPlus', 'sideHeadMinus', 'sideNeckPlus', 'sideNeckMinus'];
+			ids.forEach(id => {
+				const node = document.getElementById(id);
+				if (node) {
+					node.disabled = !enabled;
+				}
+			});
+		}
+
+		function stopSideStandbyWatch() {
+			sideStandbyWatchActive = false;
+			sideStandbyConsecutive = 0;
+			if (sideStandbyTimer) {
+				clearTimeout(sideStandbyTimer);
+				sideStandbyTimer = null;
+			}
+		}
+
+		function formatDelta(currentValue, targetValue) {
+			const current = Number(currentValue);
+			const target = Number(targetValue);
+			if (!isFinite(current) || !isFinite(target)) {
+				return "-";
+			}
+			const diff = target - current;
+			const sign = diff > 0 ? "+" : "";
+			return `${sign}${diff.toFixed(1)}`;
+		}
+
+		function maybeStartClassification() {
+			if (!anchorDone.BSHS || !anchorDone.BLHL) {
+				return;
+			}
+			if (classifyStarted || classifyStartRequested) {
+				return;
+			}
+			classifyStartRequested = true;
+			sendCommand("CLASSIFY,START");
+		}
+
+		function parseProtocolMessage(dataString) {
+			const parts = dataString.split(',').map(v => v.trim());
+			if (parts.length < 2) {
+				return;
+			}
+
+			if (parts[0] === "ANCHOR") {
+				if (parts[1] === "STATUS" && parts.length >= 4) {
+					safeSetText(anchorStateValue, parts[2]);
+					safeSetText(anchorTargetValue, parts[3]);
+					return;
+				}
+
+				if (parts[1] === "OK") {
+					if (parts[2] === "START" && parts.length >= 4) {
+						anchorPollingTarget = parts[3];
+						return;
+					}
+					if ((parts[2] === "BSHS" || parts[2] === "BLHL") && parts.length >= 8) {
+						const target = parts[2];
+						anchorDone[target] = true;
+						anchorDataByTarget[target] = {
+							pm: parts[3],
+							pn: parts[4],
+							ph: parts[5],
+							head: parts[6],
+							neck: parts[7]
+						};
+						renderAnchorValue(target);
+						refreshAnchorBadgeUI();
+
+						if (pendingAnchorTarget === target) {
+							pendingAnchorTarget = null;
+							const hint = document.getElementById(target === "BSHS" ? 'supineCalibHint' : 'sideCalibHint');
+							if (hint) {
+								hint.textContent = `${target} 校正成功。`;
+							}
+							if (target === "BLHL") {
+								stopSideStandbyWatch();
+								enableSideCalibrationControls(true);
+							}
+							const menu = document.getElementById('calibMenuScreen');
+							const supine = document.getElementById('supineCalibScreen');
+							const side = document.getElementById('sideCalibScreen');
+							if (menu && supine && side) {
+								menu.style.display = 'block';
+								supine.style.display = 'none';
+								side.style.display = 'none';
+							}
+						}
+
+						maybeStartClassification();
+						if (!(anchorDone.BSHS && anchorDone.BLHL)) {
+							setWorkflowState(WORKFLOW.UNCALIBRATED);
+						}
+						return;
+					}
+					if (parts[2] === "CLEAR") {
+						anchorDone = { BSHS: false, BLHL: false };
+						anchorDataByTarget = { BSHS: null, BLHL: null };
+						refreshAnchorBadgeUI();
+						safeSetText(anchorBshsValue, "pm:- pn:- ph:- head:- neck:-");
+						safeSetText(anchorBlhlValue, "pm:- pn:- ph:- head:- neck:-");
+						setWorkflowState(WORKFLOW.UNCALIBRATED);
+					}
+					return;
+				}
+
+				if (parts[1] === "ERR" && parts[2] === "TIMEOUT" && pendingAnchorTarget) {
+					const hint = document.getElementById(pendingAnchorTarget === "BSHS" ? 'supineCalibHint' : 'sideCalibHint');
+					if (hint) {
+						hint.textContent = "校正逾時，請重試。";
+					}
+					if (pendingAnchorTarget === "BLHL") {
+						stopSideStandbyWatch();
+						enableSideCalibrationControls(true);
+					}
+					pendingAnchorTarget = null;
+				}
+				return;
+			}
+
+			if (parts[0] === "CLASSIFY") {
+				if (parts[1] === "OK") {
+					if (parts[2] === "START") {
+						classifyStarted = true;
+						classifyStartRequested = false;
+						setWorkflowState(WORKFLOW.CLASSIFYING);
+						return;
+					}
+					if (parts[2] === "STOP") {
+						classifyStarted = false;
+						classifyStartRequested = false;
+						predEnabled = false;
+						setWorkflowState(WORKFLOW.UNCALIBRATED);
+						return;
+					}
+					if (parts.length >= 8) {
+						safeSetText(poseSmoothLabel, parts[2]);
+						safeSetText(poseRawLabel, parts[3]);
+						safeSetText(scoreEValue, parts[4]);
+						safeSetText(scoreSupineValue, parts[5]);
+						safeSetText(scoreSideMeanValue, parts[6]);
+						safeSetText(scorePmRuleValue, parts[7]);
+						safeSetText(poseUpdateTime, new Date().toLocaleTimeString());
+					}
+				}
+				if (parts[1] === "ERR") {
+					classifyStartRequested = false;
+				}
+				return;
+			}
+
+			if (parts[0] === "PRED" && parts[1] === "OK") {
+				if (parts[2] === "START" || parts[2] === "STOP") {
+					return;
+				}
+				if (parts.length >= 11) {
+					predEnabled = parts[2] === "1";
+					safeSetText(predStageValue, `${parts[2]}/${parts[3]}`);
+					safeSetText(predNeckDelta, formatDelta(parts[7], parts[8]));
+					safeSetText(predHeadDelta, formatDelta(parts[9], parts[10]));
+					if (predEnabled) {
+						setWorkflowState(WORKFLOW.AUTOCONTROL);
+					} else if (classifyStarted) {
+						setWorkflowState(WORKFLOW.CLASSIFYING);
+					}
+				}
+				return;
+			}
+
+			if (parts[0] === "INIT" && parts[1] === "OK") {
+				if (awaitingInitMode === "L" && parts.length >= 4) {
+					const sideHeadInput = document.getElementById('sideHeadInput');
+					const sideNeckInput = document.getElementById('sideNeckInput');
+					if (sideHeadInput) sideHeadInput.value = parts[2];
+					if (sideNeckInput) sideNeckInput.value = parts[3];
+				}
+				awaitingInitMode = null;
+			}
+		}
 
 		function serial_message(msg, colour) {
-			// 使用 insertAdjacentHTML 而不是 innerHTML
-			serial_status.insertAdjacentHTML('beforeend', "<font color='" + colour + "'>" + msg + "</font><br>");
+			const safeMsg = String(msg).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+			serial_status.insertAdjacentHTML('beforeend', "<font color='" + colour + "'>" + safeMsg + "</font><br>");
 			var scrollControl = document.querySelector('input[name="scrollControl"]:checked').value;
 			if (scrollControl === "auto") {
 				serial_status.scrollTop = serial_status.scrollHeight;
@@ -633,27 +886,17 @@
 			// Robust parsing: split by space/comma, remove empty entries
 			let dataPoints = dataString.split(/[\s,]+/).filter(Boolean);
 
-			// Append the new message to the buffer
-			debugDataBuffer += msg;
-
-			// Check if the buffer contains the end marker 'N2LP='
-			if (debugDataBuffer.includes('N2LP=')) {
-				// Clean up the buffer by removing line breaks and extra whitespace
-				let cleanedData = debugDataBuffer.replace(/\r?\n|\r/g, ' ').replace(/\s+/g, ' ').trim();
-
-				// Parse the data using regex
-				const regex = /(\w+)=([^=\s]+)/g;
-				let match;
-
-				while ((match = regex.exec(cleanedData)) !== null) {
-					parsedData[match[1]] = match[2] || '';
+			if (colour === "green") {
+				debugDataBuffer += `${msg}\n`;
+				if (debugDataBuffer.includes('N2LP=')) {
+					let cleanedData = debugDataBuffer.replace(/\r?\n|\r/g, ' ').replace(/\s+/g, ' ').trim();
+					const regex = /(\w+)=([^=\s]+)/g;
+					let match;
+					while ((match = regex.exec(cleanedData)) !== null) {
+						parsedData[match[1]] = match[2] || '';
+					}
+					debugDataBuffer = "";
 				}
-
-				// Log the parsed data
-				console.log(parsedData);
-
-				// Clear the buffer after parsing
-				debugDataBuffer = "";
 			}
 
 
@@ -743,6 +986,22 @@
 								const stateName = SystemState[state] || "UNKNOWN (" + state + ")";
 								const stateDisplay = document.getElementById('systemStateDisplay');
 								if (stateDisplay) stateDisplay.value = stateName;
+
+								if (sideStandbyWatchActive) {
+									if (Number(state) === 5) {
+										sideStandbyConsecutive += 1;
+										if (sideStandbyConsecutive >= 2) {
+											stopSideStandbyWatch();
+											enableSideCalibrationControls(true);
+											const sideHint = document.getElementById('sideCalibHint');
+											if (sideHint) {
+												sideHint.textContent = "已進入 STANDBY，現在可微調。";
+											}
+										}
+									} else {
+										sideStandbyConsecutive = 0;
+									}
+								}
 							}
 							if (index == 2) {
 								serial_status.innerHTML += "<font color='" + colour + "'>" + "onoff: " + value + "</font><br>";
@@ -827,6 +1086,10 @@
 					}
 				}
 			}
+
+			if (colour === "green" && dataString.includes(',')) {
+				parseProtocolMessage(dataString.trim());
+			}
 		}
 
 		function logCommand(command) {
@@ -840,48 +1103,64 @@
 			console.log('Command buffered: ' + command);
 		}
 
+		function queueBleWrite(message) {
+			if (!rxCharacteristic) {
+				return;
+			}
+			const encoder = new TextEncoder();
+			bleQueue.add(async () => {
+				await rxCharacteristic.writeValue(encoder.encode(message));
+			});
+		}
+
+		function normalizeCommand(command) {
+			return command.endsWith("\n") ? command : `${command}\n`;
+		}
+
+		function sendCommand(cmdStr, options = {}) {
+			const { track = true, show = true } = options;
+			if (!rxCharacteristic) {
+				return;
+			}
+			const msg = normalizeCommand(cmdStr);
+			const logText = msg.replace(/[\r\n]+$/, '');
+			if (track) {
+				logCommand(logText);
+			}
+			if (show) {
+				serial_message(logText, "orange");
+			}
+			queueBleWrite(msg);
+		}
+
+		function sendSilentCommand(cmdStr) {
+			if (!rxCharacteristic || !serial_ready) {
+				return;
+			}
+			sendCommand(cmdStr, { track: false, show: false });
+		}
+
 		var func_count = 0;
-		setInterval(async function () {
-			if (rxCharacteristic && serial_ready) {
+		setInterval(function () {
+			if (!rxCharacteristic || !serial_ready) {
+				return;
+			}
 
-				var pString = "";
-				if (func_count++ % 2 == 0) {
-					pString = "p" + "\n"; //serial_newline.value;
-				} else {
-					pString = "i" + "\n";
-				}
-				try {
-					var msg = pString;
-					//serial_message(msg,"orange");
-					//serial_text.value = "";
+			const basicCmd = (func_count++ % 2 === 0) ? "P" : "I";
+			sendSilentCommand(basicCmd);
 
-					let encoder = new TextEncoder();
-					bleQueue.add(async () => {
-						await rxCharacteristic.writeValue(encoder.encode(msg));
-					});
-				} catch (error) {
-					serial_message(error.message, "red");
+			if (workflowState === WORKFLOW.SUPINE || workflowState === WORKFLOW.SIDE || pendingAnchorTarget) {
+				sendSilentCommand("ANCHOR,STATUS");
+				if (anchorPollingTarget === "BSHS" || anchorPollingTarget === "BLHL") {
+					sendSilentCommand(`ANCHOR,GET,${anchorPollingTarget}`);
 				}
+			}
+
+			if (classifyStarted) {
+				sendSilentCommand("CLASSIFY,GET");
+				sendSilentCommand("PRED,GET");
 			}
 		}, 1000);
-
-		async function sendCommand(cmdStr) {
-			if (rxCharacteristic) {
-				try {
-					var msg = cmdStr;
-					logCommand(msg);
-					serial_message(msg, "orange");
-					serial_text.value = "";
-
-					let encoder = new TextEncoder();
-					bleQueue.add(async () => {
-						await rxCharacteristic.writeValue(encoder.encode(msg));
-					});
-				} catch (error) {
-					serial_message(error.message, "red");
-				}
-			}
-		}
 		let selectedCondition = null;
 		const numberInput1 = document.getElementById('numberInput1');
 		const numberInput2 = document.getElementById('numberInput2');
@@ -889,6 +1168,9 @@
 		const numberInput4 = document.getElementById('numberInput4');
 
 		document.addEventListener('DOMContentLoaded', function () {
+			setWorkflowState(WORKFLOW.UNCALIBRATED);
+			refreshAnchorBadgeUI();
+
 			const modal = document.getElementById('modal');
 			const openModalBtn = document.getElementById('openModalBtn');
 			const switchScreenBtn1 = document.getElementById('switchScreenBtn1');
@@ -915,7 +1197,7 @@
 				screen1.style.display = 'block';
 				screen2.style.display = 'none';
 				screen3.style.display = 'none';
-				sendCommand("DEBUG,");
+				sendCommand("DEBUG");
 			});
 
 			switchScreenBtn1.addEventListener('click', function () {
@@ -924,13 +1206,13 @@
 				screen1.style.display = 'none';
 				screen2.style.display = 'block';
 				screen3.style.display = 'none';
-				sendCommand("INIT,NORM,S,");
+				sendCommand("INIT,NORM,S");
 				if (parsedData.HSF) numberInput1.value = parsedData.HSF;
 				if (parsedData.N1SF) numberInput2.value = parsedData.N1SF;
 			});
 
 			switchScreenBtn2.addEventListener('click', function () {
-				sendCommand("INIT,NORM,L,");
+				sendCommand("INIT,NORM,L");
 				setTimeout(() => {
 
 					screen1.style.display = 'none';
@@ -956,68 +1238,237 @@
 
 			closeBtn.addEventListener('click', function () {
 				modal.style.display = 'none';
-				sendCommand("SET,OK,");
+				sendCommand("SET,OK");
 			});
 
 			increaseBtn1.addEventListener('click', function () {
 				if (numberInput1.value < 20) {
 					numberInput1.value = parseInt(numberInput1.value) + 1;
-					sendCommand("SET,NORM," + selectedCondition + ",S,HEAD," + numberInput1.value + ",");
+					sendCommand("SET,NORM," + selectedCondition + ",S,HEAD," + numberInput1.value);
 				}
 			});
 
 			decreaseBtn1.addEventListener('click', function () {
 				if (numberInput1.value > 5) {
 					numberInput1.value = parseInt(numberInput1.value) - 1;
-					sendCommand("SET,NORM," + selectedCondition + ",S,HEAD," + numberInput1.value + ",");
+					sendCommand("SET,NORM," + selectedCondition + ",S,HEAD," + numberInput1.value);
 				}
 			});
 
 			increaseBtn2.addEventListener('click', function () {
 				if (numberInput2.value < 20) {
 					numberInput2.value = parseInt(numberInput2.value) + 1;
-					sendCommand("SET,NORM," + selectedCondition + ",S,NECK," + numberInput2.value + ",");
+					sendCommand("SET,NORM," + selectedCondition + ",S,NECK," + numberInput2.value);
 				}
 			});
 
 			decreaseBtn2.addEventListener('click', function () {
 				if (numberInput2.value > 5) {
 					numberInput2.value = parseInt(numberInput2.value) - 1;
-					sendCommand("SET,NORM," + selectedCondition + ",S,NECK," + numberInput2.value + ",");
+					sendCommand("SET,NORM," + selectedCondition + ",S,NECK," + numberInput2.value);
 				}
 			});
 
 			increaseBtn3.addEventListener('click', function () {
 				if (numberInput3.value < 20) {
 					numberInput3.value = parseInt(numberInput3.value) + 1;
-					sendCommand("SET,NORM," + selectedCondition + ",L,HEAD," + numberInput3.value + ",");
+					sendCommand("SET,NORM," + selectedCondition + ",L,HEAD," + numberInput3.value);
 				}
 			});
 
 			decreaseBtn3.addEventListener('click', function () {
 				if (numberInput3.value > 5) {
 					numberInput3.value = parseInt(numberInput3.value) - 1;
-					sendCommand("SET,NORM," + selectedCondition + ",L,HEAD," + numberInput3.value + ",");
+					sendCommand("SET,NORM," + selectedCondition + ",L,HEAD," + numberInput3.value);
 				}
 			});
 
 			increaseBtn4.addEventListener('click', function () {
 				if (numberInput4.value < 20) {
 					numberInput4.value = parseInt(numberInput4.value) + 1;
-					sendCommand("SET,NORM," + selectedCondition + ",L,NECK," + numberInput4.value + ",");
+					sendCommand("SET,NORM," + selectedCondition + ",L,NECK," + numberInput4.value);
 				}
 			});
 
 			decreaseBtn4.addEventListener('click', function () {
 				if (numberInput4.value > 5) {
 					numberInput4.value = parseInt(numberInput4.value) - 1;
-					sendCommand("SET,NORM," + selectedCondition + ",L,NECK," + numberInput4.value + ",");
+					sendCommand("SET,NORM," + selectedCondition + ",L,NECK," + numberInput4.value);
 				}
+			});
+
+			const calibModal = document.getElementById('calibModal');
+			const openCalibBtn = document.getElementById('openCalibBtn');
+			const closeCalibModalBtn = document.getElementById('closeCalibModalBtn');
+			const calibMenuScreen = document.getElementById('calibMenuScreen');
+			const supineCalibScreen = document.getElementById('supineCalibScreen');
+			const sideCalibScreen = document.getElementById('sideCalibScreen');
+			const calibConditionForm = document.getElementById('calibConditionForm');
+			const startSupineCalibBtn = document.getElementById('startSupineCalibBtn');
+			const startSideCalibBtn = document.getElementById('startSideCalibBtn');
+			const backSupineCalibBtn = document.getElementById('backSupineCalibBtn');
+			const backSideCalibBtn = document.getElementById('backSideCalibBtn');
+			const completeSupineCalibBtn = document.getElementById('completeSupineCalibBtn');
+			const completeSideCalibBtn = document.getElementById('completeSideCalibBtn');
+			const supineHeadInput = document.getElementById('supineHeadInput');
+			const supineNeckInput = document.getElementById('supineNeckInput');
+			const sideHeadInput = document.getElementById('sideHeadInput');
+			const sideNeckInput = document.getElementById('sideNeckInput');
+			const supineCalibHint = document.getElementById('supineCalibHint');
+			const sideCalibHint = document.getElementById('sideCalibHint');
+
+			function showCalibScreen(name) {
+				if (!calibMenuScreen || !supineCalibScreen || !sideCalibScreen) {
+					return;
+				}
+				calibMenuScreen.style.display = (name === 'menu') ? 'block' : 'none';
+				supineCalibScreen.style.display = (name === 'supine') ? 'block' : 'none';
+				sideCalibScreen.style.display = (name === 'side') ? 'block' : 'none';
+			}
+
+			function getCalibCondition() {
+				return calibConditionForm?.querySelector('input[name="calibCondition"]:checked')?.value || "1";
+			}
+
+			function applyParsedDataToCalib() {
+				if (parsedData.HSF && supineHeadInput) supineHeadInput.value = parsedData.HSF;
+				if (parsedData.N1SF && supineNeckInput) supineNeckInput.value = parsedData.N1SF;
+				if (parsedData.HLF && sideHeadInput) sideHeadInput.value = parsedData.HLF;
+				if (parsedData.N1LF && sideNeckInput) sideNeckInput.value = parsedData.N1LF;
+			}
+
+			function makeStepHandler(inputNode, step, mode, channel) {
+				return function () {
+					if (!inputNode) {
+						return;
+					}
+					const current = Number(inputNode.value);
+					const next = Math.max(5, Math.min(20, current + step));
+					if (next !== current) {
+						inputNode.value = String(next);
+						sendCommand(`SET,NORM,${getCalibCondition()},${mode},${channel},${next}`);
+					}
+				};
+			}
+
+			document.getElementById('supineHeadPlus')?.addEventListener('click', makeStepHandler(supineHeadInput, 1, "S", "HEAD"));
+			document.getElementById('supineHeadMinus')?.addEventListener('click', makeStepHandler(supineHeadInput, -1, "S", "HEAD"));
+			document.getElementById('supineNeckPlus')?.addEventListener('click', makeStepHandler(supineNeckInput, 1, "S", "NECK"));
+			document.getElementById('supineNeckMinus')?.addEventListener('click', makeStepHandler(supineNeckInput, -1, "S", "NECK"));
+			document.getElementById('sideHeadPlus')?.addEventListener('click', makeStepHandler(sideHeadInput, 1, "L", "HEAD"));
+			document.getElementById('sideHeadMinus')?.addEventListener('click', makeStepHandler(sideHeadInput, -1, "L", "HEAD"));
+			document.getElementById('sideNeckPlus')?.addEventListener('click', makeStepHandler(sideNeckInput, 1, "L", "NECK"));
+			document.getElementById('sideNeckMinus')?.addEventListener('click', makeStepHandler(sideNeckInput, -1, "L", "NECK"));
+
+			openCalibBtn?.addEventListener('click', function () {
+				if (!serial_ready) {
+					serial_message("請先連線 BLE 後再進行微校正。", "red");
+					return;
+				}
+				calibModal.style.display = 'block';
+				showCalibScreen('menu');
+				sendCommand("DEBUG");
+				applyParsedDataToCalib();
+			});
+
+			closeCalibModalBtn?.addEventListener('click', function () {
+				if (pendingAnchorTarget) {
+					serial_message("校正進行中，請等待 ANCHOR 完成。", "orange");
+					return;
+				}
+				stopSideStandbyWatch();
+				calibModal.style.display = 'none';
+			});
+
+			startSupineCalibBtn?.addEventListener('click', function () {
+				setWorkflowState(WORKFLOW.SUPINE);
+				anchorPollingTarget = "BSHS";
+				awaitingInitMode = "S";
+				showCalibScreen('supine');
+				if (supineCalibHint) {
+					supineCalibHint.textContent = "完成校正會送出 ANCHOR,START,BSHS。";
+				}
+				sendCommand("INIT,NORM,S");
+				sendCommand("DEBUG");
+				applyParsedDataToCalib();
+			});
+
+			startSideCalibBtn?.addEventListener('click', function () {
+				setWorkflowState(WORKFLOW.SIDE);
+				anchorPollingTarget = "BLHL";
+				awaitingInitMode = "L";
+				showCalibScreen('side');
+				enableSideCalibrationControls(false);
+				sideStandbyWatchActive = true;
+				sideStandbyConsecutive = 0;
+				if (sideCalibHint) {
+					sideCalibHint.textContent = "等待 state==STANDBY 連續 2 筆後開放微調。";
+				}
+				if (sideStandbyTimer) {
+					clearTimeout(sideStandbyTimer);
+				}
+				sideStandbyTimer = setTimeout(() => {
+					if (sideStandbyWatchActive) {
+						stopSideStandbyWatch();
+						enableSideCalibrationControls(true);
+						if (sideCalibHint) {
+							sideCalibHint.textContent = "超過 8 秒仍未到位，已開放人工微調。";
+						}
+						serial_message("側躺等待逾時，改為人工微調。", "orange");
+					}
+				}, 8000);
+
+				sendCommand("INIT,NORM,L");
+				sendCommand("DEBUG");
+				applyParsedDataToCalib();
+			});
+
+			backSupineCalibBtn?.addEventListener('click', function () {
+				if (pendingAnchorTarget === "BSHS") {
+					serial_message("BSHS 校正中，請先等待結果。", "orange");
+					return;
+				}
+				showCalibScreen('menu');
+			});
+
+			backSideCalibBtn?.addEventListener('click', function () {
+				if (pendingAnchorTarget === "BLHL") {
+					serial_message("BLHL 校正中，請先等待結果。", "orange");
+					return;
+				}
+				stopSideStandbyWatch();
+				showCalibScreen('menu');
+			});
+
+			completeSupineCalibBtn?.addEventListener('click', function () {
+				pendingAnchorTarget = "BSHS";
+				if (supineCalibHint) {
+					supineCalibHint.textContent = "正在擷取 BSHS anchor，請保持姿勢。";
+				}
+				sendCommand("SET,OK");
+				sendCommand("ANCHOR,START,BSHS");
+			});
+
+			completeSideCalibBtn?.addEventListener('click', function () {
+				pendingAnchorTarget = "BLHL";
+				if (sideCalibHint) {
+					sideCalibHint.textContent = "正在擷取 BLHL anchor，請保持姿勢。";
+				}
+				sendCommand("SET,OK");
+				sendCommand("ANCHOR,START,BLHL");
 			});
 
 			window.addEventListener('click', function (event) {
 				if (event.target === modal) {
 					modal.style.display = 'none';
+				}
+				if (event.target === calibModal) {
+					if (pendingAnchorTarget) {
+						serial_message("校正進行中，請等待 ANCHOR 完成。", "orange");
+						return;
+					}
+					stopSideStandbyWatch();
+					calibModal.style.display = 'none';
 				}
 			});
 		});

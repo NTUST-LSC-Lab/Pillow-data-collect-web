@@ -26,7 +26,7 @@ https://fustyles.github.io/webduino/WebSerial.html
 </head>
 
 <body>
-	<div id="title">台科大林上智教授團隊智慧枕墊資料收集系統</div>
+	<div id="title">台科大智慧枕墊資料收集系統</div>
 
 	<main class="app-layout">
 		<aside class="left-panel">
@@ -116,9 +116,54 @@ https://fustyles.github.io/webduino/WebSerial.html
 					</div>
 					<div class="button-row">
 						<button type="button" id="userSet">設定</button>
+						<button id="openCalibBtn" type="button">微校正</button>
 						<button id="openModalBtn" type="button">微調</button>
 					</div>
 				</form>
+			</section>
+
+			<section class="panel-card">
+				<h2>校正與分類狀態</h2>
+				<div class="calib-top-row">
+					<div class="state-table">
+						<div>流程狀態</div>
+						<div><span id="workflowStateBadge" class="pill">未校正</span></div>
+						<div>BSHS 校正</div>
+						<div><span id="anchorBshsStatus" class="pill pill-pending">未完成</span></div>
+						<div>BLHL 校正</div>
+						<div><span id="anchorBlhlStatus" class="pill pill-pending">未完成</span></div>
+						<div>Anchor State</div>
+						<div id="anchorStateValue">IDLE</div>
+						<div>Anchor Target</div>
+						<div id="anchorTargetValue">NONE</div>
+					</div>
+
+					<div class="info-block anchor-info-block">
+						<div class="info-title">Anchor 數值</div>
+						<div class="kv"><span>BSHS</span><span id="anchorBshsValue">pm:- pn:- ph:- head:- neck:-</span></div>
+						<div class="kv"><span>BLHL</span><span id="anchorBlhlValue">pm:- pn:- ph:- head:- neck:-</span></div>
+					</div>
+				</div>
+
+				<div class="pose-pred-row">
+					<div class="info-block">
+						<div class="info-title">即時姿勢</div>
+						<div class="kv"><span>smoothLabel</span><span id="poseSmoothLabel">-</span></div>
+						<div class="kv"><span>rawLabel</span><span id="poseRawLabel">-</span></div>
+						<div class="kv"><span>更新時間</span><span id="poseUpdateTime">-</span></div>
+					</div>
+
+					<details class="info-block pred-block">
+						<summary>展開分數與預測控制</summary>
+						<div class="kv"><span>scoreE</span><span id="scoreEValue">-</span></div>
+						<div class="kv"><span>scoreSupine</span><span id="scoreSupineValue">-</span></div>
+						<div class="kv"><span>scoreSideMean</span><span id="scoreSideMeanValue">-</span></div>
+						<div class="kv"><span>scorePmRule</span><span id="scorePmRuleValue">-</span></div>
+						<div class="kv"><span>PRED enabled/stage</span><span id="predStageValue">-</span></div>
+						<div class="kv"><span>頸部 +/- ΔADC</span><span id="predNeckDelta">-</span></div>
+						<div class="kv"><span>頭部 +/- ΔADC</span><span id="predHeadDelta">-</span></div>
+					</details>
+				</div>
 			</section>
 
 			<section class="panel-card">
@@ -214,6 +259,77 @@ https://fustyles.github.io/webduino/WebSerial.html
 				<div class="button-container">
 					<button id="backBtn2">回到上一頁</button>
 					<button id="closeBtn">結束</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div id="calibModal" class="modal">
+		<div class="modal-content">
+			<div id="calibMenuScreen" class="screen">
+				<h1>微校正流程</h1>
+				<p>先選擇頸椎狀態，再進入仰躺或側躺校正。</p>
+				<form id="calibConditionForm">
+					<label><input type="radio" name="calibCondition" value="1" checked> 健康</label><br>
+					<label><input type="radio" name="calibCondition" value="2"> 輕度退化</label><br>
+					<label><input type="radio" name="calibCondition" value="3"> 中度退化</label><br>
+					<label><input type="radio" name="calibCondition" value="4"> 重度退化</label><br>
+					<label><input type="radio" name="calibCondition" value="5"> 有開刀過</label>
+				</form>
+				<div class="button-container">
+					<button id="startSupineCalibBtn" type="button">仰躺校正</button>
+					<button id="startSideCalibBtn" type="button">側躺校正</button>
+				</div>
+				<div class="button-container">
+					<button id="closeCalibModalBtn" type="button">關閉</button>
+				</div>
+			</div>
+
+			<div id="supineCalibScreen" class="screen" style="display:none;">
+				<h1>仰躺校正</h1>
+				<div class="calib-image-box">
+					<img src="../Images/s.png" style="height: 100%">
+				</div>
+				<div>
+					<label for="supineHeadInput">仰躺頭部高度:</label>
+					<input type="number" id="supineHeadInput" value="7" min="5" max="20" style="width: 50px;">
+					<button id="supineHeadPlus" type="button">+</button>
+					<button id="supineHeadMinus" type="button">-</button>
+				</div>
+				<div>
+					<label for="supineNeckInput">仰躺頸部高度:</label>
+					<input type="number" id="supineNeckInput" value="10" min="5" max="20" style="width: 50px;">
+					<button id="supineNeckPlus" type="button">+</button>
+					<button id="supineNeckMinus" type="button">-</button>
+				</div>
+				<p id="supineCalibHint" class="calib-hint"></p>
+				<div class="button-container">
+					<button id="backSupineCalibBtn" type="button">回上一頁</button>
+					<button id="completeSupineCalibBtn" type="button">完成校正</button>
+				</div>
+			</div>
+
+			<div id="sideCalibScreen" class="screen" style="display:none;">
+				<h1>側躺校正</h1>
+				<div class="calib-image-box">
+					<img src="../Images/l.png" style="height: 100%">
+				</div>
+				<div>
+					<label for="sideHeadInput">側躺頭部高度:</label>
+					<input type="number" id="sideHeadInput" value="14" min="5" max="20" style="width: 50px;">
+					<button id="sideHeadPlus" type="button">+</button>
+					<button id="sideHeadMinus" type="button">-</button>
+				</div>
+				<div>
+					<label for="sideNeckInput">側躺頸部高度:</label>
+					<input type="number" id="sideNeckInput" value="16" min="5" max="20" style="width: 50px;">
+					<button id="sideNeckPlus" type="button">+</button>
+					<button id="sideNeckMinus" type="button">-</button>
+				</div>
+				<p id="sideCalibHint" class="calib-hint"></p>
+				<div class="button-container">
+					<button id="backSideCalibBtn" type="button">回上一頁</button>
+					<button id="completeSideCalibBtn" type="button">完成校正</button>
 				</div>
 			</div>
 		</div>
