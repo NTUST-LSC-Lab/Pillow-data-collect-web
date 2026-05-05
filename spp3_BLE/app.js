@@ -1496,7 +1496,7 @@
 
 			openCalibBtn?.addEventListener('click', function () {
 				if (!serial_ready) {
-					serial_message("請先連線 BLE 後再進行微校正。", "red");
+					serial_message("請先連線 BLE 後再進行初始校正。", "red");
 					return;
 				}
 				calibModal.style.display = 'block';
