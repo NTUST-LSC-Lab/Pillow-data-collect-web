@@ -542,7 +542,7 @@
 					let weight = document.getElementById('weight').value;
 					let infoString = `${gender},${age},${height},${weight}`;
 
-					var msg = "user," + infoString;
+					var msg = "USER," + infoString;
 					logCommand(msg);
 					serial_message(msg, "orange");
 					serial_text.value = "";
@@ -645,10 +645,17 @@
 		let classifyStarted = false;
 		let classifyStartRequested = false;
 		let predEnabled = false;
+		let predStartRequested = false;
+		let classifyStartAttempts = 0;
+		let predStartAttempts = 0;
+		let classifyStartRetryTimer = null;
+		let predStartRetryTimer = null;
 		let sideStandbyWatchActive = false;
 		let sideStandbyConsecutive = 0;
 		let sideStandbyTimer = null;
 		let awaitingInitMode = null;
+		const AUTO_START_MAX_ATTEMPTS = 3;
+		const AUTO_START_RETRY_MS = 2500;
 
 		function safeSetText(el, text) {
 			if (el) {
@@ -719,15 +726,91 @@
 			return `${sign}${diff.toFixed(1)}`;
 		}
 
+		function clearClassifyStartRetry() {
+			if (classifyStartRetryTimer) {
+				clearTimeout(classifyStartRetryTimer);
+				classifyStartRetryTimer = null;
+			}
+		}
+
+		function clearPredStartRetry() {
+			if (predStartRetryTimer) {
+				clearTimeout(predStartRetryTimer);
+				predStartRetryTimer = null;
+			}
+		}
+
+		function resetAutoControlStartState() {
+			clearClassifyStartRetry();
+			clearPredStartRetry();
+			classifyStarted = false;
+			classifyStartRequested = false;
+			predEnabled = false;
+			predStartRequested = false;
+			classifyStartAttempts = 0;
+			predStartAttempts = 0;
+		}
+
+		function requestPredStart() {
+			if (!classifyStarted || predEnabled || predStartRequested) {
+				return;
+			}
+			if (predStartAttempts >= AUTO_START_MAX_ATTEMPTS) {
+				serial_message("PRED,START 啟動失敗，請確認 USER、anchor 與壓力資料是否完整。", "red");
+				return;
+			}
+
+			predStartRequested = true;
+			predStartAttempts += 1;
+			sendCommand("PRED,START");
+			clearPredStartRetry();
+			predStartRetryTimer = setTimeout(() => {
+				if (!predEnabled && predStartRequested) {
+					predStartRequested = false;
+					if (predStartAttempts < AUTO_START_MAX_ATTEMPTS) {
+						serial_message(`PRED,START 未收到 OK，重試 ${predStartAttempts + 1}/${AUTO_START_MAX_ATTEMPTS}。`, "orange");
+						requestPredStart();
+					} else {
+						serial_message("PRED,START 未收到 OK，自動高度調整未確認啟動。", "red");
+					}
+				}
+			}, AUTO_START_RETRY_MS);
+		}
+
+		function requestClassifyStart() {
+			if (!anchorDone.BSHS || !anchorDone.BLHL || classifyStarted || classifyStartRequested) {
+				return;
+			}
+			if (classifyStartAttempts >= AUTO_START_MAX_ATTEMPTS) {
+				serial_message("CLASSIFY,START 啟動失敗，請確認 BSHS 與 BLHL anchor 是否都存在。", "red");
+				return;
+			}
+
+			classifyStartRequested = true;
+			classifyStartAttempts += 1;
+			if (classifyStartAttempts === 1) {
+				sendCommand("MODE,NORM");
+			}
+			sendCommand("CLASSIFY,START");
+			clearClassifyStartRetry();
+			classifyStartRetryTimer = setTimeout(() => {
+				if (!classifyStarted && classifyStartRequested) {
+					classifyStartRequested = false;
+					if (classifyStartAttempts < AUTO_START_MAX_ATTEMPTS) {
+						serial_message(`CLASSIFY,START 未收到 OK，重試 ${classifyStartAttempts + 1}/${AUTO_START_MAX_ATTEMPTS}。`, "orange");
+						requestClassifyStart();
+					} else {
+						serial_message("CLASSIFY,START 未收到 OK，姿勢辨識未確認啟動。", "red");
+					}
+				}
+			}, AUTO_START_RETRY_MS);
+		}
+
 		function maybeStartClassification() {
 			if (!anchorDone.BSHS || !anchorDone.BLHL) {
 				return;
 			}
-			if (classifyStarted || classifyStartRequested) {
-				return;
-			}
-			classifyStartRequested = true;
-			sendCommand("CLASSIFY,START");
+			requestClassifyStart();
 		}
 
 		function parseProtocolMessage(dataString) {
@@ -746,6 +829,12 @@
 				if (parts[1] === "OK") {
 					if (parts[2] === "START" && parts.length >= 4) {
 						anchorPollingTarget = parts[3];
+						if (parts[3] === "BSHS" || parts[3] === "BLHL") {
+							resetAutoControlStartState();
+							anchorDone[parts[3]] = false;
+							anchorDataByTarget[parts[3]] = null;
+							refreshAnchorBadgeUI();
+						}
 						return;
 					}
 					if ((parts[2] === "BSHS" || parts[2] === "BLHL") && parts.length >= 8) {
@@ -790,6 +879,7 @@
 					if (parts[2] === "CLEAR") {
 						anchorDone = { BSHS: false, BLHL: false };
 						anchorDataByTarget = { BSHS: null, BLHL: null };
+						resetAutoControlStartState();
 						refreshAnchorBadgeUI();
 						safeSetText(anchorBshsValue, "pm:- pn:- ph:- head:- neck:-");
 						safeSetText(anchorBlhlValue, "pm:- pn:- ph:- head:- neck:-");
@@ -817,13 +907,14 @@
 					if (parts[2] === "START") {
 						classifyStarted = true;
 						classifyStartRequested = false;
+						classifyStartAttempts = 0;
+						clearClassifyStartRetry();
 						setWorkflowState(WORKFLOW.CLASSIFYING);
+						requestPredStart();
 						return;
 					}
 					if (parts[2] === "STOP") {
-						classifyStarted = false;
-						classifyStartRequested = false;
-						predEnabled = false;
+						resetAutoControlStartState();
 						setWorkflowState(WORKFLOW.UNCALIBRATED);
 						return;
 					}
@@ -838,24 +929,67 @@
 					}
 				}
 				if (parts[1] === "ERR") {
-					classifyStartRequested = false;
+					if (classifyStartRequested) {
+						clearClassifyStartRetry();
+						classifyStartRequested = false;
+						if (parts[2] === "ANCHOR_MISSING") {
+							classifyStartAttempts = AUTO_START_MAX_ATTEMPTS;
+							serial_message("CLASSIFY,START 失敗：ESP32 表示 anchor 不完整，請重新確認 BSHS/BLHL。", "red");
+						} else if (classifyStartAttempts < AUTO_START_MAX_ATTEMPTS) {
+							setTimeout(requestClassifyStart, 1000);
+						} else {
+							serial_message("CLASSIFY,START 失敗，請查看 ESP32 回覆。", "red");
+						}
+					}
 				}
 				return;
 			}
 
-			if (parts[0] === "PRED" && parts[1] === "OK") {
-				if (parts[2] === "START" || parts[2] === "STOP") {
+			if (parts[0] === "PRED") {
+				if (parts[1] === "OK" && parts[2] === "START") {
+					predStartRequested = false;
+					predStartAttempts = 0;
+					predEnabled = true;
+					clearPredStartRetry();
+					setWorkflowState(WORKFLOW.AUTOCONTROL);
 					return;
 				}
-				if (parts.length >= 11) {
-					predEnabled = parts[2] === "1";
-					safeSetText(predStageValue, `${parts[2]}/${parts[3]}`);
-					safeSetText(predNeckDelta, formatDelta(parts[7], parts[8]));
-					safeSetText(predHeadDelta, formatDelta(parts[9], parts[10]));
-					if (predEnabled) {
-						setWorkflowState(WORKFLOW.AUTOCONTROL);
-					} else if (classifyStarted) {
-						setWorkflowState(WORKFLOW.CLASSIFYING);
+				if (parts[1] === "OK" && parts[2] === "STOP") {
+					predStartRequested = false;
+					predEnabled = false;
+					clearPredStartRetry();
+					setWorkflowState(classifyStarted ? WORKFLOW.CLASSIFYING : WORKFLOW.UNCALIBRATED);
+					return;
+				}
+				if (parts[1] === "OK") {
+					if (parts.length >= 11) {
+						predEnabled = parts[2] === "1";
+						if (predEnabled) {
+							predStartRequested = false;
+							predStartAttempts = 0;
+							clearPredStartRetry();
+						}
+						safeSetText(predStageValue, `${parts[2]}/${parts[3]}`);
+						safeSetText(predNeckDelta, formatDelta(parts[7], parts[8]));
+						safeSetText(predHeadDelta, formatDelta(parts[9], parts[10]));
+						if (predEnabled) {
+							setWorkflowState(WORKFLOW.AUTOCONTROL);
+						} else if (classifyStarted) {
+							setWorkflowState(WORKFLOW.CLASSIFYING);
+						}
+					}
+					return;
+				}
+				if (parts[1] === "ERR" && predStartRequested) {
+					clearPredStartRetry();
+					predStartRequested = false;
+					if (parts[2] === "NOT_READY") {
+						serial_message("PRED,START 尚未就緒，確認 USER/anchor/壓力資料後重試。", "orange");
+					}
+					if (predStartAttempts < AUTO_START_MAX_ATTEMPTS) {
+						setTimeout(requestPredStart, 1000);
+					} else {
+						serial_message("PRED,START 失敗，自動高度調整未啟動。", "red");
 					}
 				}
 				return;
@@ -1472,4 +1606,3 @@
 				}
 			});
 		});
-

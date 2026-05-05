@@ -1,14 +1,12 @@
-﻿# Pillow-data-collect-web
+# Pillow Data Collect Web - spp3_BLE_cls_pre_v2
 
-此專案目前包含兩個版本：
+這個 repo 是 iPillow 資料收集與 Web 控制介面，分成 Web Bluetooth 與 Web Serial 兩個版本。`spp3_BLE_cls_pre_v2` 分支的重點是讓 Web BLE 版可以配合新版 ESP32 韌體完成：
 
-- `spp3_BLE/`：Web Bluetooth 版本
-- `spp3/`：Web Serial 版本
-
-兩個版本共用：
-
-- `chart.umd.min.js`（Chart.js）
-- `Images/`（`s.png`、`l.png`）
+- 使用者資料設定
+- BSHS / BLHL anchor 校正
+- 即時姿勢分類
+- PRED 自動高度調整啟動
+- 壓力與狀態資料收集匯出
 
 ## 目錄結構
 
@@ -29,21 +27,18 @@ Pillow-data-collect-web/
 └─ README.md
 ```
 
-## 環境需求
+## 版本說明
 
-- 建議使用最新版 Chrome / Edge
-- 必須在安全來源執行：`https://` 或 `http://localhost`
-- 不建議直接雙擊 `index.html`
+- `spp3_BLE/`：目前主要使用版本，透過 Web Bluetooth 連接 ESP32。
+- `spp3/`：舊版 Web Serial 介面，保留做資料收集或測試。
+- `chart.umd.min.js`：本地 Chart.js 檔案，供圖表顯示使用。
+- `Images/`：仰躺與側躺校正畫面圖片。
 
-版本需求差異：
+## 執行環境
 
-- `spp3_BLE` 需要瀏覽器支援 Web Bluetooth
-- `spp3` 需要瀏覽器支援 Web Serial
+建議使用最新版 Chrome 或 Edge。
 
-## 快速開始
-
-1. 在專案根目錄啟動本地伺服器
-2. 用 Chrome / Edge 開啟對應版本網址
+Web Bluetooth 需要安全來源，所以不要直接雙擊 `index.html`。請用本地伺服器開啟：
 
 ```bash
 python -m http.server 8080
@@ -54,44 +49,127 @@ python -m http.server 8080
 - BLE 版：`http://localhost:8080/spp3_BLE/`
 - Serial 版：`http://localhost:8080/spp3/`
 
-## 功能摘要
+## ESP32 協定需求
 
-- 連線／斷線
-- 發送文字或 `Uint8Array` 指令
-- 即時圖表更新（壓力、差值、平均）
-- 系統狀態與 S1~S6 指示燈
-- IndexedDB 儲存
-- 匯出 CSV/TXT
+此分支預期 ESP32 韌體支援以下 BLE 指令與回覆：
 
-## 注意事項
+```text
+USER,<gender>,<age>,<height>,<weight>
+INIT,NORM,S
+INIT,NORM,L
+SET,OK
+MODE,NORM
+ANCHOR,START,BSHS
+ANCHOR,START,BLHL
+ANCHOR,STATUS
+ANCHOR,GET,BSHS
+ANCHOR,GET,BLHL
+CLASSIFY,START
+CLASSIFY,GET
+PRED,START
+PRED,GET
+P
+I
+DEBUG
+```
 
-- 若裝置掃描不到，先確認裝置可被偵測且連線模式正確（BLE 或 Serial）
-- 若按鈕無反應，先確認連線是否成功
-- 若文字顯示亂碼，請確認檔案編碼為 UTF-8
+Web 端會以換行結尾送出指令，ESP32 回覆也需要以換行結尾，前端才會正確切分訊息。
 
-## 今日更新紀錄
+## Web BLE 流程
 
-更新時間（Asia/Taipei）：`2026-04-13 11:30:28 +08:00`
+1. 按下 `Connect BLE` 連線 ESP32。
+2. 填入性別、年齡、身高、體重，按下 `設定`。
+3. Web 端送出 `USER,...`，ESP32 應回覆 `USER,OK`。
+4. 進入微校正，先做仰躺 BSHS。
+5. 按下完成校正後，Web 端送出：
 
-本次主要更新 `spp3_BLE` 版本，重點如下：
+```text
+SET,OK
+ANCHOR,START,BSHS
+```
 
-- 新增並整合「校正與分類狀態」面板資訊：
-  - 流程狀態（未校正 / 分類中 / 自動控制）
-  - BSHS / BLHL 校正狀態徽章
-  - Anchor State / Anchor Target
-  - Anchor 數值（BSHS、BLHL）
-- 新增即時分類與預測資訊顯示：
-  - 即時姿勢（`smoothLabel`、`rawLabel`、更新時間）
-  - 分數與預測控制（`scoreE`、`scoreSupine`、`scoreSideMean`、`scorePmRule`、`PRED enabled/stage`、頸/頭部 `ΔADC`）
-- 調整版面配置與可讀性：
-  - `Anchor 數值` 移到右側區塊
-  - `即時姿勢` 與 `展開分數與預測控制` 改為桌面版左右排列、手機版自動改上下排列
-  - `Anchor 數值` 與 `展開分數與預測控制` 右欄寬度統一
-  - 相關資訊區塊字體放大
-  - 修正 100% 縮放下區塊被擠壓問題，優化「訊息紀錄」顯示高度
-- BLE 訊息解析與畫面同步：
-  - 前端收到 `ANCHOR / CLASSIFY / PRED` 訊息後，會即時更新上述欄位（不需重新整理頁面）
+6. Web 端輪詢 `ANCHOR,STATUS` 與 `ANCHOR,GET,BSHS`，直到收到 `ANCHOR,OK,BSHS,...`。
+7. 再做側躺 BLHL，流程同上，直到收到 `ANCHOR,OK,BLHL,...`。
+8. 兩個 anchor 都完成後，Web 端自動送出：
+
+```text
+MODE,NORM
+CLASSIFY,START
+```
+
+9. 收到 `CLASSIFY,OK,START` 後，Web 端再送出：
+
+```text
+PRED,START
+```
+
+10. 收到 `PRED,OK,START` 後，代表自動高度調整已確認啟動。
+
+## v2 重點修改
+
+本分支針對 `spp3_BLE/app.js` 做了以下調整：
+
+- 使用者資料指令改為大寫 `USER,...`，與 ESP32 韌體協定一致。
+- 兩個 anchor 都完成後，會先送 `MODE,NORM`，再送 `CLASSIFY,START`。
+- 收到 `CLASSIFY,OK,START` 後，才送 `PRED,START`。
+- `CLASSIFY,START` 與 `PRED,START` 加入最多 3 次 retry。
+- 若 ESP32 回覆 `CLASSIFY,ERR,ANCHOR_MISSING` 或 `PRED,ERR,NOT_READY`，Web 端會在訊息紀錄中顯示明確錯誤。
+- 重新開始 anchor、清除 anchor、停止分類時，會重置前端自動控制狀態，避免沿用舊狀態。
+
+## 實機驗證標準
+
+燒錄新版 ESP32 後，使用 `spp3_BLE/` 進行校正。訊息紀錄中應依序看到：
+
+```text
+USER,OK
+ANCHOR,OK,START,BSHS
+ANCHOR,OK,BSHS,...
+ANCHOR,OK,START,BLHL
+ANCHOR,OK,BLHL,...
+MODE,OK
+CLASSIFY,OK,START
+PRED,OK,START
+```
+
+後續輪詢 `CLASSIFY,GET` 應看到：
+
+```text
+CLASSIFY,OK,<smoothLabel>,<rawLabel>,...
+```
+
+輪詢 `PRED,GET` 應看到：
+
+```text
+PRED,OK,1,...
+```
+
+其中 `PRED,OK,1,...` 代表 PRED 已啟用，Web 端不只是看到姿勢分類，也已確認 ESP32 進入自動高度調整流程。
+
+## 資料收集
+
+Web 端會定期送出：
+
+```text
+P
+I
+```
+
+並將壓力、差值、平均、state、on/off event、姿勢欄位寫入 IndexedDB。按下 `Export Data` 可匯出 CSV/TXT。
+
+## 常見問題
+
+若沒有進入自動調整，請先檢查訊息紀錄是否有：
+
+- `USER,OK`
+- `ANCHOR,OK,BSHS,...`
+- `ANCHOR,OK,BLHL,...`
+- `CLASSIFY,OK,START`
+- `PRED,OK,START`
+
+若只有看到 `CLASSIFY,OK,START`，但沒有 `PRED,OK,START`，代表目前只啟動姿勢分類，自動高度調整尚未確認啟動。
+
+若收到 `PRED,ERR,NOT_READY`，通常代表 USER、anchor 或壓力資料尚未完整，請重新確認使用者資料與兩個 anchor 是否都完成。
 
 ## 授權
 
-原始程式碼註解標示為 `Apache-2.0`（請以原始檔案標頭為準）。
+原始程式碼註解標示為 `Apache-2.0`，請以各檔案標頭為準。
