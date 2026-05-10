@@ -62,6 +62,32 @@ https://fustyles.github.io/webduino/WebSerial.html
 					<input type="text" id="serial_uint8" value="" placeholder="例如: 1,2,3">
 				</div>
 				<button id="serial_sendUint8" class="full">Send Uint8Array</button>
+
+				<details class="manual-control-block manual-control-details">
+					<summary class="manual-control-summary">
+						<span>展開 ESP32 Manual 控制</span>
+						<span id="espManualStatus" class="pill pill-pending">未進入</span>
+					</summary>
+					<div class="manual-command-grid">
+						<button id="espManualEnterBtn" type="button">進入 ESP32 Manual</button>
+						<button id="espManualStopBtn" type="button">停止</button>
+						<button id="monitorFillBtn" type="button">Monitor 充氣</button>
+						<button id="monitorDrainBtn" type="button">Monitor 吸氣</button>
+						<button id="neckFillBtn" type="button">Neck 充氣</button>
+						<button id="neckDrainBtn" type="button">Neck 吸氣</button>
+						<button id="headFillBtn" type="button">Head 充氣</button>
+						<button id="headDrainBtn" type="button">Head 吸氣</button>
+						<button id="allDrainBtn" type="button">全部同時洩氣</button>
+					</div>
+					<div class="manual-startup-grid">
+						<label for="manualStartupHead">Head 目標</label>
+						<input type="number" id="manualStartupHead" value="7.0" min="7" max="16" step="0.5">
+						<label for="manualStartupNeck">Neck 目標</label>
+						<input type="number" id="manualStartupNeck" value="10.0" min="10" max="16" step="0.5">
+					</div>
+					<button id="manualStartupBtn" type="button" class="full">離開 ESP32 Manual 並回開機流程</button>
+					<div id="espManualAck" class="mode-ack">ESP32 Manual 狀態：尚未送出</div>
+				</details>
 			</section>
 
 			<section class="panel-card status-card">
@@ -122,8 +148,24 @@ https://fustyles.github.io/webduino/WebSerial.html
 				</form>
 			</section>
 
-			<section class="panel-card">
-				<h2>校正與分類狀態</h2>
+			<section class="panel-card status-accordion">
+				<div class="accordion-header">
+					<h2>校正與分類狀態</h2>
+					<button id="statusAccordionToggle" type="button" class="accordion-toggle" aria-expanded="true" aria-controls="statusAccordionBody">收合</button>
+				</div>
+				<div id="statusAccordionBody" class="accordion-body">
+				<div class="mode-control-block">
+					<div>
+						<div class="info-title">目前模式</div>
+						<div><span id="controlModeBadge" class="pill pill-pending">手動模式</span></div>
+					</div>
+					<div class="mode-button-row">
+						<button id="manualModeBtn" type="button" class="primary mode-active">手動模式</button>
+						<button id="autoModeBtn" type="button">自動模式</button>
+					</div>
+					<div id="controlModeHint" class="calib-hint">手動模式不會自動啟動分類與高度自動調整。</div>
+					<div id="controlModeAck" class="mode-ack">模式指令狀態：尚未送出</div>
+				</div>
 				<div class="calib-top-row">
 					<div class="state-table">
 						<div>流程狀態</div>
@@ -164,6 +206,43 @@ https://fustyles.github.io/webduino/WebSerial.html
 						<div class="kv"><span>頭部 +/- ΔADC</span><span id="predHeadDelta">-</span></div>
 					</details>
 				</div>
+				</div>
+			</section>
+
+			<section class="panel-card monitor-card">
+				<h2>高度與壓力監測</h2>
+				<div class="monitor-current-grid">
+					<div class="monitor-tile">
+						<div class="monitor-label">Monitor 壓力</div>
+						<div id="monitorPressureValue" class="monitor-value">-</div>
+					</div>
+					<div class="monitor-tile">
+						<div class="monitor-label">Neck 壓力</div>
+						<div id="neckPressureValue" class="monitor-value">-</div>
+					</div>
+					<div class="monitor-tile">
+						<div class="monitor-label">Head 壓力</div>
+						<div id="headPressureValue" class="monitor-value">-</div>
+					</div>
+					<div class="monitor-tile">
+						<div class="monitor-label">Head 高度</div>
+						<div id="headHeightValue" class="monitor-value">目標 - / 目前 -</div>
+					</div>
+					<div class="monitor-tile">
+						<div class="monitor-label">Neck 高度</div>
+						<div id="neckHeightValue" class="monitor-value">目標 - / 目前 -</div>
+					</div>
+					<div class="monitor-tile">
+						<div class="monitor-label">更新時間</div>
+						<div id="monitorUpdateTime" class="monitor-value">-</div>
+					</div>
+				</div>
+				<div id="heightPressureLog" class="monitor-log"></div>
+				<div class="scroll-options">
+					<label><input type="radio" name="monitorScrollControl" value="auto" checked> 自動滾動</label>
+					<label><input type="radio" name="monitorScrollControl" value="fixed"> 固定滾動</label>
+				</div>
+				<button id="monitorClearLog" type="button" class="full">清空監測紀錄</button>
 			</section>
 
 			<section class="panel-card">
@@ -223,16 +302,18 @@ https://fustyles.github.io/webduino/WebSerial.html
 				</div>
 				<div>
 					<label for="numberInput1">仰躺頭部高度:</label>
-					<input type="number" id="numberInput1" value="7" min="5" max="20" style="width: 50px;">
+					<input type="number" id="numberInput1" value="7" min="7" max="16" step="0.5">
 					<button id="increaseBtn1">+</button>
 					<button id="decreaseBtn1">-</button>
 				</div>
 				<div>
 					<label for="numberInput2">仰躺頸部高度:</label>
-					<input type="number" id="numberInput2" value="10" min="5" max="20" style="width: 50px;">
+					<input type="number" id="numberInput2" value="10" min="10" max="16" step="0.5">
 					<button id="increaseBtn2">+</button>
 					<button id="decreaseBtn2">-</button>
 				</div>
+				<p id="microSupineHint" class="calib-hint"></p>
+				<button id="confirmSupineAdjustBtn" type="button" class="full">確定調整仰躺高度</button>
 				<div class="button-container">
 					<button id="backBtn1">回到上一頁</button>
 					<button id="switchScreenBtn2">切換到第三畫面</button>
@@ -246,16 +327,18 @@ https://fustyles.github.io/webduino/WebSerial.html
 				</div>
 				<div>
 					<label for="numberInput3">側躺頭部高度:</label>
-					<input type="number" id="numberInput3" value="14" min="5" max="20" style="width: 50px;">
+					<input type="number" id="numberInput3" value="14" min="7" max="16" step="0.5">
 					<button id="increaseBtn3">+</button>
 					<button id="decreaseBtn3">-</button>
 				</div>
 				<div>
 					<label for="numberInput4">側躺頸部高度:</label>
-					<input type="number" id="numberInput4" value="16" min="5" max="20" style="width: 50px;">
+					<input type="number" id="numberInput4" value="16" min="10" max="16" step="0.5">
 					<button id="increaseBtn4">+</button>
 					<button id="decreaseBtn4">-</button>
 				</div>
+				<p id="microSideHint" class="calib-hint"></p>
+				<button id="confirmSideAdjustBtn" type="button" class="full">確定調整側躺高度</button>
 				<div class="button-container">
 					<button id="backBtn2">回到上一頁</button>
 					<button id="closeBtn">結束</button>
@@ -292,17 +375,18 @@ https://fustyles.github.io/webduino/WebSerial.html
 				</div>
 				<div>
 					<label for="supineHeadInput">仰躺頭部高度:</label>
-					<input type="number" id="supineHeadInput" value="7" min="5" max="20" style="width: 50px;">
+					<input type="number" id="supineHeadInput" value="7" min="7" max="16" step="0.5">
 					<button id="supineHeadPlus" type="button">+</button>
 					<button id="supineHeadMinus" type="button">-</button>
 				</div>
 				<div>
 					<label for="supineNeckInput">仰躺頸部高度:</label>
-					<input type="number" id="supineNeckInput" value="10" min="5" max="20" style="width: 50px;">
+					<input type="number" id="supineNeckInput" value="10" min="10" max="16" step="0.5">
 					<button id="supineNeckPlus" type="button">+</button>
 					<button id="supineNeckMinus" type="button">-</button>
 				</div>
 				<p id="supineCalibHint" class="calib-hint"></p>
+				<button id="confirmSupineCalibAdjustBtn" type="button" class="full">確定調整仰躺高度</button>
 				<div class="button-container">
 					<button id="backSupineCalibBtn" type="button">回上一頁</button>
 					<button id="completeSupineCalibBtn" type="button">完成校正</button>
@@ -316,17 +400,18 @@ https://fustyles.github.io/webduino/WebSerial.html
 				</div>
 				<div>
 					<label for="sideHeadInput">側躺頭部高度:</label>
-					<input type="number" id="sideHeadInput" value="14" min="5" max="20" style="width: 50px;">
+					<input type="number" id="sideHeadInput" value="14" min="7" max="16" step="0.5">
 					<button id="sideHeadPlus" type="button">+</button>
 					<button id="sideHeadMinus" type="button">-</button>
 				</div>
 				<div>
 					<label for="sideNeckInput">側躺頸部高度:</label>
-					<input type="number" id="sideNeckInput" value="16" min="5" max="20" style="width: 50px;">
+					<input type="number" id="sideNeckInput" value="16" min="10" max="16" step="0.5">
 					<button id="sideNeckPlus" type="button">+</button>
 					<button id="sideNeckMinus" type="button">-</button>
 				</div>
 				<p id="sideCalibHint" class="calib-hint"></p>
+				<button id="confirmSideCalibAdjustBtn" type="button" class="full">確定調整側躺高度</button>
 				<div class="button-container">
 					<button id="backSideCalibBtn" type="button">回上一頁</button>
 					<button id="completeSideCalibBtn" type="button">完成校正</button>

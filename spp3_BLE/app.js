@@ -11,6 +11,10 @@
 		let serial_syncTime = document.getElementById('syncTime');
 		let db_exportData = document.getElementById('exportData');
 		let serial_userSet = document.getElementById('userSet');
+		let espManualStatus = document.getElementById('espManualStatus');
+		let espManualAck = document.getElementById('espManualAck');
+		let manualStartupHead = document.getElementById('manualStartupHead');
+		let manualStartupNeck = document.getElementById('manualStartupNeck');
 
 		// BLE Variables
 		let bluetoothDevice;
@@ -25,6 +29,8 @@
 
 		let serial_readSting = "";
 		let serial_keepReading = true;
+		let suppressSilentDebugResponse = false;
+		let silentDebugSuppressTimer = null;
 
 		let serial_timer;
 
@@ -68,7 +74,7 @@
 			data: {
 				labels: [],  // Array for x-axis labels (timestamps, etc.)
 				datasets: [{
-					label: 'Detect',
+					label: 'Monitor',
 					data: [],  // Array for data points (sensor values)
 					fill: false,
 					borderColor: 'rgb(175, 71, 71)',
@@ -381,7 +387,15 @@
 					if (line) {
 						clearTimeout(serial_timer);
 						console.log(line);
-						serial_message(line, "green");
+						const hideLine = suppressSilentDebugResponse;
+						serial_message(line, "green", !hideLine);
+						if (hideLine && line.includes("pre_stable_label=")) {
+							suppressSilentDebugResponse = false;
+							if (silentDebugSuppressTimer) {
+								clearTimeout(silentDebugSuppressTimer);
+								silentDebugSuppressTimer = null;
+							}
+						}
 					}
 				}
 			} else {
@@ -389,7 +403,7 @@
 				clearTimeout(serial_timer);
 				serial_timer = setTimeout(function () {
 					if (serial_readSting != "") {
-						serial_message(serial_readSting, "green");
+						serial_message(serial_readSting, "green", !suppressSilentDebugResponse);
 						serial_readSting = "";
 					}
 				}, 100);
@@ -446,6 +460,7 @@
 				// Initialize logic
 				sendCommand("EXPERIMENT,ON\n");
 				serial_ready = true;
+				sendModeCommands(controlMode);
 				fillChartArray();
 
 			} catch (error) {
@@ -636,6 +651,14 @@
 		const predStageValue = document.getElementById('predStageValue');
 		const predNeckDelta = document.getElementById('predNeckDelta');
 		const predHeadDelta = document.getElementById('predHeadDelta');
+		const monitorPressureValue = document.getElementById('monitorPressureValue');
+		const neckPressureValue = document.getElementById('neckPressureValue');
+		const headPressureValue = document.getElementById('headPressureValue');
+		const headHeightValue = document.getElementById('headHeightValue');
+		const neckHeightValue = document.getElementById('neckHeightValue');
+		const monitorUpdateTime = document.getElementById('monitorUpdateTime');
+		const heightPressureLog = document.getElementById('heightPressureLog');
+		const monitorClearLog = document.getElementById('monitorClearLog');
 
 		let workflowState = WORKFLOW.UNCALIBRATED;
 		let anchorDone = { BSHS: false, BLHL: false };
@@ -654,8 +677,156 @@
 		let sideStandbyConsecutive = 0;
 		let sideStandbyTimer = null;
 		let awaitingInitMode = null;
+		let lastHeightDebugPollMs = 0;
+		const HEIGHT_DEBUG_POLL_MS = 10000;
 		const AUTO_START_MAX_ATTEMPTS = 3;
 		const AUTO_START_RETRY_MS = 2500;
+		const CONTROL_MODE = {
+			MANUAL: "manual",
+			AUTO: "auto"
+		};
+		const HEIGHT_LIMITS = {
+			HEAD: { min: 7, max: 16 },
+			NECK: { min: 10, max: 16 }
+		};
+		const HEIGHT_STEP = 0.5;
+		let controlMode = CONTROL_MODE.MANUAL;
+		let requestedControlMode = CONTROL_MODE.MANUAL;
+
+		const controlModeBadge = document.getElementById('controlModeBadge');
+		const controlModeHint = document.getElementById('controlModeHint');
+		const controlModeAck = document.getElementById('controlModeAck');
+		const manualModeBtn = document.getElementById('manualModeBtn');
+		const autoModeBtn = document.getElementById('autoModeBtn');
+
+		function getHeightLimits(channel) {
+			return HEIGHT_LIMITS[channel] || HEIGHT_LIMITS.HEAD;
+		}
+
+		function snapHeightValue(value) {
+			return Math.round(Number(value) / HEIGHT_STEP) * HEIGHT_STEP;
+		}
+
+		function clampHeightValue(value, channel) {
+			const limits = getHeightLimits(channel);
+			const numericValue = Number(value);
+			const fallback = limits.min;
+			const snapped = snapHeightValue(Number.isFinite(numericValue) ? numericValue : fallback);
+			return Math.max(limits.min, Math.min(limits.max, snapped));
+		}
+
+		function formatHeightValue(value) {
+			return Number(value).toFixed(1);
+		}
+
+		function setHeightInputValue(inputNode, value, channel) {
+			if (!inputNode) {
+				return "";
+			}
+			const next = formatHeightValue(clampHeightValue(value, channel));
+			inputNode.value = next;
+			return next;
+		}
+
+		function configureHeightInput(inputNode, channel) {
+			if (!inputNode) {
+				return;
+			}
+			const limits = getHeightLimits(channel);
+			inputNode.min = String(limits.min);
+			inputNode.max = String(limits.max);
+			inputNode.step = String(HEIGHT_STEP);
+			setHeightInputValue(inputNode, inputNode.value, channel);
+			inputNode.addEventListener('change', () => {
+				setHeightInputValue(inputNode, inputNode.value, channel);
+			});
+		}
+
+		function setModeUi(nextMode) {
+			controlMode = nextMode;
+			const isAuto = controlMode === CONTROL_MODE.AUTO;
+			if (controlModeBadge) {
+				controlModeBadge.textContent = isAuto ? "自動模式" : "手動模式";
+				controlModeBadge.classList.toggle('pill-ok', isAuto);
+				controlModeBadge.classList.toggle('pill-pending', !isAuto);
+			}
+			if (manualModeBtn) {
+				manualModeBtn.classList.toggle('primary', !isAuto);
+				manualModeBtn.classList.toggle('mode-active', !isAuto);
+			}
+			if (autoModeBtn) {
+				autoModeBtn.classList.toggle('primary', isAuto);
+				autoModeBtn.classList.toggle('mode-active', isAuto);
+			}
+			safeSetText(
+				controlModeHint,
+				isAuto ? "自動模式會在 BSHS 與 BLHL 校正完成後啟動分類與高度自動調整。" : "手動模式不會自動啟動分類與高度自動調整。"
+			);
+		}
+
+		function setModeAck(message, status = "") {
+			if (!controlModeAck) {
+				return;
+			}
+			controlModeAck.textContent = `模式指令狀態：${message}`;
+			controlModeAck.classList.remove('pending', 'ok', 'error');
+			if (status) {
+				controlModeAck.classList.add(status);
+			}
+		}
+
+		function setEspManualUi(active, message, status = "") {
+			if (espManualStatus) {
+				espManualStatus.textContent = active ? "ESP32 Manual" : "一般流程";
+				espManualStatus.classList.toggle('pill-ok', active);
+				espManualStatus.classList.toggle('pill-pending', !active);
+			}
+			if (espManualAck && message) {
+				espManualAck.textContent = `ESP32 Manual 狀態：${message}`;
+				espManualAck.classList.remove('pending', 'ok', 'error');
+				if (status) {
+					espManualAck.classList.add(status);
+				}
+			}
+		}
+
+		function sendEspManualCommand(command, pendingMessage) {
+			if (!rxCharacteristic || !serial_ready) {
+				setEspManualUi(false, "尚未連線 BLE，指令未送出", "error");
+				return;
+			}
+			setEspManualUi(!command.startsWith("MANUAL,STARTUP"), pendingMessage || "指令已送出，等待 ESP32 回覆", "pending");
+			sendCommand(command);
+		}
+
+		function formatAckTime() {
+			return new Date().toLocaleTimeString();
+		}
+
+		function sendModeCommands(nextMode) {
+			requestedControlMode = nextMode;
+			setModeUi(nextMode);
+			if (!rxCharacteristic || !serial_ready) {
+				setModeAck("尚未連線 BLE，指令未送出", "error");
+				return;
+			}
+			setModeAck(`${nextMode === CONTROL_MODE.AUTO ? "自動模式" : "手動模式"}指令已送出，等待 ESP32 回覆`, "pending");
+			if (nextMode === CONTROL_MODE.AUTO) {
+				sendCommand("FEATURE,POSE,ON");
+				sendCommand("FEATURE,PRED,ON");
+				sendCommand("FEATURE,STATUS");
+				maybeStartClassification();
+				return;
+			}
+			sendCommand("PRED,STOP");
+			sendCommand("CLASSIFY,STOP");
+			sendCommand("FEATURE,PRED,OFF");
+			sendCommand("FEATURE,STATUS");
+			resetAutoControlStartState();
+			if (anchorDone.BSHS && anchorDone.BLHL) {
+				setWorkflowState(WORKFLOW.UNCALIBRATED);
+			}
+		}
 
 		function safeSetText(el, text) {
 			if (el) {
@@ -697,7 +868,7 @@
 		}
 
 		function enableSideCalibrationControls(enabled) {
-			const ids = ['sideHeadInput', 'sideNeckInput', 'sideHeadPlus', 'sideHeadMinus', 'sideNeckPlus', 'sideNeckMinus'];
+			const ids = ['sideHeadInput', 'sideNeckInput', 'sideHeadPlus', 'sideHeadMinus', 'sideNeckPlus', 'sideNeckMinus', 'confirmSideCalibAdjustBtn'];
 			ids.forEach(id => {
 				const node = document.getElementById(id);
 				if (node) {
@@ -724,6 +895,82 @@
 			const diff = target - current;
 			const sign = diff > 0 ? "+" : "";
 			return `${sign}${diff.toFixed(1)}`;
+		}
+
+		const monitorState = {
+			pressure: { monitor: null, neck: null, head: null },
+			height: { targetHead: null, targetNeck: null, currentHead: null, currentNeck: null }
+		};
+
+		function formatPressureValue(value) {
+			const numericValue = Number(value);
+			return Number.isFinite(numericValue) ? numericValue.toFixed(2) : "-";
+		}
+
+		function formatHeightMonitorValue(target, current) {
+			const targetText = Number.isFinite(Number(target)) ? `${Number(target).toFixed(1)} cm` : "-";
+			const currentText = Number.isFinite(Number(current)) ? `${Number(current).toFixed(1)} cm` : "-";
+			return `目標 ${targetText} / 目前 ${currentText}`;
+		}
+
+		function updateMonitorDisplay() {
+			safeSetText(monitorPressureValue, formatPressureValue(monitorState.pressure.monitor));
+			safeSetText(neckPressureValue, formatPressureValue(monitorState.pressure.neck));
+			safeSetText(headPressureValue, formatPressureValue(monitorState.pressure.head));
+			safeSetText(headHeightValue, formatHeightMonitorValue(monitorState.height.targetHead, monitorState.height.currentHead));
+			safeSetText(neckHeightValue, formatHeightMonitorValue(monitorState.height.targetNeck, monitorState.height.currentNeck));
+			safeSetText(monitorUpdateTime, new Date().toLocaleTimeString());
+		}
+
+		function appendMonitorLog(message) {
+			if (!heightPressureLog) {
+				return;
+			}
+			const safeMsg = String(message).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+			heightPressureLog.insertAdjacentHTML('beforeend', `${safeMsg}<br>`);
+			const scrollControl = document.querySelector('input[name="monitorScrollControl"]:checked')?.value || "auto";
+			if (scrollControl === "auto") {
+				heightPressureLog.scrollTop = heightPressureLog.scrollHeight;
+			}
+		}
+
+		function updatePressureMonitor(values) {
+			monitorState.pressure.monitor = values[0];
+			monitorState.pressure.neck = values[1];
+			monitorState.pressure.head = values[2];
+			updateMonitorDisplay();
+			appendMonitorLog(
+				`${new Date().toLocaleTimeString()} 壓力 Monitor=${formatPressureValue(values[0])} Neck=${formatPressureValue(values[1])} Head=${formatPressureValue(values[2])}`
+			);
+		}
+
+		function updateHeightMonitorFromValues(source, targetHead, targetNeck, currentHead, currentNeck) {
+			if (Number.isFinite(Number(targetHead))) {
+				monitorState.height.targetHead = Number(targetHead);
+			}
+			if (Number.isFinite(Number(targetNeck))) {
+				monitorState.height.targetNeck = Number(targetNeck);
+			}
+			if (Number.isFinite(Number(currentHead))) {
+				monitorState.height.currentHead = Number(currentHead);
+			}
+			if (Number.isFinite(Number(currentNeck))) {
+				monitorState.height.currentNeck = Number(currentNeck);
+			}
+			updateMonitorDisplay();
+			appendMonitorLog(
+				`${new Date().toLocaleTimeString()} 高度 ${source} Head=${formatHeightMonitorValue(monitorState.height.targetHead, monitorState.height.currentHead)} Neck=${formatHeightMonitorValue(monitorState.height.targetNeck, monitorState.height.currentNeck)}`
+			);
+		}
+
+		function updateHeightMonitorFromParsed(source) {
+			updateHeightMonitorFromValues(
+				source,
+				parsedData.headNumber,
+				parsedData.neckNumber,
+				parsedData.currentHeadNumber,
+				parsedData.currentNeckNumber
+			);
 		}
 
 		function clearClassifyStartRetry() {
@@ -807,6 +1054,10 @@
 		}
 
 		function maybeStartClassification() {
+			if (controlMode !== CONTROL_MODE.AUTO) {
+				serial_message("目前為手動模式：校正完成後不自動啟動分類與高度調整。", "orange");
+				return;
+			}
 			if (!anchorDone.BSHS || !anchorDone.BLHL) {
 				return;
 			}
@@ -816,6 +1067,71 @@
 		function parseProtocolMessage(dataString) {
 			const parts = dataString.split(',').map(v => v.trim());
 			if (parts.length < 2) {
+				return;
+			}
+
+			if (parts[0] === "FEATURE") {
+				if (parts[1] === "STATUS") {
+					const predIndex = parts.indexOf("PRED");
+					if (predIndex !== -1 && parts[predIndex + 1] === "1") {
+						setModeUi(CONTROL_MODE.AUTO);
+						if (requestedControlMode === CONTROL_MODE.AUTO) {
+							setModeAck(`ESP32 已確認自動模式 (${formatAckTime()})`, "ok");
+						} else {
+							setModeAck(`ESP32 回覆目前為自動模式 (${formatAckTime()})`, "ok");
+						}
+					} else if (predIndex !== -1 && parts[predIndex + 1] === "0") {
+						setModeUi(CONTROL_MODE.MANUAL);
+						if (requestedControlMode === CONTROL_MODE.MANUAL) {
+							setModeAck(`ESP32 已確認手動模式 (${formatAckTime()})`, "ok");
+						} else {
+							setModeAck(`ESP32 回覆目前為手動模式 (${formatAckTime()})`, "ok");
+						}
+					}
+				}
+				if (parts[1] === "ERR") {
+					setModeAck(`ESP32 回覆失敗：${parts.slice(2).join(',') || 'BAD_COMMAND'}`, "error");
+				}
+				return;
+			}
+
+			if (parts[0] === "HEIGHT_SET" || parts[0] === "HEIGHT_LIMIT") {
+				const headIndex = parts.indexOf(parts[0] === "HEIGHT_SET" ? "HEAD" : "HEAD_APPLIED");
+				const neckIndex = parts.indexOf(parts[0] === "HEIGHT_SET" ? "NECK" : "NECK_APPLIED");
+				let targetHead = null;
+				let targetNeck = null;
+				if (headIndex !== -1 && parts[headIndex + 1]) {
+					targetHead = parts[headIndex + 1];
+					[numberInput1, numberInput3].forEach(input => setHeightInputValue(input, parts[headIndex + 1], "HEAD"));
+					['supineHeadInput', 'sideHeadInput'].forEach(id => setHeightInputValue(document.getElementById(id), parts[headIndex + 1], "HEAD"));
+				}
+				if (neckIndex !== -1 && parts[neckIndex + 1]) {
+					targetNeck = parts[neckIndex + 1];
+					[numberInput2, numberInput4].forEach(input => setHeightInputValue(input, parts[neckIndex + 1], "NECK"));
+					['supineNeckInput', 'sideNeckInput'].forEach(id => setHeightInputValue(document.getElementById(id), parts[neckIndex + 1], "NECK"));
+				}
+				updateHeightMonitorFromValues(parts[0], targetHead, targetNeck, null, null);
+				serial_message(`高度限制：頭部 ${HEIGHT_LIMITS.HEAD.min.toFixed(1)}-${HEIGHT_LIMITS.HEAD.max.toFixed(1)} cm，頸部 ${HEIGHT_LIMITS.NECK.min.toFixed(1)}-${HEIGHT_LIMITS.NECK.max.toFixed(1)} cm，步進 ${HEIGHT_STEP.toFixed(1)} cm。`, "blue");
+				return;
+			}
+
+			if (parts[0] === "MANUAL") {
+				if (parts[1] === "OK") {
+					const action = parts[2] || "";
+					if (action === "STARTUP") {
+						setEspManualUi(false, `已回開機流程 Head=${parts[3] || "-"} Neck=${parts[4] || "-"} (${formatAckTime()})`, "ok");
+						if (parts[3] && parts[4]) {
+							updateHeightMonitorFromValues("MANUAL_STARTUP", parts[3], parts[4], null, null);
+						}
+					} else {
+						const label = parts.slice(2).join(",") || "ENTER";
+						setEspManualUi(true, `ESP32 已確認 ${label} (${formatAckTime()})`, "ok");
+					}
+				} else if (parts[1] === "ERR") {
+					setEspManualUi(true, `ESP32 回覆失敗：${parts.slice(2).join(",") || "BAD_COMMAND"}`, "error");
+				} else if (parts[1] === "IGNORED") {
+					setEspManualUi(true, `ESP32 Manual 忽略指令：${parts.slice(2).join(",")}`, "error");
+				}
 				return;
 			}
 
@@ -999,18 +1315,23 @@
 				if (awaitingInitMode === "L" && parts.length >= 4) {
 					const sideHeadInput = document.getElementById('sideHeadInput');
 					const sideNeckInput = document.getElementById('sideNeckInput');
-					if (sideHeadInput) sideHeadInput.value = parts[2];
-					if (sideNeckInput) sideNeckInput.value = parts[3];
+					if (sideHeadInput) setHeightInputValue(sideHeadInput, parts[2], "HEAD");
+					if (sideNeckInput) setHeightInputValue(sideNeckInput, parts[3], "NECK");
+					if (numberInput3) setHeightInputValue(numberInput3, parts[2], "HEAD");
+					if (numberInput4) setHeightInputValue(numberInput4, parts[3], "NECK");
+					updateHeightMonitorFromValues("INIT", parts[2], parts[3], null, null);
 				}
 				awaitingInitMode = null;
 			}
 		}
 
-		function serial_message(msg, colour) {
+		function serial_message(msg, colour, show = true) {
 			const safeMsg = String(msg).replace(/</g, "&lt;").replace(/>/g, "&gt;");
-			serial_status.insertAdjacentHTML('beforeend', "<font color='" + colour + "'>" + safeMsg + "</font><br>");
-			var scrollControl = document.querySelector('input[name="scrollControl"]:checked').value;
-			if (scrollControl === "auto") {
+			var scrollControl = document.querySelector('input[name="scrollControl"]:checked')?.value || "auto";
+			if (show) {
+				serial_status.insertAdjacentHTML('beforeend', "<font color='" + colour + "'>" + safeMsg + "</font><br>");
+			}
+			if (show && scrollControl === "auto") {
 				serial_status.scrollTop = serial_status.scrollHeight;
 			}
 
@@ -1029,6 +1350,7 @@
 					while ((match = regex.exec(cleanedData)) !== null) {
 						parsedData[match[1]] = match[2] || '';
 					}
+					updateHeightMonitorFromParsed("DEBUG");
 					debugDataBuffer = "";
 				}
 			}
@@ -1050,6 +1372,7 @@
 					}
 
 					if (values.length >= 3) {
+						updatePressureMonitor(values);
 						// Update chart data and labels
 						var now = new Date();
 						if (chart_data_count % 10 == 0) {
@@ -1120,6 +1443,11 @@
 								const stateName = SystemState[state] || "UNKNOWN (" + state + ")";
 								const stateDisplay = document.getElementById('systemStateDisplay');
 								if (stateDisplay) stateDisplay.value = stateName;
+								if (stateName === "MANUAL_CONTROL") {
+									setEspManualUi(true);
+								} else if (espManualStatus?.textContent === "ESP32 Manual") {
+									setEspManualUi(false);
+								}
 
 								if (sideStandbyWatchActive) {
 									if (Number(state) === 5) {
@@ -1280,8 +1608,10 @@
 				return;
 			}
 
-			const basicCmd = (func_count++ % 2 === 0) ? "P" : "I";
-			sendSilentCommand(basicCmd);
+			sendSilentCommand("P");
+			if (func_count++ % 2 === 0) {
+				sendSilentCommand("I");
+			}
 
 			if (workflowState === WORKFLOW.SUPINE || workflowState === WORKFLOW.SIDE || pendingAnchorTarget) {
 				sendSilentCommand("ANCHOR,STATUS");
@@ -1294,6 +1624,20 @@
 				sendSilentCommand("CLASSIFY,GET");
 				sendSilentCommand("PRED,GET");
 			}
+
+			const nowMs = Date.now();
+			if (nowMs - lastHeightDebugPollMs >= HEIGHT_DEBUG_POLL_MS) {
+				lastHeightDebugPollMs = nowMs;
+				suppressSilentDebugResponse = true;
+				if (silentDebugSuppressTimer) {
+					clearTimeout(silentDebugSuppressTimer);
+				}
+				silentDebugSuppressTimer = setTimeout(() => {
+					suppressSilentDebugResponse = false;
+					silentDebugSuppressTimer = null;
+				}, 3500);
+				sendSilentCommand("DEBUG");
+			}
 		}, 1000);
 		let selectedCondition = null;
 		const numberInput1 = document.getElementById('numberInput1');
@@ -1304,6 +1648,42 @@
 		document.addEventListener('DOMContentLoaded', function () {
 			setWorkflowState(WORKFLOW.UNCALIBRATED);
 			refreshAnchorBadgeUI();
+
+			const statusAccordionToggle = document.getElementById('statusAccordionToggle');
+			const statusAccordionBody = document.getElementById('statusAccordionBody');
+
+			function getSavedStatusAccordionState() {
+				try {
+					return localStorage.getItem('statusAccordionExpanded');
+				} catch (error) {
+					return null;
+				}
+			}
+
+			function saveStatusAccordionState(expanded) {
+				try {
+					localStorage.setItem('statusAccordionExpanded', expanded ? '1' : '0');
+				} catch (error) {
+					// Some file/browser contexts block localStorage; the accordion should still work.
+				}
+			}
+
+			function setStatusAccordionExpanded(expanded) {
+				if (!statusAccordionToggle || !statusAccordionBody) {
+					return;
+				}
+				statusAccordionBody.classList.toggle('is-collapsed', !expanded);
+				statusAccordionToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+				statusAccordionToggle.textContent = expanded ? '收合' : '展開';
+				saveStatusAccordionState(expanded);
+			}
+
+			const savedAccordionState = getSavedStatusAccordionState();
+			setStatusAccordionExpanded(savedAccordionState !== '0');
+			statusAccordionToggle?.addEventListener('click', function () {
+				const expanded = statusAccordionToggle.getAttribute('aria-expanded') === 'true';
+				setStatusAccordionExpanded(!expanded);
+			});
 
 			const modal = document.getElementById('modal');
 			const openModalBtn = document.getElementById('openModalBtn');
@@ -1325,6 +1705,96 @@
 			const decreaseBtn3 = document.getElementById('decreaseBtn3');
 			const increaseBtn4 = document.getElementById('increaseBtn4');
 			const decreaseBtn4 = document.getElementById('decreaseBtn4');
+			const confirmSupineAdjustBtn = document.getElementById('confirmSupineAdjustBtn');
+			const confirmSideAdjustBtn = document.getElementById('confirmSideAdjustBtn');
+			const microSupineHint = document.getElementById('microSupineHint');
+			const microSideHint = document.getElementById('microSideHint');
+
+			monitorClearLog?.addEventListener('click', function () {
+				if (heightPressureLog) {
+					heightPressureLog.innerHTML = "";
+				}
+			});
+
+			setModeUi(controlMode);
+			manualModeBtn?.addEventListener('click', () => sendModeCommands(CONTROL_MODE.MANUAL));
+			autoModeBtn?.addEventListener('click', () => sendModeCommands(CONTROL_MODE.AUTO));
+
+			configureHeightInput(numberInput1, "HEAD");
+			configureHeightInput(numberInput2, "NECK");
+			configureHeightInput(numberInput3, "HEAD");
+			configureHeightInput(numberInput4, "NECK");
+			configureHeightInput(manualStartupHead, "HEAD");
+			configureHeightInput(manualStartupNeck, "NECK");
+
+			document.getElementById('espManualEnterBtn')?.addEventListener('click', function () {
+				sendEspManualCommand("MANUAL,ENTER", "進入 ESP32 Manual 指令已送出");
+			});
+			document.getElementById('espManualStopBtn')?.addEventListener('click', function () {
+				sendEspManualCommand("MANUAL,STOP", "停止輸出指令已送出");
+			});
+			document.getElementById('monitorFillBtn')?.addEventListener('click', function () {
+				sendEspManualCommand("MANUAL,FILL,MONITOR", "Monitor 充氣指令已送出");
+			});
+			document.getElementById('monitorDrainBtn')?.addEventListener('click', function () {
+				sendEspManualCommand("MANUAL,DRAIN,MONITOR", "Monitor 吸氣指令已送出");
+			});
+			document.getElementById('neckFillBtn')?.addEventListener('click', function () {
+				sendEspManualCommand("MANUAL,FILL,NECK", "Neck 充氣指令已送出");
+			});
+			document.getElementById('neckDrainBtn')?.addEventListener('click', function () {
+				sendEspManualCommand("MANUAL,DRAIN,NECK", "Neck 吸氣指令已送出");
+			});
+			document.getElementById('headFillBtn')?.addEventListener('click', function () {
+				sendEspManualCommand("MANUAL,FILL,HEAD", "Head 充氣指令已送出");
+			});
+			document.getElementById('headDrainBtn')?.addEventListener('click', function () {
+				sendEspManualCommand("MANUAL,DRAIN,HEAD", "Head 吸氣指令已送出");
+			});
+			document.getElementById('allDrainBtn')?.addEventListener('click', function () {
+				sendEspManualCommand("MANUAL,DRAIN,ALL", "全部同時洩氣指令已送出");
+			});
+			document.getElementById('manualStartupBtn')?.addEventListener('click', function () {
+				const head = setHeightInputValue(manualStartupHead, manualStartupHead?.value, "HEAD");
+				const neck = setHeightInputValue(manualStartupNeck, manualStartupNeck?.value, "NECK");
+				resetAutoControlStartState();
+				sendEspManualCommand(`MANUAL,STARTUP,${head},${neck}`, "回開機流程指令已送出");
+			});
+
+			const microDirty = { S: false, L: false };
+
+			function markMicroDirty(mode, dirty = true) {
+				microDirty[mode] = dirty;
+				const hint = mode === "S" ? microSupineHint : microSideHint;
+				if (hint) {
+					hint.textContent = dirty ? "高度已暫存，按「確定調整」後才會送到 ESP32。" : "高度已送出。";
+				}
+			}
+
+			function stepHeightInput(inputNode, delta, channel, markDirty) {
+				if (!inputNode) {
+					return;
+				}
+				const next = clampHeightValue(Number(inputNode.value) + delta, channel);
+				setHeightInputValue(inputNode, next, channel);
+				if (markDirty) {
+					markDirty();
+				}
+			}
+
+			function sendHeightPair(condition, mode, headInput, neckInput, markClean) {
+				const head = setHeightInputValue(headInput, headInput?.value, "HEAD");
+				const neck = setHeightInputValue(neckInput, neckInput?.value, "NECK");
+				if (!head || !neck) {
+					return false;
+				}
+				sendCommand(`SET,NORM,${condition},${mode},HEAD,${head}`);
+				sendCommand(`SET,NORM,${condition},${mode},NECK,${neck}`);
+				if (markClean) {
+					markClean();
+				}
+				return true;
+			}
 
 			openModalBtn.addEventListener('click', function () {
 				modal.style.display = 'block';
@@ -1341,19 +1811,25 @@
 				screen2.style.display = 'block';
 				screen3.style.display = 'none';
 				sendCommand("INIT,NORM,S");
-				if (parsedData.HSF) numberInput1.value = parsedData.HSF;
-				if (parsedData.N1SF) numberInput2.value = parsedData.N1SF;
+				if (parsedData.HSF) setHeightInputValue(numberInput1, parsedData.HSF, "HEAD");
+				if (parsedData.N1SF) setHeightInputValue(numberInput2, parsedData.N1SF, "NECK");
+				markMicroDirty("S", false);
 			});
 
 			switchScreenBtn2.addEventListener('click', function () {
+				if (microDirty.S) {
+					serial_message("請先按「確定調整仰躺高度」再切換到側躺畫面。", "orange");
+					return;
+				}
 				sendCommand("INIT,NORM,L");
 				setTimeout(() => {
 
 					screen1.style.display = 'none';
 					screen2.style.display = 'none';
 					screen3.style.display = 'block';
-					if (parsedData.HLF) numberInput3.value = parsedData.HLF;
-					if (parsedData.N1LF) numberInput4.value = parsedData.N1LF;
+					if (parsedData.HLF) setHeightInputValue(numberInput3, parsedData.HLF, "HEAD");
+					if (parsedData.N1LF) setHeightInputValue(numberInput4, parsedData.N1LF, "NECK");
+					markMicroDirty("L", false);
 				}, 1000); // 等待1秒钟
 
 			});
@@ -1371,65 +1847,56 @@
 			});
 
 			closeBtn.addEventListener('click', function () {
+				if (microDirty.L) {
+					serial_message("請先按「確定調整側躺高度」再結束。", "orange");
+					return;
+				}
 				modal.style.display = 'none';
 				sendCommand("SET,OK");
 			});
 
 			increaseBtn1.addEventListener('click', function () {
-				if (numberInput1.value < 20) {
-					numberInput1.value = parseInt(numberInput1.value) + 1;
-					sendCommand("SET,NORM," + selectedCondition + ",S,HEAD," + numberInput1.value);
-				}
+				stepHeightInput(numberInput1, HEIGHT_STEP, "HEAD", () => markMicroDirty("S"));
 			});
 
 			decreaseBtn1.addEventListener('click', function () {
-				if (numberInput1.value > 5) {
-					numberInput1.value = parseInt(numberInput1.value) - 1;
-					sendCommand("SET,NORM," + selectedCondition + ",S,HEAD," + numberInput1.value);
-				}
+				stepHeightInput(numberInput1, -HEIGHT_STEP, "HEAD", () => markMicroDirty("S"));
 			});
 
 			increaseBtn2.addEventListener('click', function () {
-				if (numberInput2.value < 20) {
-					numberInput2.value = parseInt(numberInput2.value) + 1;
-					sendCommand("SET,NORM," + selectedCondition + ",S,NECK," + numberInput2.value);
-				}
+				stepHeightInput(numberInput2, HEIGHT_STEP, "NECK", () => markMicroDirty("S"));
 			});
 
 			decreaseBtn2.addEventListener('click', function () {
-				if (numberInput2.value > 5) {
-					numberInput2.value = parseInt(numberInput2.value) - 1;
-					sendCommand("SET,NORM," + selectedCondition + ",S,NECK," + numberInput2.value);
-				}
+				stepHeightInput(numberInput2, -HEIGHT_STEP, "NECK", () => markMicroDirty("S"));
 			});
 
 			increaseBtn3.addEventListener('click', function () {
-				if (numberInput3.value < 20) {
-					numberInput3.value = parseInt(numberInput3.value) + 1;
-					sendCommand("SET,NORM," + selectedCondition + ",L,HEAD," + numberInput3.value);
-				}
+				stepHeightInput(numberInput3, HEIGHT_STEP, "HEAD", () => markMicroDirty("L"));
 			});
 
 			decreaseBtn3.addEventListener('click', function () {
-				if (numberInput3.value > 5) {
-					numberInput3.value = parseInt(numberInput3.value) - 1;
-					sendCommand("SET,NORM," + selectedCondition + ",L,HEAD," + numberInput3.value);
-				}
+				stepHeightInput(numberInput3, -HEIGHT_STEP, "HEAD", () => markMicroDirty("L"));
 			});
 
 			increaseBtn4.addEventListener('click', function () {
-				if (numberInput4.value < 20) {
-					numberInput4.value = parseInt(numberInput4.value) + 1;
-					sendCommand("SET,NORM," + selectedCondition + ",L,NECK," + numberInput4.value);
-				}
+				stepHeightInput(numberInput4, HEIGHT_STEP, "NECK", () => markMicroDirty("L"));
 			});
 
 			decreaseBtn4.addEventListener('click', function () {
-				if (numberInput4.value > 5) {
-					numberInput4.value = parseInt(numberInput4.value) - 1;
-					sendCommand("SET,NORM," + selectedCondition + ",L,NECK," + numberInput4.value);
-				}
+				stepHeightInput(numberInput4, -HEIGHT_STEP, "NECK", () => markMicroDirty("L"));
 			});
+
+			confirmSupineAdjustBtn?.addEventListener('click', function () {
+				sendHeightPair(selectedCondition || "1", "S", numberInput1, numberInput2, () => markMicroDirty("S", false));
+			});
+
+			confirmSideAdjustBtn?.addEventListener('click', function () {
+				sendHeightPair(selectedCondition || "1", "L", numberInput3, numberInput4, () => markMicroDirty("L", false));
+			});
+
+			[numberInput1, numberInput2].forEach(input => input?.addEventListener('input', () => markMicroDirty("S")));
+			[numberInput3, numberInput4].forEach(input => input?.addEventListener('input', () => markMicroDirty("L")));
 
 			const calibModal = document.getElementById('calibModal');
 			const openCalibBtn = document.getElementById('openCalibBtn');
@@ -1450,6 +1917,23 @@
 			const sideNeckInput = document.getElementById('sideNeckInput');
 			const supineCalibHint = document.getElementById('supineCalibHint');
 			const sideCalibHint = document.getElementById('sideCalibHint');
+			const confirmSupineCalibAdjustBtn = document.getElementById('confirmSupineCalibAdjustBtn');
+			const confirmSideCalibAdjustBtn = document.getElementById('confirmSideCalibAdjustBtn');
+
+			configureHeightInput(supineHeadInput, "HEAD");
+			configureHeightInput(supineNeckInput, "NECK");
+			configureHeightInput(sideHeadInput, "HEAD");
+			configureHeightInput(sideNeckInput, "NECK");
+
+			const calibDirty = { S: false, L: false };
+
+			function markCalibDirty(mode, dirty = true) {
+				calibDirty[mode] = dirty;
+				const hint = mode === "S" ? supineCalibHint : sideCalibHint;
+				if (hint && dirty) {
+					hint.textContent = "高度已暫存，按「確定調整」後才會送到 ESP32。";
+				}
+			}
 
 			function showCalibScreen(name) {
 				if (!calibMenuScreen || !supineCalibScreen || !sideCalibScreen) {
@@ -1465,34 +1949,45 @@
 			}
 
 			function applyParsedDataToCalib() {
-				if (parsedData.HSF && supineHeadInput) supineHeadInput.value = parsedData.HSF;
-				if (parsedData.N1SF && supineNeckInput) supineNeckInput.value = parsedData.N1SF;
-				if (parsedData.HLF && sideHeadInput) sideHeadInput.value = parsedData.HLF;
-				if (parsedData.N1LF && sideNeckInput) sideNeckInput.value = parsedData.N1LF;
+				if (parsedData.HSF && supineHeadInput) setHeightInputValue(supineHeadInput, parsedData.HSF, "HEAD");
+				if (parsedData.N1SF && supineNeckInput) setHeightInputValue(supineNeckInput, parsedData.N1SF, "NECK");
+				if (parsedData.HLF && sideHeadInput) setHeightInputValue(sideHeadInput, parsedData.HLF, "HEAD");
+				if (parsedData.N1LF && sideNeckInput) setHeightInputValue(sideNeckInput, parsedData.N1LF, "NECK");
 			}
 
 			function makeStepHandler(inputNode, step, mode, channel) {
 				return function () {
-					if (!inputNode) {
-						return;
-					}
-					const current = Number(inputNode.value);
-					const next = Math.max(5, Math.min(20, current + step));
-					if (next !== current) {
-						inputNode.value = String(next);
-						sendCommand(`SET,NORM,${getCalibCondition()},${mode},${channel},${next}`);
-					}
+					stepHeightInput(inputNode, step, channel, () => markCalibDirty(mode));
 				};
 			}
 
-			document.getElementById('supineHeadPlus')?.addEventListener('click', makeStepHandler(supineHeadInput, 1, "S", "HEAD"));
-			document.getElementById('supineHeadMinus')?.addEventListener('click', makeStepHandler(supineHeadInput, -1, "S", "HEAD"));
-			document.getElementById('supineNeckPlus')?.addEventListener('click', makeStepHandler(supineNeckInput, 1, "S", "NECK"));
-			document.getElementById('supineNeckMinus')?.addEventListener('click', makeStepHandler(supineNeckInput, -1, "S", "NECK"));
-			document.getElementById('sideHeadPlus')?.addEventListener('click', makeStepHandler(sideHeadInput, 1, "L", "HEAD"));
-			document.getElementById('sideHeadMinus')?.addEventListener('click', makeStepHandler(sideHeadInput, -1, "L", "HEAD"));
-			document.getElementById('sideNeckPlus')?.addEventListener('click', makeStepHandler(sideNeckInput, 1, "L", "NECK"));
-			document.getElementById('sideNeckMinus')?.addEventListener('click', makeStepHandler(sideNeckInput, -1, "L", "NECK"));
+			document.getElementById('supineHeadPlus')?.addEventListener('click', makeStepHandler(supineHeadInput, HEIGHT_STEP, "S", "HEAD"));
+			document.getElementById('supineHeadMinus')?.addEventListener('click', makeStepHandler(supineHeadInput, -HEIGHT_STEP, "S", "HEAD"));
+			document.getElementById('supineNeckPlus')?.addEventListener('click', makeStepHandler(supineNeckInput, HEIGHT_STEP, "S", "NECK"));
+			document.getElementById('supineNeckMinus')?.addEventListener('click', makeStepHandler(supineNeckInput, -HEIGHT_STEP, "S", "NECK"));
+			document.getElementById('sideHeadPlus')?.addEventListener('click', makeStepHandler(sideHeadInput, HEIGHT_STEP, "L", "HEAD"));
+			document.getElementById('sideHeadMinus')?.addEventListener('click', makeStepHandler(sideHeadInput, -HEIGHT_STEP, "L", "HEAD"));
+			document.getElementById('sideNeckPlus')?.addEventListener('click', makeStepHandler(sideNeckInput, HEIGHT_STEP, "L", "NECK"));
+			document.getElementById('sideNeckMinus')?.addEventListener('click', makeStepHandler(sideNeckInput, -HEIGHT_STEP, "L", "NECK"));
+
+			[supineHeadInput, supineNeckInput].forEach(input => input?.addEventListener('input', () => markCalibDirty("S")));
+			[sideHeadInput, sideNeckInput].forEach(input => input?.addEventListener('input', () => markCalibDirty("L")));
+
+			confirmSupineCalibAdjustBtn?.addEventListener('click', function () {
+				if (sendHeightPair(getCalibCondition(), "S", supineHeadInput, supineNeckInput, () => {
+					calibDirty.S = false;
+				}) && supineCalibHint) {
+					supineCalibHint.textContent = "仰躺高度已送出，可按完成校正擷取 BSHS。";
+				}
+			});
+
+			confirmSideCalibAdjustBtn?.addEventListener('click', function () {
+				if (sendHeightPair(getCalibCondition(), "L", sideHeadInput, sideNeckInput, () => {
+					calibDirty.L = false;
+				}) && sideCalibHint) {
+					sideCalibHint.textContent = "側躺高度已送出，可按完成校正擷取 BLHL。";
+				}
+			});
 
 			openCalibBtn?.addEventListener('click', function () {
 				if (!serial_ready) {
@@ -1522,6 +2017,7 @@
 				if (supineCalibHint) {
 					supineCalibHint.textContent = "完成校正會送出 ANCHOR,START,BSHS。";
 				}
+				calibDirty.S = false;
 				sendCommand("INIT,NORM,S");
 				sendCommand("DEBUG");
 				applyParsedDataToCalib();
@@ -1538,6 +2034,7 @@
 				if (sideCalibHint) {
 					sideCalibHint.textContent = "等待 state==STANDBY 連續 2 筆後開放微調。";
 				}
+				calibDirty.L = false;
 				if (sideStandbyTimer) {
 					clearTimeout(sideStandbyTimer);
 				}
@@ -1575,6 +2072,13 @@
 			});
 
 			completeSupineCalibBtn?.addEventListener('click', function () {
+				if (calibDirty.S) {
+					serial_message("請先按「確定調整仰躺高度」再完成校正。", "orange");
+					if (supineCalibHint) {
+						supineCalibHint.textContent = "高度尚未送出，請先按確定調整。";
+					}
+					return;
+				}
 				pendingAnchorTarget = "BSHS";
 				if (supineCalibHint) {
 					supineCalibHint.textContent = "正在擷取 BSHS anchor，請保持姿勢。";
@@ -1584,6 +2088,13 @@
 			});
 
 			completeSideCalibBtn?.addEventListener('click', function () {
+				if (calibDirty.L) {
+					serial_message("請先按「確定調整側躺高度」再完成校正。", "orange");
+					if (sideCalibHint) {
+						sideCalibHint.textContent = "高度尚未送出，請先按確定調整。";
+					}
+					return;
+				}
 				pendingAnchorTarget = "BLHL";
 				if (sideCalibHint) {
 					sideCalibHint.textContent = "正在擷取 BLHL anchor，請保持姿勢。";
