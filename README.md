@@ -1,10 +1,18 @@
 # Pillow Data Collect Web - spp3_BLE_cls_pre_v3
 
-此分支是 iPillow Web BLE 資料收集與控制介面，主要使用 `spp3_BLE/` 透過 Web Bluetooth 連接 ESP32。
+此分支是 iPillow Web BLE 資料收集、校正、控制與監測介面。主要入口是 `spp3_BLE/`，透過 Web Bluetooth 與 ESP32 溝通。
 
-本檔案與本分支修改基於 ESP32 韌體 `pose_pre_v3.1` 進行調整。Web 端功能會對應 `pose_pre_v3.1` 新增的高度上下限、0.5 cm 高度步進、Web 手動/自動模式、ESP32 Manual 高階控制指令、壓力與高度監測，以及分類/預測控制流程。
+本分支與本 README 基於 ESP32 韌體 `pose_pre_v3.1` 進行修改。Web 端已對應 `pose_pre_v3.1` 的高度上下限、0.5 cm 高度步進、手動/自動分類模式、ESP32 Manual 控制、壓力/高度監測、右側線圖監測與指令合輯。
 
-修改日期時間：`2026-05-10 17:20:40 CST (+0800)`
+修改日期時間：`2026-05-10 19:03:58 CST (+0800)`
+
+## 對應版本
+
+- Web repo：`XUE030130/Pillow-data-collect-web`
+- Web branch：`spp3_BLE_cls_pre_v3`
+- ESP32 repo：`XUE030130/ipillow`
+- ESP32 branch：`pose_pre_v3.1`
+- 主要 Web 目錄：`spp3_BLE/`
 
 ## 目錄結構
 
@@ -25,31 +33,9 @@ Pillow-data-collect-web/
 └─ README.md
 ```
 
-## 主要新增功能
+## 啟動方式
 
-- 支援 ESP32 `pose_pre_v3.1` 的 Head / Neck 高度上下限與 `0.5 cm` 步進。
-- 初始校正與微調的 `+ / -` 只改前端暫存值，需按「確定調整」才送出高度調整指令。
-- 新增 Web 端「手動模式 / 自動模式」：
-  - 手動模式：不自動啟動分類與預測調整。
-  - 自動模式：兩個 anchor 完成後自動啟動分類與 PRED 自動調整。
-- 新增「校正與分類狀態」accordion，可收合狀態區塊。
-- 新增「高度與壓力監測」區塊：
-  - Monitor / Neck / Head 三顆氣囊壓力。
-  - Head / Neck 目標高度與目前高度。
-  - 監測紀錄、自動滾動、固定滾動、清空。
-- 壓力圖表標籤改為 `Monitor / Neck / Head`。
-- 新增 `ESP32 Manual 控制` 可收合區塊：
-  - 進入 ESP32 Manual
-  - Monitor / Neck / Head 單獨充氣
-  - Monitor / Neck / Head 單獨吸氣
-  - 全部同時洩氣
-  - 停止
-  - 離開 ESP32 Manual 並回開機流程
-- README 更新為完整操作說明，並標明此版本基於 `pose_pre_v3.1`。
-
-## 執行環境
-
-建議使用最新版 Chrome 或 Edge。Web Bluetooth 需要安全來源，請使用本機 HTTP server 開啟，不建議直接雙擊 HTML。
+建議使用最新版 Chrome 或 Edge。Web Bluetooth 需要安全來源，請用本機 HTTP server 開啟，不建議直接雙擊 HTML。
 
 在 repo 根目錄執行：
 
@@ -63,43 +49,415 @@ python -m http.server 8080
 http://localhost:8080/spp3_BLE/
 ```
 
-舊版 Web Serial 介面仍保留於：
+舊版 Web Serial 介面保留在：
 
 ```text
 http://localhost:8080/spp3/
 ```
 
-## 對應 ESP32 韌體
+## 介面總覽
 
-此 Web 分支預期搭配：
+新版畫面分為左側操作欄與右側線圖監測欄。
 
-```text
-XUE030130/ipillow branch: pose_pre_v3.1
-```
+左側操作欄：
 
-必要 ESP32 BLE 指令包含：
+1. `裝置連線、指令與狀態`
+2. `使用者資料`
+3. `校正與分類狀態`
+4. `高度與壓力監測`
+5. `訊息紀錄`
+
+右側線圖監測欄：
+
+1. Y 軸設定
+2. 即時摘要
+3. 線圖模式切換
+4. 壓力線圖
+5. 平均值線圖
+6. 差值線圖
+
+右側整欄具有獨立滾輪。使用 `完整線圖` 時，三張圖會盡量完整展開並往下排列，不會硬塞在同一個可視高度中。
+
+## 裝置連線、指令與狀態
+
+此區塊是連線與底層控制入口。
+
+常駐顯示：
+
+- `Connect BLE`：連接 ESP32 BLE。
+- `Disconnect`：中斷 BLE。
+- `State`：顯示 ESP32 目前 state 名稱。
+- `S1` 到 `S6`：顯示馬達/閥門輸出狀態。
+- `Sync UTC Time`：同步目前 UNIX time 到 ESP32。
+- `Export Data`：匯出 IndexedDB 收集資料與訊息紀錄。
+
+### 進階文字指令
+
+`進階文字指令` 預設收合。需要直接送 BLE 指令時展開。
+
+欄位：
+
+- 文字指令輸入框
+- newline 選單
+- `Send Text`
+- Uint8Array 輸入框
+- `Send Uint8Array`
+- `指令合輯`
+
+newline 可留空。若留空，Web 端會自動補 `\n`，ESP32 才能切分完整指令。
+
+### 指令合輯
+
+按 `指令合輯` 會開啟 BLE 指令說明視窗。內容包含：
+
+- 開機時間設定
+- 舊式 `set/reset` 指令
+- 使用者資料
+- 初始校正
+- 高度設定
+- 手動/自動模式
+- 分類與 PRED
+- 壓力與狀態查詢
+- ESP32 Manual 控制
+
+### ESP32 Manual 控制
+
+`ESP32 Manual 控制` 預設收合，避免大量控制按鈕佔用第一屏。
+
+展開後可操作：
+
+- 進入 ESP32 Manual
+- 停止
+- Monitor / Neck / Head 單獨充氣
+- Monitor / Neck / Head 單獨吸氣
+- 全部同時洩氣
+- 設定 Head / Neck 目標
+- 離開 ESP32 Manual 並回開機流程
+
+注意：這裡的 ESP32 Manual 是韌體層級的 `MANUAL_CONTROL`，不同於 Web 端的 `手動模式 / 自動模式`。
+
+## 使用者資料
+
+設定使用者基本資料：
+
+- 生理性別
+- 年齡
+- 身高
+- 體重
+
+按 `設定` 後 Web 會送：
 
 ```text
 USER,<gender>,<age>,<height>,<weight>
+```
+
+ESP32 正常回覆：
+
+```text
+USER,OK
+```
+
+使用者資料會影響韌體計算 Head / Neck 初始高度。
+
+## 校正與分類狀態
+
+此區塊可收合。主要顯示校正流程、anchor、分類與 PRED 狀態。
+
+### Web 手動模式
+
+Web 手動模式表示：
+
+- 不自動啟動姿勢分類。
+- 不自動啟動 PRED 自動調整。
+- 仍可做初始校正。
+- 仍可手動調整高度。
+
+切到手動模式時會送出或維持：
+
+```text
+PRED,STOP
+CLASSIFY,STOP
+FEATURE,PRED,OFF
+FEATURE,STATUS
+```
+
+### Web 自動模式
+
+Web 自動模式表示：
+
+- 完成 BSHS 與 BLHL anchor 後，自動啟動分類。
+- 若 PRED 功能開啟，會自動啟動高度自動調整。
+
+切到自動模式會送：
+
+```text
+FEATURE,POSE,ON
+FEATURE,PRED,ON
+FEATURE,STATUS
+```
+
+兩個 anchor 都完成後會送：
+
+```text
+MODE,NORM
+CLASSIFY,START
+PRED,START
+```
+
+## 初始校正
+
+按 `初始校正` 進入校正 modal。
+
+流程：
+
+1. 選擇頸椎狀態。
+2. 進入仰躺校正或側躺校正。
+3. 使用 `+ / -` 修改 Head / Neck 高度。
+4. 按「確定調整」送出高度。
+5. 按「完成校正」擷取 anchor。
+
+### 仰躺 BSHS
+
+進入仰躺校正時會送：
+
+```text
+INIT,NORM,S
+DEBUG
+```
+
+按「確定調整仰躺高度」會送：
+
+```text
+SET,NORM,<condition>,S,HEAD,<height_cm>
+SET,NORM,<condition>,S,NECK,<height_cm>
+```
+
+按「完成校正」會送：
+
+```text
+SET,OK
+ANCHOR,START,BSHS
+```
+
+### 側躺 BLHL
+
+進入側躺校正時會送：
+
+```text
+INIT,NORM,L
+DEBUG
+```
+
+Web 會等待 ESP32 進入 `STANDBY` 後開放側躺微調。若等待逾時，會開放人工微調。
+
+按「確定調整側躺高度」會送：
+
+```text
+SET,NORM,<condition>,L,HEAD,<height_cm>
+SET,NORM,<condition>,L,NECK,<height_cm>
+```
+
+按「完成校正」會送：
+
+```text
+SET,OK
+ANCHOR,START,BLHL
+```
+
+## 高度上下限與 0.5 cm 步進
+
+Web 端與 `pose_pre_v3.1` 韌體共同限制高度：
+
+| 通道 | 最小值 | 最大值 | 步進 |
+|---|---:|---:|---:|
+| Head | 7.0 cm | 16.0 cm | 0.5 cm |
+| Neck | 10.0 cm | 16.0 cm | 0.5 cm |
+
+所有高度輸入會：
+
+- 限制在合法上下限內。
+- snap 到最接近的 `0.5 cm`。
+- `+ / -` 只改 Web UI 暫存值。
+- 按「確定調整」後才送出 BLE 指令。
+
+ESP32 端也會再次 clamp / snap，韌體仍是最後安全防線。
+
+## 高度與壓力監測
+
+此區塊顯示：
+
+- Monitor 壓力
+- Neck 壓力
+- Head 壓力
+- Head 目標高度 / 目前高度
+- Neck 目標高度 / 目前高度
+- 更新時間
+
+下方監測紀錄支援：
+
+- 自動滾動
+- 固定滾動
+- 清空監測紀錄
+
+監測更新來源和訊息紀錄一致，主要由 ESP32 BLE notification 觸發。
+
+## 線圖監測
+
+右側線圖監測包含 Y 軸設定、即時摘要與三張線圖。
+
+### Y 軸設定
+
+可設定壓力線圖：
+
+- Y 軸最大值
+- Y 軸最小值
+
+按 `更新圖表` 後套用到壓力線圖。
+
+### 即時摘要
+
+摘要顯示：
+
+- Monitor
+- Neck
+- Head
+- last5
+- prev5
+- Diff
+- 更新時間
+
+### 線圖模式
+
+- `只看壓力`：只展開 Monitor / Neck / Head 壓力線圖。
+- `完整線圖`：壓力線圖、平均值線圖、差值線圖全部展開。
+- `只看摘要`：只保留摘要，不顯示圖表。
+- `收合線圖`：把右側圖表收成摘要狀態。
+
+右側欄位有獨立滾輪。`完整線圖` 不會壓縮三張圖，而是讓圖表自然往下展開。
+
+## 訊息紀錄
+
+顯示 Web 送出的指令與 ESP32 回傳訊息。
+
+支援：
+
+- 自動滾動
+- 固定滾動
+- Clear Text
+
+若要確認指令是否成功，優先看訊息紀錄中的 ESP32 回覆，例如：
+
+```text
+MCU,OK
+MANUAL,OK,ENTER
+PRED,OK,START
+CLASSIFY,OK,START
+```
+
+## 指令說明與範例
+
+### 開機時間設定
+
+這些是舊式指令，仍可用於設定開機固定充氣時間。
+
+| 指令 | 用途 | 範例 |
+|---|---|---|
+| `SET,MONITOR,<ms>` | 設定 Monitor 開機充氣時間 | `set,monitor,15000,` |
+| `SET,NECK,<ms>` | 設定 Neck 開機充氣時間 | `set,neck,0,` |
+| `SET,HEAD,<ms>` | 設定 Head 開機充氣時間 | `set,head,21075,` |
+| `RESET` | 非 Manual 狀態下回到 `DRAIN_ALL`，重新跑開機流程 | `reset,` |
+
+常用組合：
+
+```text
+set,monitor,15000,
+set,neck,0,
+set,head,21075,
+reset,
+```
+
+前三行送出後會立刻更新 ESP32 變數，但不會立刻重跑流程。`reset,` 會讓流程回到 `DRAIN_ALL`，下一輪才會套用新的開機充氣時間。
+
+注意：若 ESP32 已在 `MANUAL_CONTROL`，新版 `reset,` 只會停止輸出並停留在 Manual。要離開 Manual 並回開機流程，請使用：
+
+```text
+MANUAL,STARTUP,7.0,10.0
+```
+
+### 使用者資料
+
+```text
+USER,<gender>,<age>,<height>,<weight>
+```
+
+範例：
+
+```text
+USER,1,25,170,65
+```
+
+### 初始高度與校正
+
+```text
 INIT,NORM,S
 INIT,NORM,L
-SET,NORM,<condition>,<S|L>,<HEAD|NECK>,<height_cm>
 SET,OK
-MODE,NORM
 ANCHOR,START,BSHS
 ANCHOR,START,BLHL
 ANCHOR,STATUS
 ANCHOR,GET,BSHS
 ANCHOR,GET,BLHL
+```
+
+### 高度設定
+
+```text
+SET,NORM,<condition>,<S|L>,HEAD,<height_cm>
+SET,NORM,<condition>,<S|L>,NECK,<height_cm>
+```
+
+範例：
+
+```text
+SET,NORM,1,S,HEAD,7.5
+SET,NORM,1,S,NECK,10.5
+SET,NORM,1,L,HEAD,14.0
+SET,NORM,1,L,NECK,16.0
+```
+
+### 功能開關
+
+```text
+FEATURE,POSE,ON
+FEATURE,POSE,OFF
+FEATURE,PRED,ON
+FEATURE,PRED,OFF
+FEATURE,STATUS
+```
+
+### 分類與 PRED
+
+```text
 CLASSIFY,START
 CLASSIFY,STOP
 CLASSIFY,GET
 PRED,START
 PRED,STOP
 PRED,GET
-FEATURE,STATUS
-FEATURE,POSE,<ON|OFF>
-FEATURE,PRED,<ON|OFF>
+```
+
+### 壓力與狀態查詢
+
+```text
+P
+I
+DEBUG
+GET,INFT,ALL
+```
+
+### ESP32 Manual 控制
+
+```text
 MANUAL,ENTER
 MANUAL,STOP
 MANUAL,FILL,MONITOR
@@ -110,396 +468,106 @@ MANUAL,FILL,HEAD
 MANUAL,DRAIN,HEAD
 MANUAL,DRAIN,ALL
 MANUAL,STARTUP,<head_cm>,<neck_cm>
-P
-I
-DEBUG
 ```
 
-ESP32 回覆需要以換行結尾，Web 端才會正確切分 BLE notification。
-
-## 快速使用流程
-
-1. 開啟 `spp3_BLE/`。
-2. 按 `Connect BLE` 連接 ESP32。
-3. 填入使用者資料：
-   - 生理性別
-   - 年齡
-   - 身高
-   - 體重
-4. 按 `設定`，確認訊息紀錄出現 `USER,OK`。
-5. 在「校正與分類狀態」選擇：
-   - 手動模式：校正後不自動分類與自動調整。
-   - 自動模式：校正後自動啟動分類與 PRED 自動調整。
-6. 按 `初始校正`，依序完成仰躺 BSHS 與側躺 BLHL。
-7. 如需人工調高度，使用 `+ / -` 修改數值，再按「確定調整」。
-8. 完成兩個 anchor 後：
-   - 自動模式會啟動 `CLASSIFY,START` 與 `PRED,START`。
-   - 手動模式只保留校正結果，不啟動自動分類與自動調整。
-9. 使用「高度與壓力監測」確認壓力與高度狀態。
-10. 使用 `Export Data` 匯出資料。
-
-## Web 手動模式與自動模式
-
-Web 端「手動模式 / 自動模式」是分類與預測控制層級，不等於 ESP32 `MANUAL_CONTROL`。
-
-### 手動模式
-
-手動模式會送出或維持：
+範例：
 
 ```text
-PRED,STOP
-CLASSIFY,STOP
-FEATURE,PRED,OFF
-FEATURE,STATUS
+MANUAL,ENTER
+MANUAL,FILL,HEAD
+MANUAL,DRAIN,ALL
+MANUAL,STARTUP,7.0,10.0
 ```
 
-效果：
+### Manual 低階輸出
 
-- 不自動啟動姿勢分類。
-- 不自動啟動 PRED 預測調整。
-- 仍可做初始校正、微調高度、壓力監測、資料收集。
-- 仍可手動使用 `SET,NORM,...` 調整 Head / Neck 目標高度。
-
-### 自動模式
-
-自動模式會送：
+ESP32 在 `MANUAL_CONTROL` 中仍支援低階輸出：
 
 ```text
-FEATURE,POSE,ON
-FEATURE,PRED,ON
-FEATURE,STATUS
+S,<index>,<0|1>
+RESET
+MOTORPWM,<value>
 ```
 
-當 BSHS 與 BLHL 都完成後，Web 端會自動送：
+範例：
 
 ```text
-MODE,NORM
-CLASSIFY,START
-PRED,START
+S,1,1
+S,1,0
+MOTORPWM,128
 ```
 
-收到 `PRED,OK,START` 後，代表 ESP32 已確認進入 PRED 自動高度調整流程。
+## 匯出資料
 
-## 高度上下限與 0.5 cm 調整
+按 `Export Data` 會匯出：
 
-Web 端對應 `pose_pre_v3.1` 的韌體限制：
+- CSV：壓力、差值、last5、prev5、state、onoff、predict pose、pose 等資料。
+- TXT：訊息紀錄。
 
-| 通道 | 最小值 | 最大值 | 步進 |
-|---|---:|---:|---:|
-| Head | 7.0 cm | 16.0 cm | 0.5 cm |
-| Neck | 10.0 cm | 16.0 cm | 0.5 cm |
-
-所有初始校正與微調高度輸入都會：
-
-- clamp 到合法上下限。
-- snap 到最接近的 `0.5 cm`。
-- 按 `+ / -` 時只暫存在 Web UI。
-- 按「確定調整」後才送出：
-
-```text
-SET,NORM,<condition>,<S|L>,<HEAD|NECK>,<height_cm>
-```
-
-ESP32 端仍會再次 clamp / snap，韌體是最後安全防線。
-
-## 初始校正
-
-按 `初始校正` 後會進入校正 modal。
-
-### 仰躺 BSHS
-
-1. 選擇頸椎狀態。
-2. 按 `仰躺校正`。
-3. Web 送：
-
-```text
-INIT,NORM,S
-DEBUG
-```
-
-4. 使用 `+ / -` 調整 Head / Neck 高度。
-5. 按「確定調整仰躺高度」才送 `SET,NORM,...`。
-6. 按 `完成校正` 後送：
-
-```text
-SET,OK
-ANCHOR,START,BSHS
-```
-
-7. Web 輪詢：
-
-```text
-ANCHOR,STATUS
-ANCHOR,GET,BSHS
-```
-
-直到收到：
-
-```text
-ANCHOR,OK,BSHS,...
-```
-
-### 側躺 BLHL
-
-1. 按 `側躺校正`。
-2. Web 送：
-
-```text
-INIT,NORM,L
-DEBUG
-```
-
-3. Web 會等待 `state == STANDBY` 連續 2 筆後開放側躺微調。
-4. 若超過 8 秒未等到 STANDBY，會開放人工微調。
-5. 按「確定調整側躺高度」後才送 `SET,NORM,...`。
-6. 按 `完成校正` 後送：
-
-```text
-SET,OK
-ANCHOR,START,BLHL
-```
-
-7. Web 輪詢：
-
-```text
-ANCHOR,STATUS
-ANCHOR,GET,BLHL
-```
-
-直到收到：
-
-```text
-ANCHOR,OK,BLHL,...
-```
-
-## 微調
-
-按 `微調` 會進入生物力學調整模式。
-
-流程：
-
-1. 選擇頸椎狀態。
-2. 進入仰躺高度微調。
-3. 用 `+ / -` 修改 Head / Neck。
-4. 按「確定調整仰躺高度」送出。
-5. 切換到側躺高度微調。
-6. 用 `+ / -` 修改 Head / Neck。
-7. 按「確定調整側躺高度」送出。
-8. 按 `結束` 送 `SET,OK`。
-
-若高度有暫存但尚未按「確定調整」，Web 會阻擋切換或完成，避免 ESP32 實際高度與 anchor 記錄不一致。
-
-## 校正與分類狀態 accordion
-
-「校正與分類狀態」支援收合：
-
-- 按 `收合` 隱藏狀態內容。
-- 按 `展開` 顯示狀態內容。
-- 收合狀態會記錄在瀏覽器 `localStorage`。
-- 若 `localStorage` 被瀏覽器阻擋，收合功能仍可正常使用，只是不保留狀態。
-
-區塊內顯示：
-
-- 目前 Web 模式
-- 模式指令是否收到 ESP32 確認
-- 流程狀態
-- BSHS / BLHL 完成狀態
-- Anchor state / target
-- Anchor 數值
-- 即時姿勢
-- 分數與 PRED 控制狀態
-
-## 高度與壓力監測
-
-「高度與壓力監測」區塊顯示：
-
-| 欄位 | 來源 |
-|---|---|
-| Monitor 壓力 | `P:` 第一個值 |
-| Neck 壓力 | `P:` 第二個值 |
-| Head 壓力 | `P:` 第三個值 |
-| Head 高度 | `DEBUG` / `HEIGHT_SET` / `INIT` |
-| Neck 高度 | `DEBUG` / `HEIGHT_SET` / `INIT` |
-
-壓力輪詢：
-
-```text
-P
-```
-
-目前每 1 秒送一次，所以壓力圖表與監測區塊約每秒更新一次。
-
-狀態輪詢：
-
-```text
-I
-```
-
-目前每 2 秒送一次，用於 state / onoff / diff / avg 等資料。
-
-高度補值：
-
-```text
-DEBUG
-```
-
-目前每 10 秒 silent 送一次，用來補 `headNumber / neckNumber / currentHeadNumber / currentNeckNumber`。這些 silent DEBUG 回覆不會塞滿主訊息紀錄。
-
-監測紀錄支援：
-
-- 自動滾動
-- 固定滾動
-- 清空監測紀錄
-
-## ESP32 Manual 控制
-
-`ESP32 Manual 控制` 位於「裝置連線與指令」區塊內，預設可收合。這是 ESP32 底層 `MANUAL_CONTROL`，不同於 Web 端「手動模式」。
-
-可用按鈕與指令：
-
-| 按鈕 | 指令 |
-|---|---|
-| 進入 ESP32 Manual | `MANUAL,ENTER` |
-| 停止 | `MANUAL,STOP` |
-| Monitor 充氣 | `MANUAL,FILL,MONITOR` |
-| Monitor 吸氣 | `MANUAL,DRAIN,MONITOR` |
-| Neck 充氣 | `MANUAL,FILL,NECK` |
-| Neck 吸氣 | `MANUAL,DRAIN,NECK` |
-| Head 充氣 | `MANUAL,FILL,HEAD` |
-| Head 吸氣 | `MANUAL,DRAIN,HEAD` |
-| 全部同時洩氣 | `MANUAL,DRAIN,ALL` |
-| 離開 ESP32 Manual 並回開機流程 | `MANUAL,STARTUP,<head_cm>,<neck_cm>` |
-
-使用注意：
-
-- 進入 ESP32 Manual 後，Web 端仍會顯示壓力與 state。
-- 單顆充氣/吸氣會先停止目前輸出，再啟動指定氣囊動作。
-- `全部同時洩氣` 只支援 DRAIN，不支援全部同時充氣。
-- `停止` 會關閉馬達與所有閥，但留在 ESP32 manual。
-- `離開 ESP32 Manual 並回開機流程` 會讓 ESP32 回到：
-
-```text
-DRAIN_ALL -> FILL_MONITOR -> FILL_NECK -> FILL_HEAD -> STANDBY
-```
-
-並依輸入的 Head / Neck 目標高度，在固定充氣後補到指定高度。
-
-## 訊息紀錄
-
-主訊息紀錄顯示：
-
-- 使用者手動送出的指令
-- Web 自動送出的重要流程指令
-- ESP32 BLE 回覆
-- 錯誤訊息
-
-支援：
-
-- 自動滾動
-- 固定滾動
-- Clear Text
-
-## 資料收集與匯出
-
-Web 端會將下列資料寫入 IndexedDB：
-
-- Monitor / Neck / Head pressure
-- differential
-- last5pointAvg
-- prev5pointAvg
-- state
-- onoff event
-- predict pose
-- pose event
-- 指令時間紀錄
-
-按 `Export Data` 會匯出 CSV / TXT。
-
-## 實機驗證標準
-
-基本連線與使用者資料：
-
-```text
-EXPERIMENT,ON
-USER,OK
-```
-
-校正：
-
-```text
-ANCHOR,OK,START,BSHS
-ANCHOR,OK,BSHS,...
-ANCHOR,OK,START,BLHL
-ANCHOR,OK,BLHL,...
-```
-
-自動模式：
-
-```text
-FEATURE,STATUS,LEGACY,0,POSE,1,PRED,1
-MODE,OK
-CLASSIFY,OK,START
-PRED,OK,START
-```
-
-手動模式：
-
-```text
-FEATURE,STATUS,LEGACY,0,POSE,1,PRED,0
-```
-
-ESP32 Manual：
-
-```text
-MANUAL,OK,ENTER
-MANUAL,OK,FILL,HEAD
-MANUAL,OK,DRAIN,ALL
-MANUAL,OK,STOP
-MANUAL,OK,STARTUP,<head_cm>,<neck_cm>
-```
+資料來源為瀏覽器 IndexedDB。重新整理頁面或重新開始實驗前，請先匯出需要保存的資料。
 
 ## 常見問題
 
-### 只有分類，沒有自動調整
+### 按下 Send Text 沒反應
 
-請檢查：
+先確認：
 
-- 目前 Web 模式是否為自動模式。
-- ESP32 是否回覆 `FEATURE,STATUS,...,PRED,1`。
-- 是否有 `PRED,OK,START`。
+- 已按 `Connect BLE`。
+- 訊息紀錄有顯示 `Connected!`。
+- 指令最後有換行。newline 留空時 Web 會自動補 `\n`。
+- ESP32 是否仍在 `MANUAL_CONTROL`，Manual 中部分一般指令會被忽略。
 
-若只有：
+### `set,monitor,...` 是否還能用
+
+可以。它會立即更新 `MonitorInitialFillTime`。但若要重新套用到開機流程，通常需要再送 `reset,`。
+
+### `reset,` 是否等於回開機流程
+
+非 Manual 狀態下，是。
+Manual 狀態下，不是。Manual 狀態下要回開機流程請用：
 
 ```text
+MANUAL,STARTUP,<head_cm>,<neck_cm>
+```
+
+### 0.5 cm 高度是否會送到 ESP32
+
+會。Web 端使用 `0.5 cm` step，ESP32 `pose_pre_v3.1` 端也支援 0.5 cm clamp / snap。
+
+### 如何確認模式切換成功
+
+看「訊息紀錄」中的回覆：
+
+```text
+FEATURE,STATUS,...
 CLASSIFY,OK,START
+PRED,OK,START
+PRED,OK,STOP
 ```
 
-但沒有：
+### 如何確認 Manual 指令成功
+
+看「訊息紀錄」或 `ESP32 Manual 狀態`：
 
 ```text
-PRED,OK,START
+MANUAL,OK,ENTER
+MANUAL,OK,STOP
+MANUAL,OK,FILL,HEAD
+MANUAL,OK,DRAIN,ALL
+MANUAL,OK,STARTUP,7.0,10.0
 ```
 
-代表目前只有姿勢分類，自動高度調整尚未確認啟動。
+## 開發注意事項
 
-### PRED,ERR,NOT_READY
+- `spp3_BLE/index.html`：主要 DOM 結構。
+- `spp3_BLE/styles.css`：整體版面、卡片、accordion、線圖與 modal 樣式。
+- `spp3_BLE/app.js`：BLE 連線、指令送出、資料解析、圖表更新、校正流程與 UI 狀態。
+- 修改 BLE 指令時，請同步更新：
+  - Web 按鈕與 UI 文案
+  - `指令合輯`
+  - README 指令說明
+  - ESP32 parser
 
-通常代表 USER、anchor 或壓力資料尚未完整。請重新確認：
+## License
 
-- 使用者資料已設定。
-- BSHS anchor 完成。
-- BLHL anchor 完成。
-- 壓力資料正在更新。
-
-### 高度顯示不是每秒更新
-
-壓力每秒更新，高度主要來自 `DEBUG / HEIGHT_SET / INIT`。目前 Web 每 10 秒 silent 送一次 `DEBUG` 補高度狀態。
-
-### Web 手動模式與 ESP32 Manual 有什麼不同
-
-- Web 手動模式：關閉自動分類與自動調整，但保留一般高度調整流程。
-- ESP32 Manual：進入底層輸出控制，可直接控制氣囊充氣/吸氣/洩氣。
-
-## 授權
-
-原始程式碼註解標示為 `Apache-2.0`，請以各檔案標頭為準。
+原始 Web Serial 範例基於 Apache-2.0。此 repo 依原專案授權與研究用途維護。

@@ -15,6 +15,26 @@
 		let espManualAck = document.getElementById('espManualAck');
 		let manualStartupHead = document.getElementById('manualStartupHead');
 		let manualStartupNeck = document.getElementById('manualStartupNeck');
+		let appLayout = document.getElementById('appLayout');
+		let chartPanelBody = document.getElementById('chartPanelBody');
+		let chartPanelToggle = document.getElementById('chartPanelToggle');
+		let chartPanelStateBadge = document.getElementById('chartPanelStateBadge');
+		let chartModePressure = document.getElementById('chartModePressure');
+		let chartModeAll = document.getElementById('chartModeAll');
+		let chartModeSummary = document.getElementById('chartModeSummary');
+		let pressureChartSection = document.getElementById('pressureChartSection');
+		let averageChartSection = document.getElementById('averageChartSection');
+		let diffChartSection = document.getElementById('diffChartSection');
+		let chartSummaryMonitor = document.getElementById('chartSummaryMonitor');
+		let chartSummaryNeck = document.getElementById('chartSummaryNeck');
+		let chartSummaryHead = document.getElementById('chartSummaryHead');
+		let chartSummaryLast5 = document.getElementById('chartSummaryLast5');
+		let chartSummaryPrev5 = document.getElementById('chartSummaryPrev5');
+		let chartSummaryDiff = document.getElementById('chartSummaryDiff');
+		let chartSummaryTime = document.getElementById('chartSummaryTime');
+		let commandGuideBtn = document.getElementById('commandGuideBtn');
+		let commandGuideDialog = document.getElementById('commandGuideDialog');
+		let commandGuideClose = document.getElementById('commandGuideClose');
 
 		// BLE Variables
 		let bluetoothDevice;
@@ -139,7 +159,7 @@
 
 			chart.options.scales.y.max = yAxisMax ? parseFloat(yAxisMax) : chart.options.scales.y.max;
 			chart.options.scales.y.min = yAxisMin ? parseFloat(yAxisMin) : chart.options.scales.y.min;
-			chart.update();
+			updateChartIfVisible(chart, pressureChartSection);
 		});
 
 		const ctx2 = document.getElementById('averChart').getContext('2d');
@@ -242,6 +262,168 @@
 				}
 			}
 		});
+
+		let chartPanelExpanded = true;
+		let activeChartMode = "pressure";
+
+		function setNodeText(node, text) {
+			if (node) {
+				node.textContent = text;
+			}
+		}
+
+		function getSavedChartSetting(key) {
+			try {
+				return localStorage.getItem(key);
+			} catch (error) {
+				return null;
+			}
+		}
+
+		function saveChartSetting(key, value) {
+			try {
+				localStorage.setItem(key, value);
+			} catch (error) {
+				// Some file/browser contexts block localStorage; chart controls should still work.
+			}
+		}
+
+		function updateChartModeButtons() {
+			chartModePressure?.classList.toggle('primary', activeChartMode === "pressure");
+			chartModeAll?.classList.toggle('primary', activeChartMode === "all");
+			chartModeSummary?.classList.toggle('primary', activeChartMode === "summary");
+		}
+
+		function isChartSectionVisible(section) {
+			return chartPanelExpanded && Boolean(section?.open);
+		}
+
+		function updateChartIfVisible(chartInstance, section) {
+			if (isChartSectionVisible(section)) {
+				chartInstance.update('none');
+			}
+		}
+
+		function refreshVisibleCharts() {
+			requestAnimationFrame(() => {
+				[
+					{ instance: chart, section: pressureChartSection },
+					{ instance: chart2, section: averageChartSection },
+					{ instance: chart3, section: diffChartSection }
+				].forEach(({ instance, section }) => {
+					if (isChartSectionVisible(section)) {
+						instance.resize();
+						instance.update('none');
+					}
+				});
+			});
+		}
+
+		function setChartPanelExpanded(expanded, persist = true) {
+			chartPanelExpanded = expanded;
+			chartPanelBody?.classList.toggle('is-collapsed', !expanded);
+			appLayout?.classList.toggle('charts-collapsed', !expanded);
+			if (chartPanelToggle) {
+				chartPanelToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+				chartPanelToggle.textContent = expanded ? "收合線圖" : "展開線圖";
+			}
+			if (chartPanelStateBadge) {
+				chartPanelStateBadge.textContent = expanded ? "展開中" : "摘要";
+				chartPanelStateBadge.classList.toggle('pill-ok', expanded);
+				chartPanelStateBadge.classList.toggle('pill-pending', !expanded);
+			}
+			if (persist) {
+				saveChartSetting('chartPanelExpanded', expanded ? '1' : '0');
+			}
+			if (expanded) {
+				refreshVisibleCharts();
+			}
+		}
+
+		function applyChartBodyMode(mode) {
+			if (!chartPanelBody) {
+				return;
+			}
+			chartPanelBody.classList.remove('mode-pressure', 'mode-all', 'mode-summary');
+			chartPanelBody.classList.add(`mode-${mode}`);
+		}
+
+		function setChartMode(mode, persist = true) {
+			activeChartMode = mode;
+			if (mode === "all") {
+				applyChartBodyMode("all");
+				setChartPanelExpanded(true, persist);
+				if (pressureChartSection) pressureChartSection.open = true;
+				if (averageChartSection) averageChartSection.open = true;
+				if (diffChartSection) diffChartSection.open = true;
+			} else if (mode === "summary") {
+				applyChartBodyMode("summary");
+				setChartPanelExpanded(false, persist);
+			} else {
+				activeChartMode = "pressure";
+				applyChartBodyMode("pressure");
+				setChartPanelExpanded(true, persist);
+				if (pressureChartSection) pressureChartSection.open = true;
+				if (averageChartSection) averageChartSection.open = false;
+				if (diffChartSection) diffChartSection.open = false;
+			}
+			updateChartModeButtons();
+			if (persist) {
+				saveChartSetting('chartMode', activeChartMode);
+			}
+			refreshVisibleCharts();
+		}
+
+		function formatChartSummaryValue(value, digits = 2) {
+			if (value === null || value === undefined || value === "") {
+				return "-";
+			}
+			const numericValue = Number(value);
+			return Number.isFinite(numericValue) ? numericValue.toFixed(digits) : "-";
+		}
+
+		function updateChartSummary() {
+			const summaryValues = [
+				monitorState?.pressure.monitor,
+				monitorState?.pressure.neck,
+				monitorState?.pressure.head,
+				last5pointAvg,
+				prev5pointAvg,
+				differential
+			];
+			const hasData = summaryValues.some(value => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value)));
+			setNodeText(chartSummaryMonitor, formatChartSummaryValue(monitorState?.pressure.monitor));
+			setNodeText(chartSummaryNeck, formatChartSummaryValue(monitorState?.pressure.neck));
+			setNodeText(chartSummaryHead, formatChartSummaryValue(monitorState?.pressure.head));
+			setNodeText(chartSummaryLast5, formatChartSummaryValue(last5pointAvg));
+			setNodeText(chartSummaryPrev5, formatChartSummaryValue(prev5pointAvg));
+			setNodeText(chartSummaryDiff, formatChartSummaryValue(differential));
+			setNodeText(chartSummaryTime, hasData ? new Date().toLocaleTimeString() : "-");
+		}
+
+		chartPanelToggle?.addEventListener('click', function () {
+			if (chartPanelExpanded) {
+				setChartMode("summary");
+				return;
+			}
+			const restoreMode = activeChartMode === "summary" ? "pressure" : activeChartMode;
+			setChartMode(restoreMode);
+		});
+
+		chartModePressure?.addEventListener('click', () => setChartMode("pressure"));
+		chartModeAll?.addEventListener('click', () => setChartMode("all"));
+		chartModeSummary?.addEventListener('click', () => setChartMode("summary"));
+
+		[pressureChartSection, averageChartSection, diffChartSection].forEach(section => {
+			section?.addEventListener('toggle', refreshVisibleCharts);
+		});
+
+		const savedChartMode = getSavedChartSetting('chartMode');
+		const savedChartExpanded = getSavedChartSetting('chartPanelExpanded');
+		setChartMode(savedChartMode === "all" || savedChartMode === "summary" ? savedChartMode : "pressure", false);
+		if (savedChartExpanded === '0') {
+			setChartMode("summary", false);
+		}
 
 		// indexeddb
 		// indexedDB操作模組
@@ -530,6 +712,36 @@
 
 		serial_clearText.addEventListener('click', async () => {
 			serial_status.innerHTML = "";
+		});
+
+		commandGuideBtn?.addEventListener('click', function (event) {
+			event.preventDefault();
+			event.stopPropagation();
+			if (!commandGuideDialog) {
+				return;
+			}
+			if (typeof commandGuideDialog.showModal === "function") {
+				commandGuideDialog.showModal();
+			} else {
+				commandGuideDialog.setAttribute('open', '');
+			}
+		});
+
+		commandGuideClose?.addEventListener('click', function () {
+			if (!commandGuideDialog) {
+				return;
+			}
+			if (typeof commandGuideDialog.close === "function") {
+				commandGuideDialog.close();
+			} else {
+				commandGuideDialog.removeAttribute('open');
+			}
+		});
+
+		commandGuideDialog?.addEventListener('click', function (event) {
+			if (event.target === commandGuideDialog) {
+				commandGuideDialog.close();
+			}
 		});
 
 		serial_syncTime.addEventListener('click', async () => {
@@ -901,6 +1113,7 @@
 			pressure: { monitor: null, neck: null, head: null },
 			height: { targetHead: null, targetNeck: null, currentHead: null, currentNeck: null }
 		};
+		updateChartSummary();
 
 		function formatPressureValue(value) {
 			const numericValue = Number(value);
@@ -1395,8 +1608,8 @@
 								if (index == 2) pressure3 = value;
 							}
 						});
-						// Update the chart
-						chart.update();
+						updateChartSummary();
+						updateChartIfVisible(chart, pressureChartSection);
 					}
 				}
 				else if (prefix.startsWith("I:")) {
@@ -1431,7 +1644,8 @@
 									chart3.data.datasets[0].data.shift();
 								}
 								differential = value;
-								chart3.update();
+								updateChartSummary();
+								updateChartIfVisible(chart3, diffChartSection);
 							}
 
 							if (index == 1) {
@@ -1515,7 +1729,8 @@
 									chart2.data.datasets[1].data.shift();
 								}
 								prev5pointAvg = value;
-								chart2.update();
+								updateChartSummary();
+								updateChartIfVisible(chart2, averageChartSection);
 							}
 							if (index == 5) {
 								serial_status.innerHTML += "<font color='" + colour + "'>" + "predict_pose: " + value + "</font><br>";

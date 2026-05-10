@@ -28,87 +28,80 @@ https://fustyles.github.io/webduino/WebSerial.html
 <body>
 	<div id="title">台科大智慧枕墊資料收集系統</div>
 
-	<main class="app-layout">
+	<main id="appLayout" class="app-layout">
 		<aside class="left-panel">
-			<section class="panel-card">
-				<h2>圖表設定</h2>
-				<div class="field-grid">
-					<label for="yAxisMax">Y軸最大值</label>
-					<input type="number" id="yAxisMax" value="9000000">
-					<label for="yAxisMin">Y軸最小值</label>
-					<input type="number" id="yAxisMin" value="80000">
-				</div>
-				<button id="updateChart" class="full">更新圖表</button>
-			</section>
-
-			<section class="panel-card">
-				<h2>裝置連線與指令</h2>
-				<div class="button-row">
-					<button id="serial_request_port" class="primary">Connect BLE</button>
-					<button id="serial_close_port">Disconnect</button>
-				</div>
-				<div class="field-row">
-					<input type="text" id="serial_text" placeholder="輸入文字指令">
-					<select id="serial_newline">
-						<option value=""></option>
-						<option value="\r">\r</option>
-						<option value="\n">\n</option>
-						<option value="\r\n">\r\n</option>
-					</select>
-				</div>
-				<button id="serial_sendText" class="full">Send Text</button>
-
-				<div class="field-row">
-					<input type="text" id="serial_uint8" value="" placeholder="例如: 1,2,3">
-				</div>
-				<button id="serial_sendUint8" class="full">Send Uint8Array</button>
-
-				<details class="manual-control-block manual-control-details">
-					<summary class="manual-control-summary">
-						<span>展開 ESP32 Manual 控制</span>
-						<span id="espManualStatus" class="pill pill-pending">未進入</span>
-					</summary>
-					<div class="manual-command-grid">
-						<button id="espManualEnterBtn" type="button">進入 ESP32 Manual</button>
-						<button id="espManualStopBtn" type="button">停止</button>
-						<button id="monitorFillBtn" type="button">Monitor 充氣</button>
-						<button id="monitorDrainBtn" type="button">Monitor 吸氣</button>
-						<button id="neckFillBtn" type="button">Neck 充氣</button>
-						<button id="neckDrainBtn" type="button">Neck 吸氣</button>
-						<button id="headFillBtn" type="button">Head 充氣</button>
-						<button id="headDrainBtn" type="button">Head 吸氣</button>
-						<button id="allDrainBtn" type="button">全部同時洩氣</button>
+			<section class="panel-card status-card device-status-card">
+				<h2>裝置連線、指令與狀態</h2>
+				<div class="device-main-row">
+					<div class="connection-actions">
+						<button id="serial_request_port" class="primary">Connect BLE</button>
+						<button id="serial_close_port">Disconnect</button>
 					</div>
-					<div class="manual-startup-grid">
-						<label for="manualStartupHead">Head 目標</label>
-						<input type="number" id="manualStartupHead" value="7.0" min="7" max="16" step="0.5">
-						<label for="manualStartupNeck">Neck 目標</label>
-						<input type="number" id="manualStartupNeck" value="10.0" min="10" max="16" step="0.5">
-					</div>
-					<button id="manualStartupBtn" type="button" class="full">離開 ESP32 Manual 並回開機流程</button>
-					<div id="espManualAck" class="mode-ack">ESP32 Manual 狀態：尚未送出</div>
-				</details>
-			</section>
-
-			<section class="panel-card status-card">
-				<h2>系統狀態</h2>
-				<div class="status-grid">
-					<div class="status-state">
+					<div class="device-state-strip">
 						<label for="systemStateDisplay">State:</label>
 						<input type="text" id="systemStateDisplay" readonly>
+						<div class="indicator-container">
+							<div id="led_s1" class="indicator" title="Motor">S1</div>
+							<div id="led_s2" class="indicator" title="Detect Valve">S2</div>
+							<div id="led_s3" class="indicator" title="Neck Valve">S3</div>
+							<div id="led_s4" class="indicator" title="Head Valve">S4</div>
+							<div id="led_s5" class="indicator" title="Pump In">S5</div>
+							<div id="led_s6" class="indicator" title="Pump In">S6</div>
+						</div>
 					</div>
-					<div class="indicator-container">
-						<div id="led_s1" class="indicator" title="Motor">S1</div>
-						<div id="led_s2" class="indicator" title="Detect Valve">S2</div>
-						<div id="led_s3" class="indicator" title="Neck Valve">S3</div>
-						<div id="led_s4" class="indicator" title="Head Valve">S4</div>
-						<div id="led_s5" class="indicator" title="Pump In">S5</div>
-						<div id="led_s6" class="indicator" title="Pump In">S6</div>
+					<div class="status-actions">
+						<button id="syncTime">Sync UTC Time</button>
+						<button id="exportData">Export Data</button>
 					</div>
 				</div>
-				<div class="status-actions">
-					<button id="syncTime">Sync UTC Time</button>
-					<button id="exportData">Export Data</button>
+
+				<div class="device-detail-row">
+					<details class="advanced-command-details">
+						<summary>
+							<span>進階文字指令</span>
+							<button id="commandGuideBtn" type="button" class="mini-command-guide">指令合輯</button>
+						</summary>
+						<div class="field-row command-input-row">
+							<input type="text" id="serial_text" placeholder="輸入文字指令">
+							<select id="serial_newline">
+								<option value=""></option>
+								<option value="\r">\r</option>
+								<option value="\n">\n</option>
+								<option value="\r\n">\r\n</option>
+							</select>
+						</div>
+						<button id="serial_sendText" class="full">Send Text</button>
+						<div class="field-row">
+							<input type="text" id="serial_uint8" value="" placeholder="例如: 1,2,3">
+						</div>
+						<button id="serial_sendUint8" class="full">Send Uint8Array</button>
+					</details>
+
+					<details class="manual-control-block manual-control-details">
+						<summary class="manual-control-summary">
+							<span>ESP32 Manual 控制</span>
+							<span id="espManualStatus" class="pill pill-pending">未進入</span>
+						</summary>
+						<div class="manual-command-grid">
+							<button id="espManualEnterBtn" type="button">進入 ESP32 Manual</button>
+							<button id="espManualStopBtn" type="button">停止</button>
+							<button id="monitorFillBtn" type="button">Monitor 充氣</button>
+							<button id="monitorDrainBtn" type="button">Monitor 吸氣</button>
+							<button id="neckFillBtn" type="button">Neck 充氣</button>
+							<button id="neckDrainBtn" type="button">Neck 吸氣</button>
+							<button id="headFillBtn" type="button">Head 充氣</button>
+							<button id="headDrainBtn" type="button">Head 吸氣</button>
+							<button id="allDrainBtn" type="button">全部同時洩氣</button>
+						</div>
+						<div class="manual-startup-grid">
+							<label for="manualStartupHead">Head 目標</label>
+							<input type="number" id="manualStartupHead" value="7.0" min="7" max="16" step="0.5">
+							<label for="manualStartupNeck">Neck 目標</label>
+							<input type="number" id="manualStartupNeck" value="10.0" min="10" max="16" step="0.5">
+						</div>
+						<button id="manualStartupBtn" type="button" class="full">離開 ESP32 Manual 並回開機流程</button>
+						<div id="espManualAck" class="mode-ack">ESP32 Manual 狀態：尚未送出</div>
+					</details>
 				</div>
 			</section>
 
@@ -256,10 +249,58 @@ https://fustyles.github.io/webduino/WebSerial.html
 			</section>
 		</aside>
 
-		<section class="right-panel">
-			<div class="chart-card large"><canvas id="pressureChart"></canvas></div>
-			<div class="chart-card"><canvas id="averChart"></canvas></div>
-			<div class="chart-card"><canvas id="diffChart"></canvas></div>
+		<section id="chartPanel" class="right-panel chart-monitor-panel">
+			<div class="chart-panel-header">
+				<div class="chart-title-row">
+					<h2>線圖監測</h2>
+					<span id="chartPanelStateBadge" class="pill pill-ok">展開中</span>
+				</div>
+				<div class="chart-scale-controls">
+					<label for="yAxisMax">Y軸最大值</label>
+					<input type="number" id="yAxisMax" value="9000000">
+					<label for="yAxisMin">Y軸最小值</label>
+					<input type="number" id="yAxisMin" value="80000">
+					<button id="updateChart" type="button">更新圖表</button>
+				</div>
+				<div class="chart-summary-grid" aria-live="polite">
+					<div><span>Monitor</span><strong id="chartSummaryMonitor">-</strong></div>
+					<div><span>Neck</span><strong id="chartSummaryNeck">-</strong></div>
+					<div><span>Head</span><strong id="chartSummaryHead">-</strong></div>
+					<div><span>last5</span><strong id="chartSummaryLast5">-</strong></div>
+					<div><span>prev5</span><strong id="chartSummaryPrev5">-</strong></div>
+					<div><span>Diff</span><strong id="chartSummaryDiff">-</strong></div>
+					<div><span>更新</span><strong id="chartSummaryTime">-</strong></div>
+				</div>
+				<div class="chart-panel-actions">
+					<button id="chartModePressure" type="button" class="primary">只看壓力</button>
+					<button id="chartModeAll" type="button">完整線圖</button>
+					<button id="chartModeSummary" type="button">只看摘要</button>
+					<button id="chartPanelToggle" type="button" aria-expanded="true" aria-controls="chartPanelBody">收合線圖</button>
+				</div>
+			</div>
+			<div id="chartPanelBody" class="chart-panel-body">
+				<details id="pressureChartSection" class="chart-section" open>
+					<summary>
+						<span>壓力線圖</span>
+						<span>Monitor / Neck / Head</span>
+					</summary>
+					<div class="chart-card large"><canvas id="pressureChart"></canvas></div>
+				</details>
+				<details id="averageChartSection" class="chart-section">
+					<summary>
+						<span>平均值線圖</span>
+						<span>last5 / prev5</span>
+					</summary>
+					<div class="chart-card"><canvas id="averChart"></canvas></div>
+				</details>
+				<details id="diffChartSection" class="chart-section">
+					<summary>
+						<span>差值線圖</span>
+						<span>Diff</span>
+					</summary>
+					<div class="chart-card"><canvas id="diffChart"></canvas></div>
+				</details>
+			</div>
 			<div class="hidden-canvas">
 				<canvas id="prev5Chart"></canvas>
 				<canvas id="stateChart"></canvas>
@@ -419,6 +460,80 @@ https://fustyles.github.io/webduino/WebSerial.html
 			</div>
 		</div>
 	</div>
+
+	<dialog id="commandGuideDialog" class="command-guide-dialog">
+		<div class="command-guide-head">
+			<h2>BLE 指令合輯</h2>
+			<button id="commandGuideClose" type="button" aria-label="關閉指令合輯">關閉</button>
+		</div>
+		<div class="command-guide-body">
+			<section>
+				<h3>送出方式</h3>
+				<p>在「進階文字指令」輸入指令後按 <strong>Send Text</strong>。newline 可留空，Web 端會自動補上換行。</p>
+			</section>
+			<section>
+				<h3>常用開機時間設定</h3>
+				<div class="command-table">
+					<div>指令</div><div>用途</div><div>範例</div>
+					<code>SET,MONITOR,&lt;ms&gt;</code><div>設定 Monitor 開機充氣時間。</div><code>set,monitor,15000,</code>
+					<code>SET,NECK,&lt;ms&gt;</code><div>設定 Neck 開機充氣時間。</div><code>set,neck,0,</code>
+					<code>SET,HEAD,&lt;ms&gt;</code><div>設定 Head 開機充氣時間。</div><code>set,head,21075,</code>
+					<code>RESET</code><div>非 Manual 狀態下回到 DRAIN_ALL，重新跑開機流程。</div><code>reset,</code>
+				</div>
+				<p class="command-note">前三行會立即更新參數；若要讓新時間套用到開機流程，通常再送 <code>reset,</code>。</p>
+			</section>
+			<section>
+				<h3>使用者與初始校正</h3>
+				<div class="command-table">
+					<div>指令</div><div>用途</div><div>範例</div>
+					<code>USER,&lt;gender&gt;,&lt;age&gt;,&lt;height&gt;,&lt;weight&gt;</code><div>設定使用者資料。</div><code>USER,1,25,170,65</code>
+					<code>INIT,NORM,S</code><div>讀取/套用仰躺初始高度。</div><code>INIT,NORM,S</code>
+					<code>INIT,NORM,L</code><div>讀取/套用側躺初始高度。</div><code>INIT,NORM,L</code>
+					<code>SET,OK</code><div>確認目前校正高度可擷取 anchor。</div><code>SET,OK</code>
+					<code>ANCHOR,START,BSHS</code><div>開始仰躺 anchor 擷取。</div><code>ANCHOR,START,BSHS</code>
+					<code>ANCHOR,START,BLHL</code><div>開始側躺 anchor 擷取。</div><code>ANCHOR,START,BLHL</code>
+				</div>
+			</section>
+			<section>
+				<h3>高度設定與模式</h3>
+				<div class="command-table">
+					<div>指令</div><div>用途</div><div>範例</div>
+					<code>SET,NORM,&lt;cond&gt;,&lt;S|L&gt;,HEAD,&lt;cm&gt;</code><div>設定 Head 目標高度，支援 0.5 cm。</div><code>SET,NORM,1,S,HEAD,7.5</code>
+					<code>SET,NORM,&lt;cond&gt;,&lt;S|L&gt;,NECK,&lt;cm&gt;</code><div>設定 Neck 目標高度，支援 0.5 cm。</div><code>SET,NORM,1,S,NECK,10.5</code>
+					<code>FEATURE,POSE,ON/OFF</code><div>開啟或關閉姿勢分類功能。</div><code>FEATURE,POSE,ON</code>
+					<code>FEATURE,PRED,ON/OFF</code><div>開啟或關閉 PRED 自動調整。</div><code>FEATURE,PRED,OFF</code>
+					<code>FEATURE,STATUS</code><div>查詢目前功能狀態。</div><code>FEATURE,STATUS</code>
+				</div>
+			</section>
+			<section>
+				<h3>分類、預測與資料查詢</h3>
+				<div class="command-table">
+					<div>指令</div><div>用途</div><div>範例</div>
+					<code>CLASSIFY,START</code><div>開始姿勢分類。</div><code>CLASSIFY,START</code>
+					<code>CLASSIFY,STOP</code><div>停止姿勢分類。</div><code>CLASSIFY,STOP</code>
+					<code>CLASSIFY,GET</code><div>查詢分類結果。</div><code>CLASSIFY,GET</code>
+					<code>PRED,START</code><div>開始 PRED 自動高度調整。</div><code>PRED,START</code>
+					<code>PRED,STOP</code><div>停止 PRED 自動高度調整。</div><code>PRED,STOP</code>
+					<code>PRED,GET</code><div>查詢 PRED 狀態。</div><code>PRED,GET</code>
+					<code>P</code><div>要求一筆三氣囊壓力資料。</div><code>P</code>
+					<code>I</code><div>要求一筆狀態/差值資料。</div><code>I</code>
+					<code>DEBUG</code><div>查詢高度、限制與模型 debug 資訊。</div><code>DEBUG</code>
+				</div>
+			</section>
+			<section>
+				<h3>ESP32 Manual 控制</h3>
+				<div class="command-table">
+					<div>指令</div><div>用途</div><div>範例</div>
+					<code>MANUAL,ENTER</code><div>進入 ESP32 Manual 控制。</div><code>MANUAL,ENTER</code>
+					<code>MANUAL,STOP</code><div>停止所有輸出，保留 Manual 狀態。</div><code>MANUAL,STOP</code>
+					<code>MANUAL,FILL,&lt;MONITOR|NECK|HEAD&gt;</code><div>單顆氣囊充氣。</div><code>MANUAL,FILL,HEAD</code>
+					<code>MANUAL,DRAIN,&lt;MONITOR|NECK|HEAD|ALL&gt;</code><div>單顆或全部吸氣/洩氣。</div><code>MANUAL,DRAIN,ALL</code>
+					<code>MANUAL,STARTUP,&lt;head_cm&gt;,&lt;neck_cm&gt;</code><div>離開 Manual 並回開機流程。</div><code>MANUAL,STARTUP,7.0,10.0</code>
+				</div>
+				<p class="command-note">在 Manual 狀態下，舊式 <code>reset,</code> 只會停止輸出並停留在 Manual；要回開機流程請用 <code>MANUAL,STARTUP,...</code>。</p>
+			</section>
+		</div>
+	</dialog>
 
 	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
