@@ -946,7 +946,7 @@
 		};
 		const HEIGHT_LIMITS = {
 			HEAD: { min: 7, max: 16 },
-			NECK: { min: 10, max: 15 }
+			NECK: { min: 10, max: 14 }
 		};
 		const HEIGHT_STEP = 0.5;
 		let controlMode = CONTROL_MODE.MANUAL;

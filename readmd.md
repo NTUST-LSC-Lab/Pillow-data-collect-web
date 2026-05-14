@@ -4,7 +4,7 @@
 
 本分支與本 README 基於 ESP32 韌體 `pose_pre_v3.1` 進行修改。Web 端已對應 `pose_pre_v3.1` 的高度上下限、0.5 cm 高度步進、手動/自動分類模式、ESP32 Manual 控制、壓力/高度監測、右側線圖監測與指令合輯。
 
-修改日期時間：`2026-05-10 19:03:58 CST (+0800)`
+修改日期時間：`2026-05-14 16:40:00 CST (+0800)`
 
 ## 對應版本
 
@@ -128,11 +128,17 @@ newline 可留空。若留空，Web 端會自動補 `\n`，ESP32 才能切分完
 
 - 進入 ESP32 Manual
 - 停止
-- Monitor / Neck / Head 單獨充氣
+- Monitor / Head 單獨充氣
 - Monitor / Neck / Head 單獨吸氣
 - 全部同時洩氣
 - 設定 Head / Neck 目標
 - 離開 ESP32 Manual 並回開機流程
+
+補充：
+
+- `MANUAL,FILL,NECK` 按鈕目前仍保留在 Web 介面。
+- 但對應韌體 `pose_pre_v3.1` 會回覆 `MANUAL,ERR,NECK_FILL_BLOCKED`。
+- 原因是頸部氣囊最高安全高度限制為 `14.0 cm`，避免壓力 sensor 接近或達到上限。
 
 注意：這裡的 ESP32 Manual 是韌體層級的 `MANUAL_CONTROL`，不同於 Web 端的 `手動模式 / 自動模式`。
 
@@ -271,7 +277,7 @@ Web 端與 `pose_pre_v3.1` 韌體共同限制高度：
 | 通道 | 最小值 | 最大值 | 步進 |
 |---|---:|---:|---:|
 | Head | 7.0 cm | 16.0 cm | 0.5 cm |
-| Neck | 10.0 cm | 16.0 cm | 0.5 cm |
+| Neck | 10.0 cm | 14.0 cm | 0.5 cm |
 
 所有高度輸入會：
 
@@ -281,6 +287,12 @@ Web 端與 `pose_pre_v3.1` 韌體共同限制高度：
 - 按「確定調整」後才送出 BLE 指令。
 
 ESP32 端也會再次 clamp / snap，韌體仍是最後安全防線。
+
+補充說明：
+
+- `14.0 cm` 是頸部的絕對上限，不是相對目前高度再加 `14.0 cm`。
+- 例如目前頸部高度是 `11.5 cm`，若目標設成 `14.0 cm`，實際上是再往上補 `2.5 cm`。
+- Head / Neck 的「目標高度」是絕對值；韌體實際控制時，會用「目前高度 -> 目標高度」的差值去決定充放氣時間。
 
 ## 高度與壓力監測
 
@@ -300,6 +312,12 @@ ESP32 端也會再次 clamp / snap，韌體仍是最後安全防線。
 - 清空監測紀錄
 
 監測更新來源和訊息紀錄一致，主要由 ESP32 BLE notification 觸發。
+
+目前更新節奏：
+
+- 壓力值：Web 每 `1 秒`送一次 `P`，因此 Monitor / Neck / Head 壓力大約每秒更新一次。
+- 高度目前值：Web 每 `10 秒`送一次 `DEBUG`，因此 Head / Neck 的「目前高度」預設大約每 10 秒更新一次。
+- 高度目標值：收到 `HEIGHT_SET`、`HEIGHT_LIMIT` 或 `MANUAL,OK,STARTUP,...` 時會立即更新，不需要等下一次 `DEBUG`。
 
 ## 線圖監測
 
@@ -363,16 +381,16 @@ CLASSIFY,OK,START
 | 指令 | 用途 | 範例 |
 |---|---|---|
 | `SET,MONITOR,<ms>` | 設定 Monitor 開機充氣時間 | `set,monitor,15000,` |
-| `SET,NECK,<ms>` | 設定 Neck 開機充氣時間 | `set,neck,0,` |
-| `SET,HEAD,<ms>` | 設定 Head 開機充氣時間 | `set,head,21075,` |
+| `SET,NECK,<ms>` | 設定 Neck 開機充氣時間，建議 `10000-50000 ms`，最高 `50000 ms` | `set,neck,12000,` |
+| `SET,HEAD,<ms>` | 設定 Head 開機充氣時間，建議 `30000-136132 ms`，最高 `136132 ms` | `set,head,32000,` |
 | `RESET` | 非 Manual 狀態下回到 `DRAIN_ALL`，重新跑開機流程 | `reset,` |
 
 常用組合：
 
 ```text
 set,monitor,15000,
-set,neck,0,
-set,head,21075,
+set,neck,12000,
+set,head,32000,
 reset,
 ```
 
@@ -422,7 +440,7 @@ SET,NORM,<condition>,<S|L>,NECK,<height_cm>
 SET,NORM,1,S,HEAD,7.5
 SET,NORM,1,S,NECK,10.5
 SET,NORM,1,L,HEAD,14.0
-SET,NORM,1,L,NECK,16.0
+SET,NORM,1,L,NECK,14.0
 ```
 
 ### 功能開關
@@ -469,6 +487,11 @@ MANUAL,DRAIN,HEAD
 MANUAL,DRAIN,ALL
 MANUAL,STARTUP,<head_cm>,<neck_cm>
 ```
+
+注意：
+
+- `MANUAL,FILL,NECK` 在目前韌體中會被拒絕，回覆 `MANUAL,ERR,NECK_FILL_BLOCKED`。
+- 若需要調高頸部高度，請使用 `SET,NORM,...,NECK,<cm>` 或 `MANUAL,STARTUP,<head_cm>,<neck_cm>` 設定目標高度，讓韌體依高度控制流程處理。
 
 範例：
 

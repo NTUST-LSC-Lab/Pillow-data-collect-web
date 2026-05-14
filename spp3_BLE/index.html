@@ -98,7 +98,7 @@ https://fustyles.github.io/webduino/WebSerial.html
 							<label for="manualStartupHead">Head 目標</label>
 							<input type="number" id="manualStartupHead" value="7.0" min="7" max="16" step="0.5">
 							<label for="manualStartupNeck">Neck 目標</label>
-							<input type="number" id="manualStartupNeck" value="10.0" min="10" max="16" step="0.5">
+							<input type="number" id="manualStartupNeck" value="10.0" min="10" max="14" step="0.5">
 						</div>
 						<button id="manualStartupBtn" type="button" class="full">離開 ESP32 Manual 並回開機流程</button>
 						<div id="espManualAck" class="mode-ack">ESP32 Manual 狀態：尚未送出</div>
@@ -359,7 +359,7 @@ https://fustyles.github.io/webduino/WebSerial.html
 					</div>
 					<div class="micro-adjust-row">
 						<label for="numberInput2">頸部高度:</label>
-						<input type="number" id="numberInput2" value="10" min="10" max="16" step="0.5">
+						<input type="number" id="numberInput2" value="10" min="10" max="14" step="0.5">
 						<button id="increaseBtn2">+</button>
 						<button id="decreaseBtn2">-</button>
 						<button id="confirmNeckAdjustBtn" type="button" class="inline-confirm-btn">確認</button>
@@ -407,7 +407,7 @@ https://fustyles.github.io/webduino/WebSerial.html
 				</div>
 				<div>
 					<label for="supineNeckInput">仰躺頸部高度:</label>
-					<input type="number" id="supineNeckInput" value="10" min="10" max="16" step="0.5">
+					<input type="number" id="supineNeckInput" value="10" min="10" max="14" step="0.5">
 					<button id="supineNeckPlus" type="button">+</button>
 					<button id="supineNeckMinus" type="button">-</button>
 				</div>
@@ -432,7 +432,7 @@ https://fustyles.github.io/webduino/WebSerial.html
 				</div>
 				<div>
 					<label for="sideNeckInput">側躺頸部高度:</label>
-					<input type="number" id="sideNeckInput" value="16" min="10" max="16" step="0.5">
+					<input type="number" id="sideNeckInput" value="14" min="10" max="14" step="0.5">
 					<button id="sideNeckPlus" type="button">+</button>
 					<button id="sideNeckMinus" type="button">-</button>
 				</div>
@@ -461,12 +461,12 @@ https://fustyles.github.io/webduino/WebSerial.html
 				<div class="command-table">
 					<div>指令</div><div>用途</div><div>範例</div>
 					<code>SET,MONITOR,&lt;ms&gt;</code><div>設定 Monitor 開機充氣時間。</div><code>set,monitor,15000,</code>
-					<code>SET,NECK,&lt;ms&gt;</code><div>設定 Neck 開機充氣時間。</div><code>set,neck,12000,</code>
-					<code>SET,HEAD,&lt;ms&gt;</code><div>設定 Head 開機充氣時間。</div><code>set,head,32000,</code>
+					<code>SET,NECK,&lt;ms&gt;</code><div>設定 Neck 開機充氣時間，最高 <code>50000</code> ms（50 秒）。</div><code>set,neck,12000,</code>
+					<code>SET,HEAD,&lt;ms&gt;</code><div>設定 Head 開機充氣時間，最高 <code>136132</code> ms（136.132 秒）。</div><code>set,head,32000,</code>
 					<code>RESET</code><div>非 Manual 狀態下回到 DRAIN_ALL，重新跑開機流程。</div><code>reset,</code>
 					</div>
 					<p class="command-note">前三行會立即更新參數；若要讓新時間套用到開機流程，通常再送 <code>reset,</code>。</p>
-					<p class="command-note">註：<code>set,neck,&lt;ms&gt;</code> 建議大於 <code>10000</code>（10 秒）；<code>set,head,&lt;ms&gt;</code> 建議大於 <code>30000</code>（30 秒）。</p>
+					<p class="command-note">註：<code>set,neck,&lt;ms&gt;</code> 建議範圍 <code>10000-50000</code>（10-50 秒）；<code>set,head,&lt;ms&gt;</code> 建議範圍 <code>30000-136132</code>（30-136.132 秒）。</p>
 				</section>
 			<section>
 				<h3>使用者與初始校正</h3>
