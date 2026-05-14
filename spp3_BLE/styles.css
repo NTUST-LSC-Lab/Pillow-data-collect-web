@@ -1050,6 +1050,23 @@ button.full {
   flex: 1;
 }
 
+@media (max-width: 1400px) {
+  .device-main-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .device-state-strip {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .status-card .indicator-container {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
 @media (min-width: 1081px) {
   .left-panel {
     overflow: auto;
