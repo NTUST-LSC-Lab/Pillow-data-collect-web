@@ -476,12 +476,13 @@ https://fustyles.github.io/webduino/WebSerial.html
 				<div class="command-table">
 					<div>指令</div><div>用途</div><div>範例</div>
 					<code>SET,MONITOR,&lt;ms&gt;</code><div>設定 Monitor 開機充氣時間。</div><code>set,monitor,15000,</code>
-					<code>SET,NECK,&lt;ms&gt;</code><div>設定 Neck 開機充氣時間。</div><code>set,neck,0,</code>
-					<code>SET,HEAD,&lt;ms&gt;</code><div>設定 Head 開機充氣時間。</div><code>set,head,21075,</code>
+					<code>SET,NECK,&lt;ms&gt;</code><div>設定 Neck 開機充氣時間。</div><code>set,neck,12000,</code>
+					<code>SET,HEAD,&lt;ms&gt;</code><div>設定 Head 開機充氣時間。</div><code>set,head,32000,</code>
 					<code>RESET</code><div>非 Manual 狀態下回到 DRAIN_ALL，重新跑開機流程。</div><code>reset,</code>
-				</div>
-				<p class="command-note">前三行會立即更新參數；若要讓新時間套用到開機流程，通常再送 <code>reset,</code>。</p>
-			</section>
+					</div>
+					<p class="command-note">前三行會立即更新參數；若要讓新時間套用到開機流程，通常再送 <code>reset,</code>。</p>
+					<p class="command-note">註：<code>set,neck,&lt;ms&gt;</code> 建議大於 <code>10000</code>（10 秒）；<code>set,head,&lt;ms&gt;</code> 建議大於 <code>30000</code>（30 秒）。</p>
+				</section>
 			<section>
 				<h3>使用者與初始校正</h3>
 				<div class="command-table">

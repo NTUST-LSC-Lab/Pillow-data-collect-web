@@ -374,20 +374,21 @@ CLASSIFY,OK,START
 | 指令 | 用途 | 範例 |
 |---|---|---|
 | `SET,MONITOR,<ms>` | 設定 Monitor 開機充氣時間 | `set,monitor,15000,` |
-| `SET,NECK,<ms>` | 設定 Neck 開機充氣時間 | `set,neck,0,` |
-| `SET,HEAD,<ms>` | 設定 Head 開機充氣時間 | `set,head,21075,` |
+| `SET,NECK,<ms>` | 設定 Neck 開機充氣時間（建議 `>10000 ms`） | `set,neck,12000,` |
+| `SET,HEAD,<ms>` | 設定 Head 開機充氣時間（建議 `>30000 ms`） | `set,head,32000,` |
 | `RESET` | 非 Manual 狀態下回到 `DRAIN_ALL`，重新跑開機流程 | `reset,` |
 
 常用組合：
 
 ```text
 set,monitor,15000,
-set,neck,0,
-set,head,21075,
+set,neck,12000,
+set,head,32000,
 reset,
 ```
 
 前三行送出後會立刻更新 ESP32 變數，但不會立刻重跑流程。`reset,` 會讓流程回到 `DRAIN_ALL`，下一輪才會套用新的開機充氣時間。
+建議值：`set,neck,<ms>` 大於 `10000`（10 秒），`set,head,<ms>` 大於 `30000`（30 秒）。
 
 注意：若 ESP32 已在 `MANUAL_CONTROL`，新版 `reset,` 只會停止輸出並停留在 Manual。要離開 Manual 並回開機流程，請使用：
 
