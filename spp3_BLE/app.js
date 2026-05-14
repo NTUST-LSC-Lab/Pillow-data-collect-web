@@ -838,6 +838,7 @@
 		// 資料庫欄位:
 		//         pressure1, pressure2, pressure3, differential, last5pointAvg, prev5pointAvg, state, onoff_event, predict_Pose, Pose_event
 		let pressure1, pressure2, pressure3, differential, state, onoff_event, last5pointAvg, prev5pointAvg, predict_Pose, Pose_event;
+		let pendingMicroClose = false;
 
 		const SystemState = [
 			"INIT",
@@ -851,6 +852,36 @@
 			"REFILL_MONITOR",
 			"MANUAL_CONTROL"
 		];
+		const ACTIVE_AIRFLOW_STATES = new Set([
+			"DRAIN_ALL",
+			"FILL_MONITOR",
+			"FILL_NECK",
+			"FILL_HEAD",
+			"ADJUSTING_HEIGHT",
+			"RESET_MONITOR",
+			"REFILL_MONITOR"
+		]);
+
+		function getSystemStateName(rawState) {
+			const index = Number(rawState);
+			if (!Number.isFinite(index)) {
+				return "";
+			}
+			return SystemState[index] || "";
+		}
+
+		function flushPendingMicroCloseIfSafe(stateName) {
+			if (!pendingMicroClose) {
+				return;
+			}
+			const currentStateName = stateName || getSystemStateName(state);
+			if (ACTIVE_AIRFLOW_STATES.has(currentStateName)) {
+				return;
+			}
+			pendingMicroClose = false;
+			sendCommand("SET,OK");
+			serial_message("已完成目前動作，送出 SET,OK。", "blue");
+		}
 
 		let debugDataBuffer = ""; // Static variable to hold incomplete debug data
 		let parsedData = {};
@@ -915,7 +946,7 @@
 		};
 		const HEIGHT_LIMITS = {
 			HEAD: { min: 7, max: 16 },
-			NECK: { min: 10, max: 16 }
+			NECK: { min: 10, max: 15 }
 		};
 		const HEIGHT_STEP = 0.5;
 		let controlMode = CONTROL_MODE.MANUAL;
@@ -1728,7 +1759,7 @@
 									serial_status.scrollTop = serial_status.scrollHeight;
 								}
 								state = value;
-								const stateName = SystemState[state] || "UNKNOWN (" + state + ")";
+								const stateName = getSystemStateName(state) || "UNKNOWN (" + state + ")";
 								const stateDisplay = document.getElementById('systemStateDisplay');
 								if (stateDisplay) stateDisplay.value = stateName;
 								if (stateName === "MANUAL_CONTROL") {
@@ -1736,6 +1767,7 @@
 								} else if (espManualStatus?.textContent === "ESP32 Manual") {
 									setEspManualUi(false);
 								}
+								flushPendingMicroCloseIfSafe(stateName);
 
 								if (sideStandbyWatchActive) {
 									if (Number(state) === 5) {
@@ -2165,12 +2197,24 @@
 				});
 
 				closeBtn?.addEventListener('click', function () {
-					if (microDirty.HEAD || microDirty.NECK || !microConfirmed.HEAD || !microConfirmed.NECK) {
-						serial_message("請先分別按「確認頭部高度 / 確認頸部高度」後再結束。", "orange");
+					const hasPendingMicroAdjust = microDirty.HEAD || microDirty.NECK || !microConfirmed.HEAD || !microConfirmed.NECK;
+					modal.style.display = 'none';
+
+					if (!rxCharacteristic || !serial_ready) {
+						pendingMicroClose = false;
+						if (hasPendingMicroAdjust) {
+							serial_message("已關閉微調畫面（目前未連線，未送出 SET,OK）。", "orange");
+						}
 						return;
 					}
-					modal.style.display = 'none';
-					sendCommand("SET,OK");
+
+					pendingMicroClose = true;
+					const stateName = getSystemStateName(state);
+					if (ACTIVE_AIRFLOW_STATES.has(stateName)) {
+						serial_message("已接收結束，正在抽/吸氣中；動作完成後會自動送出 SET,OK。", "orange");
+						return;
+					}
+					flushPendingMicroCloseIfSafe(stateName);
 				});
 
 				increaseBtn1?.addEventListener('click', function () {
