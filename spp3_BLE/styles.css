@@ -1065,6 +1065,15 @@ button.full {
     justify-content: flex-start;
     flex-wrap: wrap;
   }
+
+  .calib-top-row,
+  .pose-pred-row {
+    grid-template-columns: 1fr;
+  }
+
+  .pose-pred-row .info-title {
+    white-space: nowrap;
+  }
 }
 
 @media (min-width: 1081px) {
