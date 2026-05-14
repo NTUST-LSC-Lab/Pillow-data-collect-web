@@ -497,11 +497,11 @@
 				return getAllData().then(data => {
 					let csvContent = 'timestamp,pressure1,pressure2,pressure3,differential,last5pointAvg,prev5pointAvg,state,onoff_event,predict_Pose,Pose_event,command\n';
 
-					data.forEach(item => {
-						const commandStr = item.command ? `"${item.command.replace(/"/g, '""')}"` : "";
-						const row = [item.timestamp, ...item.values, commandStr].join(',');
-						csvContent += row + '\n';
-					});
+						data.forEach(item => {
+							const commandStr = item.command ? `"${item.command.replace(/"/g, '""')}"` : "";
+							const row = [formatLocalTimestamp(item.timestamp), ...item.values, commandStr].join(',');
+							csvContent += row + '\n';
+						});
 
 					// const txtContent = serial_status.innerHTML.replace(/<[^>]*>/g, ''); // Remove HTML tags
 					const txtContent = serial_status.innerHTML
@@ -1051,6 +1051,34 @@
 
 		function formatAckTime() {
 			return new Date().toLocaleTimeString();
+		}
+
+		function toValidDate(input) {
+			if (input instanceof Date) {
+				return Number.isNaN(input.getTime()) ? null : input;
+			}
+			const parsed = new Date(input);
+			return Number.isNaN(parsed.getTime()) ? null : parsed;
+		}
+
+		function formatLocalTimeLabel(input) {
+			const date = toValidDate(input);
+			if (!date) return "";
+			return date.getHours().toString().padStart(2, '0') + ':' +
+				date.getMinutes().toString().padStart(2, '0') + ':' +
+				date.getSeconds().toString().padStart(2, '0');
+		}
+
+		function formatLocalTimestamp(input) {
+			const date = toValidDate(input);
+			if (!date) return input ?? "";
+			return date.getFullYear().toString().padStart(4, '0') + '-' +
+				(date.getMonth() + 1).toString().padStart(2, '0') + '-' +
+				date.getDate().toString().padStart(2, '0') + 'T' +
+				date.getHours().toString().padStart(2, '0') + ':' +
+				date.getMinutes().toString().padStart(2, '0') + ':' +
+				date.getSeconds().toString().padStart(2, '0') + '.' +
+				date.getMilliseconds().toString().padStart(3, '0');
 		}
 
 		function sendModeCommands(nextMode) {
@@ -1633,13 +1661,13 @@
 
 					if (values.length >= 3) {
 						updatePressureMonitor(values);
-						// Update chart data and labels
-						var now = new Date();
-						if (chart_data_count % 10 == 0) {
-							chart.data.labels.push(now.toISOString().slice(-13, -4));  // Add timestamp as label
-						} else {
-							chart.data.labels.push("");  // Add timestamp as label
-						}
+							// Update chart data and labels
+							var now = new Date();
+							if (chart_data_count % 10 == 0) {
+								chart.data.labels.push(formatLocalTimeLabel(now));  // Add timestamp as label
+							} else {
+								chart.data.labels.push("");  // Add timestamp as label
+							}
 						if (chart_data_count > 50) {
 							chart.data.labels.shift();
 						}
@@ -1679,7 +1707,7 @@
 								// Update chart data and labels
 								var now = new Date();
 								if (chart_data_count % 10 == 0) {
-									chart3.data.labels.push(now.toISOString().slice(-13, -4));  // Add timestamp as label
+									chart3.data.labels.push(formatLocalTimeLabel(now));  // Add timestamp as label
 								} else {
 									chart3.data.labels.push("");  // Add timestamp as label
 								}
@@ -1752,7 +1780,7 @@
 								// Update chart data and labels
 								var now = new Date();
 								if (chart_data_count % 10 == 0) {
-									chart2.data.labels.push(now.toISOString().slice(-13, -4));  // Add timestamp as label
+									chart2.data.labels.push(formatLocalTimeLabel(now));  // Add timestamp as label
 								} else {
 									chart2.data.labels.push("");  // Add timestamp as label
 								}
