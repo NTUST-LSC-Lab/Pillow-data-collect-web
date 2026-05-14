@@ -106,34 +106,38 @@ https://fustyles.github.io/webduino/WebSerial.html
 				</div>
 			</section>
 
-			<section class="panel-card">
-				<h2>使用者資料</h2>
-				<form id="userForm">
-					<div class="form-group gender-group">
-						<span class="gender-label">生理性別：</span>
-						<div class="gender-options">
-							<label for="female">
-								<input type="radio" name="gender" value="female" id="female" required>
-								女
-							</label>
-							<label for="male">
-								<input type="radio" name="gender" value="male" id="male">
-								男
-							</label>
+			<section class="panel-card user-accordion">
+				<div class="accordion-header">
+					<h2>使用者資料</h2>
+					<button id="userAccordionToggle" type="button" class="accordion-toggle" aria-expanded="true" aria-controls="userAccordionBody">收合</button>
+				</div>
+				<div id="userAccordionBody" class="accordion-body">
+					<form id="userForm">
+						<div class="form-group gender-group">
+							<span class="gender-label">生理性別：</span>
+							<div class="gender-options">
+								<label for="female">
+									<input type="radio" name="gender" value="female" id="female" required>
+									女
+								</label>
+								<label for="male">
+									<input type="radio" name="gender" value="male" id="male">
+									男
+								</label>
+							</div>
 						</div>
-					</div>
-					<div class="form-group">
-						<label for="age">年齡：</label>
-						<input type="number" id="age" required>
-					</div>
-					<div class="form-group">
-						<label for="height">身高（公分）：</label>
-						<input type="number" id="height" required>
-					</div>
-					<div class="form-group">
-						<label for="weight">體重（公斤）：</label>
-						<input type="number" id="weight" required>
-					</div>
+						<div class="form-group">
+							<label for="age">年齡：</label>
+							<input type="number" id="age" required>
+						</div>
+						<div class="form-group">
+							<label for="height">身高（公分）：</label>
+							<input type="number" id="height" required>
+						</div>
+						<div class="form-group">
+							<label for="weight">體重（公斤）：</label>
+							<input type="number" id="weight" required>
+						</div>
 						<div class="button-row">
 							<button type="button" id="userSet">設定</button>
 							<button id="openCalibBtn" type="button">初始校正</button>
@@ -141,7 +145,8 @@ https://fustyles.github.io/webduino/WebSerial.html
 						</div>
 						<div id="userSetAck" class="mode-ack">使用者資料狀態：尚未設定</div>
 					</form>
-				</section>
+				</div>
+			</section>
 
 			<section class="panel-card status-accordion">
 				<div class="accordion-header">
@@ -337,56 +342,32 @@ https://fustyles.github.io/webduino/WebSerial.html
 				</form>
 				<button id="switchScreenBtn1">切換到第二畫面</button>
 			</div>
-			<div id="screen2" class="screen" style="display:none;">
-				<h1>生物力學調整模式</h1>
-				<p>2.仰躺高度微調</p>
-				<div id="imagePlaceholder" style="width: 100%; height: 100px; background-color: #ddd; margin-bottom: 20px; object-fit: contain;">
-					<img src="../Images/s.png" style="height: 100%">
+				<div id="screen2" class="screen" style="display:none;">
+					<h1>生物力學調整模式</h1>
+					<p>高度微調</p>
+					<div id="imagePlaceholder" style="width: 100%; height: 100px; background-color: #ddd; margin-bottom: 20px; object-fit: contain;">
+						<img src="../Images/s.png" style="height: 100%">
+					</div>
+					<div class="micro-adjust-row">
+						<label for="numberInput1">頭部高度:</label>
+						<input type="number" id="numberInput1" value="7" min="7" max="16" step="0.5">
+						<button id="increaseBtn1">+</button>
+						<button id="decreaseBtn1">-</button>
+						<button id="confirmHeadAdjustBtn" type="button" class="inline-confirm-btn">確認</button>
+					</div>
+					<div class="micro-adjust-row">
+						<label for="numberInput2">頸部高度:</label>
+						<input type="number" id="numberInput2" value="10" min="10" max="16" step="0.5">
+						<button id="increaseBtn2">+</button>
+						<button id="decreaseBtn2">-</button>
+						<button id="confirmNeckAdjustBtn" type="button" class="inline-confirm-btn">確認</button>
+					</div>
+					<p id="microSupineHint" class="calib-hint"></p>
+					<div class="button-container">
+						<button id="backBtn1">回到上一頁</button>
+						<button id="closeBtn">結束</button>
+					</div>
 				</div>
-				<div>
-					<label for="numberInput1">仰躺頭部高度:</label>
-					<input type="number" id="numberInput1" value="7" min="7" max="16" step="0.5">
-					<button id="increaseBtn1">+</button>
-					<button id="decreaseBtn1">-</button>
-				</div>
-				<div>
-					<label for="numberInput2">仰躺頸部高度:</label>
-					<input type="number" id="numberInput2" value="10" min="10" max="16" step="0.5">
-					<button id="increaseBtn2">+</button>
-					<button id="decreaseBtn2">-</button>
-				</div>
-				<p id="microSupineHint" class="calib-hint"></p>
-				<button id="confirmSupineAdjustBtn" type="button" class="full">確定調整仰躺高度</button>
-				<div class="button-container">
-					<button id="backBtn1">回到上一頁</button>
-					<button id="switchScreenBtn2">切換到第三畫面</button>
-				</div>
-			</div>
-			<div id="screen3" class="screen" style="display:none;">
-				<h1>生物力學調整模式</h1>
-				<p>3.側躺高度微調</p>
-				<div id="imagePlaceholder3" style="width: 100%; height: 100px; background-color: #ddd; margin-bottom: 20px; object-fit: contain;">
-					<img src="../Images/l.png" style="height: 100%">
-				</div>
-				<div>
-					<label for="numberInput3">側躺頭部高度:</label>
-					<input type="number" id="numberInput3" value="14" min="7" max="16" step="0.5">
-					<button id="increaseBtn3">+</button>
-					<button id="decreaseBtn3">-</button>
-				</div>
-				<div>
-					<label for="numberInput4">側躺頸部高度:</label>
-					<input type="number" id="numberInput4" value="16" min="10" max="16" step="0.5">
-					<button id="increaseBtn4">+</button>
-					<button id="decreaseBtn4">-</button>
-				</div>
-				<p id="microSideHint" class="calib-hint"></p>
-				<button id="confirmSideAdjustBtn" type="button" class="full">確定調整側躺高度</button>
-				<div class="button-container">
-					<button id="backBtn2">回到上一頁</button>
-					<button id="closeBtn">結束</button>
-				</div>
-			</div>
 		</div>
 	</div>
 

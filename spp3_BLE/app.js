@@ -1599,18 +1599,17 @@
 				return;
 			}
 
-			if (parts[0] === "INIT" && parts[1] === "OK") {
-				if (awaitingInitMode === "L" && parts.length >= 4) {
-					const sideHeadInput = document.getElementById('sideHeadInput');
-					const sideNeckInput = document.getElementById('sideNeckInput');
-					if (sideHeadInput) setHeightInputValue(sideHeadInput, parts[2], "HEAD");
-					if (sideNeckInput) setHeightInputValue(sideNeckInput, parts[3], "NECK");
-					if (numberInput3) setHeightInputValue(numberInput3, parts[2], "HEAD");
-					if (numberInput4) setHeightInputValue(numberInput4, parts[3], "NECK");
-					updateHeightMonitorFromValues("INIT", parts[2], parts[3], null, null);
+				if (parts[0] === "INIT" && parts[1] === "OK") {
+					if (awaitingInitMode === "L" && parts.length >= 4) {
+						const sideHeadInput = document.getElementById('sideHeadInput');
+						const sideNeckInput = document.getElementById('sideNeckInput');
+						if (sideHeadInput) setHeightInputValue(sideHeadInput, parts[2], "HEAD");
+						if (sideNeckInput) setHeightInputValue(sideNeckInput, parts[3], "NECK");
+						if (numberInput3) setHeightInputValue(numberInput3, parts[2], "HEAD");
+						if (numberInput4) setHeightInputValue(numberInput4, parts[3], "NECK");
+					}
+					awaitingInitMode = null;
 				}
-				awaitingInitMode = null;
-			}
 		}
 
 		function serial_message(msg, colour, show = true) {
@@ -1935,12 +1934,14 @@
 		const numberInput3 = document.getElementById('numberInput3');
 		const numberInput4 = document.getElementById('numberInput4');
 
-		document.addEventListener('DOMContentLoaded', function () {
-			setWorkflowState(WORKFLOW.UNCALIBRATED);
-			refreshAnchorBadgeUI();
+			document.addEventListener('DOMContentLoaded', function () {
+				setWorkflowState(WORKFLOW.UNCALIBRATED);
+				refreshAnchorBadgeUI();
 
-			const statusAccordionToggle = document.getElementById('statusAccordionToggle');
-			const statusAccordionBody = document.getElementById('statusAccordionBody');
+				const statusAccordionToggle = document.getElementById('statusAccordionToggle');
+				const statusAccordionBody = document.getElementById('statusAccordionBody');
+				const userAccordionToggle = document.getElementById('userAccordionToggle');
+				const userAccordionBody = document.getElementById('userAccordionBody');
 
 			function getSavedStatusAccordionState() {
 				try {
@@ -1950,55 +1951,80 @@
 				}
 			}
 
-			function saveStatusAccordionState(expanded) {
-				try {
-					localStorage.setItem('statusAccordionExpanded', expanded ? '1' : '0');
-				} catch (error) {
-					// Some file/browser contexts block localStorage; the accordion should still work.
+				function saveStatusAccordionState(expanded) {
+					try {
+						localStorage.setItem('statusAccordionExpanded', expanded ? '1' : '0');
+					} catch (error) {
+						// Some file/browser contexts block localStorage; the accordion should still work.
+					}
 				}
-			}
 
-			function setStatusAccordionExpanded(expanded) {
-				if (!statusAccordionToggle || !statusAccordionBody) {
-					return;
+				function getSavedUserAccordionState() {
+					try {
+						return localStorage.getItem('userAccordionExpanded');
+					} catch (error) {
+						return null;
+					}
 				}
-				statusAccordionBody.classList.toggle('is-collapsed', !expanded);
-				statusAccordionToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-				statusAccordionToggle.textContent = expanded ? '收合' : '展開';
-				saveStatusAccordionState(expanded);
-			}
 
-			const savedAccordionState = getSavedStatusAccordionState();
-			setStatusAccordionExpanded(savedAccordionState !== '0');
-			statusAccordionToggle?.addEventListener('click', function () {
-				const expanded = statusAccordionToggle.getAttribute('aria-expanded') === 'true';
-				setStatusAccordionExpanded(!expanded);
-			});
+				function saveUserAccordionState(expanded) {
+					try {
+						localStorage.setItem('userAccordionExpanded', expanded ? '1' : '0');
+					} catch (error) {
+						// Some file/browser contexts block localStorage; the accordion should still work.
+					}
+				}
 
-			const modal = document.getElementById('modal');
-			const openModalBtn = document.getElementById('openModalBtn');
-			const switchScreenBtn1 = document.getElementById('switchScreenBtn1');
-			const switchScreenBtn2 = document.getElementById('switchScreenBtn2');
-			const backBtn1 = document.getElementById('backBtn1');
-			const backBtn2 = document.getElementById('backBtn2');
-			const closeBtn = document.getElementById('closeBtn');
-			const screen1 = document.getElementById('screen1');
-			const screen2 = document.getElementById('screen2');
-			const screen3 = document.getElementById('screen3');
-			const radioForm = document.getElementById('radioForm');
+				function setStatusAccordionExpanded(expanded) {
+					if (!statusAccordionToggle || !statusAccordionBody) {
+						return;
+					}
+					statusAccordionBody.classList.toggle('is-collapsed', !expanded);
+					statusAccordionToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+					statusAccordionToggle.textContent = expanded ? '收合' : '展開';
+					saveStatusAccordionState(expanded);
+				}
 
-			const increaseBtn1 = document.getElementById('increaseBtn1');
-			const decreaseBtn1 = document.getElementById('decreaseBtn1');
-			const increaseBtn2 = document.getElementById('increaseBtn2');
-			const decreaseBtn2 = document.getElementById('decreaseBtn2');
-			const increaseBtn3 = document.getElementById('increaseBtn3');
-			const decreaseBtn3 = document.getElementById('decreaseBtn3');
-			const increaseBtn4 = document.getElementById('increaseBtn4');
-			const decreaseBtn4 = document.getElementById('decreaseBtn4');
-			const confirmSupineAdjustBtn = document.getElementById('confirmSupineAdjustBtn');
-			const confirmSideAdjustBtn = document.getElementById('confirmSideAdjustBtn');
-			const microSupineHint = document.getElementById('microSupineHint');
-			const microSideHint = document.getElementById('microSideHint');
+				function setUserAccordionExpanded(expanded) {
+					if (!userAccordionToggle || !userAccordionBody) {
+						return;
+					}
+					userAccordionBody.classList.toggle('is-collapsed', !expanded);
+					userAccordionToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+					userAccordionToggle.textContent = expanded ? '收合' : '展開';
+					saveUserAccordionState(expanded);
+				}
+
+				const savedAccordionState = getSavedStatusAccordionState();
+				setStatusAccordionExpanded(savedAccordionState !== '0');
+				statusAccordionToggle?.addEventListener('click', function () {
+					const expanded = statusAccordionToggle.getAttribute('aria-expanded') === 'true';
+					setStatusAccordionExpanded(!expanded);
+				});
+
+				const savedUserAccordionState = getSavedUserAccordionState();
+				setUserAccordionExpanded(savedUserAccordionState !== '0');
+				userAccordionToggle?.addEventListener('click', function () {
+					const expanded = userAccordionToggle.getAttribute('aria-expanded') === 'true';
+					setUserAccordionExpanded(!expanded);
+				});
+
+				const modal = document.getElementById('modal');
+				const openModalBtn = document.getElementById('openModalBtn');
+				const switchScreenBtn1 = document.getElementById('switchScreenBtn1');
+				const backBtn1 = document.getElementById('backBtn1');
+				const closeBtn = document.getElementById('closeBtn');
+				const screen1 = document.getElementById('screen1');
+				const screen2 = document.getElementById('screen2');
+				const radioForm = document.getElementById('radioForm');
+
+				const increaseBtn1 = document.getElementById('increaseBtn1');
+				const decreaseBtn1 = document.getElementById('decreaseBtn1');
+				const increaseBtn2 = document.getElementById('increaseBtn2');
+				const decreaseBtn2 = document.getElementById('decreaseBtn2');
+				const confirmHeadAdjustBtn = document.getElementById('confirmHeadAdjustBtn');
+				const confirmNeckAdjustBtn = document.getElementById('confirmNeckAdjustBtn');
+				const microSupineHint = document.getElementById('microSupineHint');
 
 			monitorClearLog?.addEventListener('click', function () {
 				if (heightPressureLog) {
@@ -2006,16 +2032,14 @@
 				}
 			});
 
-			setModeUi(controlMode);
-			manualModeBtn?.addEventListener('click', () => sendModeCommands(CONTROL_MODE.MANUAL));
-			autoModeBtn?.addEventListener('click', () => sendModeCommands(CONTROL_MODE.AUTO));
+				setModeUi(controlMode);
+				manualModeBtn?.addEventListener('click', () => sendModeCommands(CONTROL_MODE.MANUAL));
+				autoModeBtn?.addEventListener('click', () => sendModeCommands(CONTROL_MODE.AUTO));
 
-			configureHeightInput(numberInput1, "HEAD");
-			configureHeightInput(numberInput2, "NECK");
-			configureHeightInput(numberInput3, "HEAD");
-			configureHeightInput(numberInput4, "NECK");
-			configureHeightInput(manualStartupHead, "HEAD");
-			configureHeightInput(manualStartupNeck, "NECK");
+				configureHeightInput(numberInput1, "HEAD");
+				configureHeightInput(numberInput2, "NECK");
+				configureHeightInput(manualStartupHead, "HEAD");
+				configureHeightInput(manualStartupNeck, "NECK");
 
 			document.getElementById('espManualEnterBtn')?.addEventListener('click', function () {
 				sendEspManualCommand("MANUAL,ENTER", "進入 ESP32 Manual 指令已送出");
@@ -2051,15 +2075,27 @@
 				sendEspManualCommand(`MANUAL,STARTUP,${head},${neck}`, "回開機流程指令已送出");
 			});
 
-			const microDirty = { S: false, L: false };
+				const microDirty = { HEAD: false, NECK: false };
+				const microConfirmed = { HEAD: false, NECK: false };
 
-			function markMicroDirty(mode, dirty = true) {
-				microDirty[mode] = dirty;
-				const hint = mode === "S" ? microSupineHint : microSideHint;
-				if (hint) {
-					hint.textContent = dirty ? "高度已暫存，按「確定調整」後才會送到 ESP32。" : "高度已送出。";
+				function updateMicroHint() {
+					if (!microSupineHint) {
+						return;
+					}
+					const hasDirty = microDirty.HEAD || microDirty.NECK;
+					microSupineHint.textContent = hasDirty ? "高度已暫存，請分別按確認送出到 ESP32。" : "高度已送出。";
 				}
-			}
+
+				function markMicroDirty(channel, dirty = true) {
+					if (!Object.prototype.hasOwnProperty.call(microDirty, channel)) {
+						return;
+					}
+					microDirty[channel] = dirty;
+					if (dirty && Object.prototype.hasOwnProperty.call(microConfirmed, channel)) {
+						microConfirmed[channel] = false;
+					}
+					updateMicroHint();
+				}
 
 			function stepHeightInput(inputNode, delta, channel, markDirty) {
 				if (!inputNode) {
@@ -2072,9 +2108,9 @@
 				}
 			}
 
-			function sendHeightPair(condition, mode, headInput, neckInput, markClean) {
-				const head = setHeightInputValue(headInput, headInput?.value, "HEAD");
-				const neck = setHeightInputValue(neckInput, neckInput?.value, "NECK");
+				function sendHeightPair(condition, mode, headInput, neckInput, markClean) {
+					const head = setHeightInputValue(headInput, headInput?.value, "HEAD");
+					const neck = setHeightInputValue(neckInput, neckInput?.value, "NECK");
 				if (!head || !neck) {
 					return false;
 				}
@@ -2082,111 +2118,93 @@
 				sendCommand(`SET,NORM,${condition},${mode},NECK,${neck}`);
 				if (markClean) {
 					markClean();
+					}
+					return true;
 				}
-				return true;
-			}
 
-			openModalBtn.addEventListener('click', function () {
-				modal.style.display = 'block';
-				screen1.style.display = 'block';
-				screen2.style.display = 'none';
-				screen3.style.display = 'none';
-				sendCommand("DEBUG");
-			});
-
-			switchScreenBtn1.addEventListener('click', function () {
-				selectedCondition = radioForm.querySelector('input[name="condition"]:checked')?.value;
-				console.log("selectedCondition:" + selectedCondition);
-				screen1.style.display = 'none';
-				screen2.style.display = 'block';
-				screen3.style.display = 'none';
-				sendCommand("INIT,NORM,S");
-				if (parsedData.HSF) setHeightInputValue(numberInput1, parsedData.HSF, "HEAD");
-				if (parsedData.N1SF) setHeightInputValue(numberInput2, parsedData.N1SF, "NECK");
-				markMicroDirty("S", false);
-			});
-
-			switchScreenBtn2.addEventListener('click', function () {
-				if (microDirty.S) {
-					serial_message("請先按「確定調整仰躺高度」再切換到側躺畫面。", "orange");
-					return;
+				function sendSingleHeight(condition, mode, channel, inputNode, markClean) {
+					const normalizedChannel = channel === "NECK" ? "NECK" : "HEAD";
+					const value = setHeightInputValue(inputNode, inputNode?.value, normalizedChannel);
+					if (!value) {
+						return false;
+					}
+					sendCommand(`SET,NORM,${condition},${mode},${normalizedChannel},${value}`);
+					if (markClean) {
+						markClean();
+					}
+					return true;
 				}
-				sendCommand("INIT,NORM,L");
-				setTimeout(() => {
 
-					screen1.style.display = 'none';
+				openModalBtn?.addEventListener('click', function () {
+					modal.style.display = 'block';
+					screen1.style.display = 'block';
 					screen2.style.display = 'none';
-					screen3.style.display = 'block';
-					if (parsedData.HLF) setHeightInputValue(numberInput3, parsedData.HLF, "HEAD");
-					if (parsedData.N1LF) setHeightInputValue(numberInput4, parsedData.N1LF, "NECK");
-					markMicroDirty("L", false);
-				}, 1000); // 等待1秒钟
+					sendCommand("DEBUG");
+				});
 
-			});
+				switchScreenBtn1?.addEventListener('click', function () {
+					selectedCondition = radioForm.querySelector('input[name="condition"]:checked')?.value;
+					console.log("selectedCondition:" + selectedCondition);
+					screen1.style.display = 'none';
+					screen2.style.display = 'block';
+					sendCommand("INIT,NORM,S");
+					if (parsedData.HSF) setHeightInputValue(numberInput1, parsedData.HSF, "HEAD");
+					if (parsedData.N1SF) setHeightInputValue(numberInput2, parsedData.N1SF, "NECK");
+					markMicroDirty("HEAD", false);
+					markMicroDirty("NECK", false);
+					microConfirmed.HEAD = false;
+					microConfirmed.NECK = false;
+					if (microSupineHint) {
+						microSupineHint.textContent = "請先分別按確認，才會送出高度到 ESP32。";
+					}
+				});
 
-			backBtn1.addEventListener('click', function () {
-				screen1.style.display = 'block';
-				screen2.style.display = 'none';
-				screen3.style.display = 'none';
-			});
+				backBtn1?.addEventListener('click', function () {
+					screen1.style.display = 'block';
+					screen2.style.display = 'none';
+				});
 
-			backBtn2.addEventListener('click', function () {
-				screen1.style.display = 'none';
-				screen2.style.display = 'block';
-				screen3.style.display = 'none';
-			});
+				closeBtn?.addEventListener('click', function () {
+					if (microDirty.HEAD || microDirty.NECK || !microConfirmed.HEAD || !microConfirmed.NECK) {
+						serial_message("請先分別按「確認頭部高度 / 確認頸部高度」後再結束。", "orange");
+						return;
+					}
+					modal.style.display = 'none';
+					sendCommand("SET,OK");
+				});
 
-			closeBtn.addEventListener('click', function () {
-				if (microDirty.L) {
-					serial_message("請先按「確定調整側躺高度」再結束。", "orange");
-					return;
-				}
-				modal.style.display = 'none';
-				sendCommand("SET,OK");
-			});
+				increaseBtn1?.addEventListener('click', function () {
+					stepHeightInput(numberInput1, HEIGHT_STEP, "HEAD", () => markMicroDirty("HEAD"));
+				});
 
-			increaseBtn1.addEventListener('click', function () {
-				stepHeightInput(numberInput1, HEIGHT_STEP, "HEAD", () => markMicroDirty("S"));
-			});
+				decreaseBtn1?.addEventListener('click', function () {
+					stepHeightInput(numberInput1, -HEIGHT_STEP, "HEAD", () => markMicroDirty("HEAD"));
+				});
 
-			decreaseBtn1.addEventListener('click', function () {
-				stepHeightInput(numberInput1, -HEIGHT_STEP, "HEAD", () => markMicroDirty("S"));
-			});
+				increaseBtn2?.addEventListener('click', function () {
+					stepHeightInput(numberInput2, HEIGHT_STEP, "NECK", () => markMicroDirty("NECK"));
+				});
 
-			increaseBtn2.addEventListener('click', function () {
-				stepHeightInput(numberInput2, HEIGHT_STEP, "NECK", () => markMicroDirty("S"));
-			});
+				decreaseBtn2?.addEventListener('click', function () {
+					stepHeightInput(numberInput2, -HEIGHT_STEP, "NECK", () => markMicroDirty("NECK"));
+				});
 
-			decreaseBtn2.addEventListener('click', function () {
-				stepHeightInput(numberInput2, -HEIGHT_STEP, "NECK", () => markMicroDirty("S"));
-			});
+				confirmHeadAdjustBtn?.addEventListener('click', function () {
+					if (sendSingleHeight(selectedCondition || "1", "S", "HEAD", numberInput1, () => markMicroDirty("HEAD", false))) {
+						microConfirmed.HEAD = true;
+						updateMicroHint();
+					}
+				});
 
-			increaseBtn3.addEventListener('click', function () {
-				stepHeightInput(numberInput3, HEIGHT_STEP, "HEAD", () => markMicroDirty("L"));
-			});
+				confirmNeckAdjustBtn?.addEventListener('click', function () {
+					if (sendSingleHeight(selectedCondition || "1", "S", "NECK", numberInput2, () => markMicroDirty("NECK", false))) {
+						microConfirmed.NECK = true;
+						updateMicroHint();
+					}
+				});
 
-			decreaseBtn3.addEventListener('click', function () {
-				stepHeightInput(numberInput3, -HEIGHT_STEP, "HEAD", () => markMicroDirty("L"));
-			});
-
-			increaseBtn4.addEventListener('click', function () {
-				stepHeightInput(numberInput4, HEIGHT_STEP, "NECK", () => markMicroDirty("L"));
-			});
-
-			decreaseBtn4.addEventListener('click', function () {
-				stepHeightInput(numberInput4, -HEIGHT_STEP, "NECK", () => markMicroDirty("L"));
-			});
-
-			confirmSupineAdjustBtn?.addEventListener('click', function () {
-				sendHeightPair(selectedCondition || "1", "S", numberInput1, numberInput2, () => markMicroDirty("S", false));
-			});
-
-			confirmSideAdjustBtn?.addEventListener('click', function () {
-				sendHeightPair(selectedCondition || "1", "L", numberInput3, numberInput4, () => markMicroDirty("L", false));
-			});
-
-			[numberInput1, numberInput2].forEach(input => input?.addEventListener('input', () => markMicroDirty("S")));
-			[numberInput3, numberInput4].forEach(input => input?.addEventListener('input', () => markMicroDirty("L")));
+				numberInput1?.addEventListener('input', () => markMicroDirty("HEAD"));
+				numberInput2?.addEventListener('input', () => markMicroDirty("NECK"));
 
 			const calibModal = document.getElementById('calibModal');
 			const openCalibBtn = document.getElementById('openCalibBtn');
@@ -2216,9 +2234,13 @@
 			configureHeightInput(sideNeckInput, "NECK");
 
 			const calibDirty = { S: false, L: false };
+			const calibConfirmed = { S: false, L: false };
 
 			function markCalibDirty(mode, dirty = true) {
 				calibDirty[mode] = dirty;
+				if (dirty) {
+					calibConfirmed[mode] = false;
+				}
 				const hint = mode === "S" ? supineCalibHint : sideCalibHint;
 				if (hint && dirty) {
 					hint.textContent = "高度已暫存，按「確定調整」後才會送到 ESP32。";
@@ -2266,16 +2288,22 @@
 			confirmSupineCalibAdjustBtn?.addEventListener('click', function () {
 				if (sendHeightPair(getCalibCondition(), "S", supineHeadInput, supineNeckInput, () => {
 					calibDirty.S = false;
-				}) && supineCalibHint) {
-					supineCalibHint.textContent = "仰躺高度已送出，可按完成校正擷取 BSHS。";
+				})) {
+					calibConfirmed.S = true;
+					if (supineCalibHint) {
+						supineCalibHint.textContent = "仰躺高度已送出，可按完成校正擷取 BSHS。";
+					}
 				}
 			});
 
 			confirmSideCalibAdjustBtn?.addEventListener('click', function () {
 				if (sendHeightPair(getCalibCondition(), "L", sideHeadInput, sideNeckInput, () => {
 					calibDirty.L = false;
-				}) && sideCalibHint) {
-					sideCalibHint.textContent = "側躺高度已送出，可按完成校正擷取 BLHL。";
+				})) {
+					calibConfirmed.L = true;
+					if (sideCalibHint) {
+						sideCalibHint.textContent = "側躺高度已送出，可按完成校正擷取 BLHL。";
+					}
 				}
 			});
 
@@ -2305,9 +2333,10 @@
 				awaitingInitMode = "S";
 				showCalibScreen('supine');
 				if (supineCalibHint) {
-					supineCalibHint.textContent = "完成校正會送出 ANCHOR,START,BSHS。";
+					supineCalibHint.textContent = "請先按「確定調整仰躺高度」再完成校正。";
 				}
 				calibDirty.S = false;
+				calibConfirmed.S = false;
 				sendCommand("INIT,NORM,S");
 				sendCommand("DEBUG");
 				applyParsedDataToCalib();
@@ -2322,9 +2351,10 @@
 				sideStandbyWatchActive = true;
 				sideStandbyConsecutive = 0;
 				if (sideCalibHint) {
-					sideCalibHint.textContent = "等待 state==STANDBY 連續 2 筆後開放微調。";
+					sideCalibHint.textContent = "等待 state==STANDBY 連續 2 筆後開放微調，送出確定後才可完成校正。";
 				}
 				calibDirty.L = false;
+				calibConfirmed.L = false;
 				if (sideStandbyTimer) {
 					clearTimeout(sideStandbyTimer);
 				}
@@ -2362,7 +2392,7 @@
 			});
 
 			completeSupineCalibBtn?.addEventListener('click', function () {
-				if (calibDirty.S) {
+				if (calibDirty.S || !calibConfirmed.S) {
 					serial_message("請先按「確定調整仰躺高度」再完成校正。", "orange");
 					if (supineCalibHint) {
 						supineCalibHint.textContent = "高度尚未送出，請先按確定調整。";
@@ -2378,7 +2408,7 @@
 			});
 
 			completeSideCalibBtn?.addEventListener('click', function () {
-				if (calibDirty.L) {
+				if (calibDirty.L || !calibConfirmed.L) {
 					serial_message("請先按「確定調整側躺高度」再完成校正。", "orange");
 					if (sideCalibHint) {
 						sideCalibHint.textContent = "高度尚未送出，請先按確定調整。";

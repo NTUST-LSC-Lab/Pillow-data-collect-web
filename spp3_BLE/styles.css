@@ -1039,6 +1039,24 @@ button.full {
   text-align: center;
 }
 
+.micro-adjust-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.micro-adjust-row label {
+  min-width: 88px;
+  text-align: right;
+}
+
+.micro-adjust-row .inline-confirm-btn {
+  min-width: 72px;
+  padding-inline: 10px;
+}
+
 .screen .button-container {
   display: flex;
   justify-content: space-between;
