@@ -4,7 +4,7 @@
 
 本分支與本 README 基於 ESP32 韌體 `pose_pre_v3.1` 進行修改。Web 端已對應 `pose_pre_v3.1` 的高度上下限、0.5 cm 高度步進、手動/自動分類模式、ESP32 Manual 控制、壓力/高度監測、右側線圖監測與指令合輯。
 
-修改日期時間：`2026-05-10 19:03:58 CST (+0800)`
+修改日期時間：`2026-05-14 09:32:00 CST (+0800)`
 
 ## 對應版本
 
@@ -225,6 +225,8 @@ INIT,NORM,S
 DEBUG
 ```
 
+`DEBUG` 用途：讀回 ESP32 當下的高度/人體測量學與姿勢流程狀態，供 Web 預填校正欄位與同步監測資訊。
+
 按「確定調整仰躺高度」會送：
 
 ```text
@@ -247,6 +249,14 @@ ANCHOR,START,BSHS
 INIT,NORM,L
 DEBUG
 ```
+
+Web 在連線期間也會每 `10 秒` 背景送一次 `DEBUG` 做同步。若 ESP32 當下在 `MANUAL_CONTROL`，常見回覆是：
+
+```text
+MANUAL,IGNORED,DEBUG
+```
+
+這代表「manual 模式不處理 DEBUG」，是預期行為。
 
 Web 會等待 ESP32 進入 `STANDBY` 後開放側躺微調。若等待逾時，會開放人工微調。
 
@@ -350,6 +360,7 @@ ESP32 端也會再次 clamp / snap，韌體仍是最後安全防線。
 ```text
 MCU,OK
 MANUAL,OK,ENTER
+MANUAL,IGNORED,DEBUG
 PRED,OK,START
 CLASSIFY,OK,START
 ```
@@ -455,6 +466,8 @@ DEBUG
 GET,INFT,ALL
 ```
 
+`DEBUG` 建議在非 `MANUAL_CONTROL` 時使用；manual 期間可能收到 `MANUAL,IGNORED,DEBUG`。
+
 ### ESP32 Manual 控制
 
 ```text
@@ -504,6 +517,8 @@ MOTORPWM,128
 - CSV：壓力、差值、last5、prev5、state、onoff、predict pose、pose 等資料。
 - TXT：訊息紀錄。
 
+CSV 的 `timestamp` 預設為 ISO-8601 UTC（尾碼 `Z`），例如 `2026-05-13T02:21:45.714Z`。在台灣時區（UTC+8）閱讀時，請加 8 小時對照本機時間。
+
 資料來源為瀏覽器 IndexedDB。重新整理頁面或重新開始實驗前，請先匯出需要保存的資料。
 
 ## 常見問題
@@ -533,6 +548,10 @@ MANUAL,STARTUP,<head_cm>,<neck_cm>
 ### 0.5 cm 高度是否會送到 ESP32
 
 會。Web 端使用 `0.5 cm` step，ESP32 `pose_pre_v3.1` 端也支援 0.5 cm clamp / snap。
+
+### `ESP32 Manual 狀態：ESP32 Manual 忽略指令：DEBUG` 是不是壞掉
+
+不是。Web 會定期送 `DEBUG` 同步資料；但 ESP32 在 `MANUAL_CONTROL` 只接受部分指令，`DEBUG` 會回 `MANUAL,IGNORED,DEBUG`。若要停止這類訊息，請先離開 manual（例如送 `MANUAL,STARTUP,<head_cm>,<neck_cm>`）。
 
 ### 如何確認模式切換成功
 
