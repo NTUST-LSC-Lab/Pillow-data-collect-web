@@ -49,10 +49,11 @@ https://fustyles.github.io/webduino/WebSerial.html
 							<div id="led_s6" class="indicator" title="Pump In">S6</div>
 						</div>
 					</div>
-					<div class="status-actions">
-						<button id="syncTime">Sync UTC Time</button>
-						<button id="exportData">Export Data</button>
-					</div>
+						<div class="status-actions">
+							<button id="syncTime">Sync UTC Time</button>
+							<button id="exportData">Export Data</button>
+							<div id="syncTimeAck" class="mode-ack">時間同步狀態：尚未同步</div>
+						</div>
 				</div>
 
 				<div class="device-detail-row">
@@ -133,13 +134,14 @@ https://fustyles.github.io/webduino/WebSerial.html
 						<label for="weight">體重（公斤）：</label>
 						<input type="number" id="weight" required>
 					</div>
-					<div class="button-row">
-						<button type="button" id="userSet">設定</button>
-						<button id="openCalibBtn" type="button">初始校正</button>
-						<button id="openModalBtn" type="button">微調</button>
-					</div>
-				</form>
-			</section>
+						<div class="button-row">
+							<button type="button" id="userSet">設定</button>
+							<button id="openCalibBtn" type="button">初始校正</button>
+							<button id="openModalBtn" type="button">微調</button>
+						</div>
+						<div id="userSetAck" class="mode-ack">使用者資料狀態：尚未設定</div>
+					</form>
+				</section>
 
 			<section class="panel-card status-accordion">
 				<div class="accordion-header">

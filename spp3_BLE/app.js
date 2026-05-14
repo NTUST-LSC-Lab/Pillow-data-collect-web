@@ -8,11 +8,13 @@
 		let serial_sendUint8 = document.getElementById('serial_sendUint8');
 		let serial_clearText = document.getElementById('serial_clearText');
 		let serial_newline = document.getElementById('serial_newline');
-		let serial_syncTime = document.getElementById('syncTime');
-		let db_exportData = document.getElementById('exportData');
-		let serial_userSet = document.getElementById('userSet');
-		let espManualStatus = document.getElementById('espManualStatus');
-		let espManualAck = document.getElementById('espManualAck');
+			let serial_syncTime = document.getElementById('syncTime');
+			let db_exportData = document.getElementById('exportData');
+			let serial_userSet = document.getElementById('userSet');
+			let userSetAck = document.getElementById('userSetAck');
+			let syncTimeAck = document.getElementById('syncTimeAck');
+			let espManualStatus = document.getElementById('espManualStatus');
+			let espManualAck = document.getElementById('espManualAck');
 		let manualStartupHead = document.getElementById('manualStartupHead');
 		let manualStartupNeck = document.getElementById('manualStartupNeck');
 		let appLayout = document.getElementById('appLayout');
@@ -567,13 +569,17 @@
 				serial_readSting = lines.pop();
 
 				for (let line of lines) {
-					line = line.trim();
-					if (line) {
-						clearTimeout(serial_timer);
-						console.log(line);
-						const hideLine = suppressSilentDebugResponse;
-						serial_message(line, LOG_SUCCESS_GREEN, !hideLine);
-						if (hideLine && line.includes("pre_stable_label=")) {
+						line = line.trim();
+						if (line) {
+							clearTimeout(serial_timer);
+							console.log(line);
+							const ackLine = line.toLowerCase();
+							if (ackLine.startsWith("synctime")) {
+								setSyncTimeAck(`已同步 (${formatAckTime()})`, "ok");
+							}
+							const hideLine = suppressSilentDebugResponse;
+							serial_message(line, LOG_SUCCESS_GREEN, !hideLine);
+							if (hideLine && line.includes("pre_stable_label=")) {
 							suppressSilentDebugResponse = false;
 							if (silentDebugSuppressTimer) {
 								clearTimeout(silentDebugSuppressTimer);
@@ -746,21 +752,25 @@
 			}
 		});
 
-		serial_syncTime.addEventListener('click', async () => {
-			const now = Math.floor(Date.now() / 1000); // 生成UNIX時間戳
-			const utcString = now;//now.toISOString(); // 生成UTC時間字串
-			if (rxCharacteristic) {
-				try {
-					var msg = "synctime," + utcString;
-					logCommand(msg);
-					serial_message(msg, "orange");
-					serial_text.value = "";
-					queueBleWrite(normalizeCommand(msg));
-				} catch (error) {
-					serial_message(error.message, "red");
+			serial_syncTime.addEventListener('click', async () => {
+				const now = Math.floor(Date.now() / 1000); // 生成UNIX時間戳
+				const utcString = now;//now.toISOString(); // 生成UTC時間字串
+				if (rxCharacteristic) {
+					try {
+						var msg = "synctime," + utcString;
+						logCommand(msg);
+						serial_message(msg, "orange");
+						serial_text.value = "";
+						queueBleWrite(normalizeCommand(msg));
+						setSyncTimeAck("同步指令已送出，等待 ESP32 回覆", "pending");
+					} catch (error) {
+						setSyncTimeAck(`送出失敗：${error.message}`, "error");
+						serial_message(error.message, "red");
+					}
+				} else {
+					setSyncTimeAck("尚未連線 BLE，指令未送出", "error");
 				}
-			}
-		});
+			});
 
 		serial_userSet.addEventListener('click', async () => {
 			if (rxCharacteristic) {
@@ -771,16 +781,20 @@
 					let weight = document.getElementById('weight').value;
 					let infoString = `${gender},${age},${height},${weight}`;
 
-					var msg = "USER," + infoString;
-					logCommand(msg);
-					serial_message(msg, "orange");
-					serial_text.value = "";
-					queueBleWrite(normalizeCommand(msg));
-				} catch (error) {
-					serial_message(error.message, "red");
+						var msg = "USER," + infoString;
+						logCommand(msg);
+						serial_message(msg, "orange");
+						serial_text.value = "";
+						queueBleWrite(normalizeCommand(msg));
+						setUserSetAck("設定指令已送出，等待 ESP32 回覆", "pending");
+					} catch (error) {
+						setUserSetAck(`送出失敗：${error.message}`, "error");
+						serial_message(error.message, "red");
+					}
+				} else {
+					setUserSetAck("尚未連線 BLE，指令未送出", "error");
 				}
-			}
-		});
+			});
 
 		db_exportData.addEventListener('click', async () => {
 			DBModule.exportCSV().then(() => {
@@ -986,6 +1000,28 @@
 			controlModeAck.classList.remove('pending', 'ok', 'error');
 			if (status) {
 				controlModeAck.classList.add(status);
+			}
+		}
+
+		function setUserSetAck(message, status = "") {
+			if (!userSetAck) {
+				return;
+			}
+			userSetAck.textContent = `使用者資料狀態：${message}`;
+			userSetAck.classList.remove('pending', 'ok', 'error');
+			if (status) {
+				userSetAck.classList.add(status);
+			}
+		}
+
+		function setSyncTimeAck(message, status = "") {
+			if (!syncTimeAck) {
+				return;
+			}
+			syncTimeAck.textContent = `時間同步狀態：${message}`;
+			syncTimeAck.classList.remove('pending', 'ok', 'error');
+			if (status) {
+				syncTimeAck.classList.add(status);
 			}
 		}
 
@@ -1279,11 +1315,20 @@
 			requestClassifyStart();
 		}
 
-		function parseProtocolMessage(dataString) {
-			const parts = dataString.split(',').map(v => v.trim());
-			if (parts.length < 2) {
-				return;
-			}
+			function parseProtocolMessage(dataString) {
+				const parts = dataString.split(',').map(v => v.trim());
+				if (parts.length < 2) {
+					return;
+				}
+
+				if (parts[0] === "USER") {
+					if (parts[1] === "OK") {
+						setUserSetAck(`已設定 (${formatAckTime()})`, "ok");
+					} else if (parts[1] === "ERR") {
+						setUserSetAck(`ESP32 回覆失敗：${parts.slice(2).join(',') || "BAD_COMMAND"}`, "error");
+					}
+					return;
+				}
 
 			if (parts[0] === "FEATURE") {
 				if (parts[1] === "STATUS") {
