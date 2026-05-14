@@ -613,6 +613,14 @@ button.full {
   display: none;
 }
 
+.user-accordion .accordion-body.is-collapsed {
+  display: block;
+}
+
+.user-accordion .accordion-body.is-collapsed .user-input-fields {
+  display: none;
+}
+
 .mode-control-block {
   display: grid;
   grid-template-columns: auto minmax(180px, 1fr);
