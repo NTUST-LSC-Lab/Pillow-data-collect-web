@@ -546,6 +546,8 @@
 			console.error('Database initialization error:', error);
 		});
 
+		const LOG_SUCCESS_GREEN = "#c8ffd7";
+
 		// BLE Notifications Handle
 		function handleNotifications(event) {
 			let value = event.target.value;
@@ -570,7 +572,7 @@
 						clearTimeout(serial_timer);
 						console.log(line);
 						const hideLine = suppressSilentDebugResponse;
-						serial_message(line, "green", !hideLine);
+						serial_message(line, LOG_SUCCESS_GREEN, !hideLine);
 						if (hideLine && line.includes("pre_stable_label=")) {
 							suppressSilentDebugResponse = false;
 							if (silentDebugSuppressTimer) {
@@ -585,7 +587,7 @@
 				clearTimeout(serial_timer);
 				serial_timer = setTimeout(function () {
 					if (serial_readSting != "") {
-						serial_message(serial_readSting, "green", !suppressSilentDebugResponse);
+						serial_message(serial_readSting, LOG_SUCCESS_GREEN, !suppressSilentDebugResponse);
 						serial_readSting = "";
 					}
 				}, 100);
@@ -1554,7 +1556,7 @@
 			// Robust parsing: split by space/comma, remove empty entries
 			let dataPoints = dataString.split(/[\s,]+/).filter(Boolean);
 
-			if (colour === "green") {
+			if (colour === "green" || colour === LOG_SUCCESS_GREEN) {
 				debugDataBuffer += `${msg}\n`;
 				if (debugDataBuffer.includes('N2LP=')) {
 					let cleanedData = debugDataBuffer.replace(/\r?\n|\r/g, ' ').replace(/\s+/g, ' ').trim();
@@ -1764,7 +1766,7 @@
 				}
 			}
 
-			if (colour === "green" && dataString.includes(',')) {
+			if ((colour === "green" || colour === LOG_SUCCESS_GREEN) && dataString.includes(',')) {
 				parseProtocolMessage(dataString.trim());
 			}
 		}
