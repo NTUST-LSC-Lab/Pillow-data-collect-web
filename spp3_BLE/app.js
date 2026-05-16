@@ -11,7 +11,9 @@
 			let serial_syncTime = document.getElementById('syncTime');
 			let db_exportData = document.getElementById('exportData');
 			let serial_userSet = document.getElementById('userSet');
+			let userForm = document.getElementById('userForm');
 			let userSetAck = document.getElementById('userSetAck');
+			let userDimensionSummary = document.getElementById('userDimensionSummary');
 			let syncTimeAck = document.getElementById('syncTimeAck');
 			let espManualStatus = document.getElementById('espManualStatus');
 			let espManualAck = document.getElementById('espManualAck');
@@ -86,8 +88,6 @@
 				}
 			}
 		};
-
-
 
 		// Initialize the chart
 		const ctx = document.getElementById('pressureChart').getContext('2d');
@@ -775,26 +775,30 @@
 		serial_userSet.addEventListener('click', async () => {
 			if (rxCharacteristic) {
 				try {
+					if (userForm && typeof userForm.reportValidity === "function" && !userForm.reportValidity()) {
+						return;
+					}
 					let gender = document.querySelector('input[name="gender"]:checked').value === 'female' ? '0' : '1';
 					let age = document.getElementById('age').value;
 					let height = document.getElementById('height').value;
 					let weight = document.getElementById('weight').value;
 					let infoString = `${gender},${age},${height},${weight}`;
+					setUserDimensionSummaryPending();
 
-						var msg = "USER," + infoString;
-						logCommand(msg);
-						serial_message(msg, "orange");
+					var msg = "USER," + infoString;
+					logCommand(msg);
+					serial_message(msg, "orange");
 						serial_text.value = "";
 						queueBleWrite(normalizeCommand(msg));
 						setUserSetAck("設定指令已送出，等待 ESP32 回覆", "pending");
-					} catch (error) {
-						setUserSetAck(`送出失敗：${error.message}`, "error");
-						serial_message(error.message, "red");
-					}
-				} else {
-					setUserSetAck("尚未連線 BLE，指令未送出", "error");
+				} catch (error) {
+					setUserSetAck(`送出失敗：${error.message}`, "error");
+					serial_message(error.message, "red");
 				}
-			});
+			} else {
+				setUserSetAck("尚未連線 BLE，指令未送出", "error");
+			}
+		});
 
 		db_exportData.addEventListener('click', async () => {
 			DBModule.exportCSV().then(() => {
@@ -1143,6 +1147,47 @@
 			}
 		}
 
+		function formatWidthMm(value) {
+			const numericValue = Number(value);
+			return Number.isFinite(numericValue) ? `${Math.trunc(numericValue)} mm` : "- mm";
+		}
+
+		function setUserDimensionSummaryPending() {
+			safeSetText(userDimensionSummary, "目前尺寸：讀取 ESP32 中...");
+		}
+
+		function renderUserDimensionSummary(headWidth, neckWidth, shoulderWidth) {
+			safeSetText(
+				userDimensionSummary,
+				`目前尺寸：頭寬 ${formatWidthMm(headWidth)} ｜ 頸寬 ${formatWidthMm(neckWidth)} ｜ 肩寬 ${formatWidthMm(shoulderWidth)}`
+			);
+		}
+
+		function updateUserDimensionsFromParsed() {
+			const headWidth = Number(parsedData.head_width);
+			const neckWidth = Number(parsedData.neck_width);
+			const shoulderWidth = Number(parsedData.shoulder_width);
+			if (!Number.isFinite(headWidth) || !Number.isFinite(neckWidth) || !Number.isFinite(shoulderWidth)) {
+				return;
+			}
+			if (headWidth <= 0 || neckWidth <= 0 || shoulderWidth <= 0) {
+				return;
+			}
+			renderUserDimensionSummary(headWidth, neckWidth, shoulderWidth);
+		}
+
+		function requestSilentDebugSnapshot() {
+			suppressSilentDebugResponse = true;
+			if (silentDebugSuppressTimer) {
+				clearTimeout(silentDebugSuppressTimer);
+			}
+			silentDebugSuppressTimer = setTimeout(() => {
+				suppressSilentDebugResponse = false;
+				silentDebugSuppressTimer = null;
+			}, 3500);
+			sendSilentCommand("DEBUG");
+		}
+
 		function setWorkflowState(nextState) {
 			workflowState = nextState;
 			safeSetText(workflowStateBadge, nextState);
@@ -1281,6 +1326,7 @@
 				parsedData.currentHeadNumber,
 				parsedData.currentNeckNumber
 			);
+			updateUserDimensionsFromParsed();
 		}
 
 		function clearClassifyStartRetry() {
@@ -1383,6 +1429,7 @@
 				if (parts[0] === "USER") {
 					if (parts[1] === "OK") {
 						setUserSetAck(`已設定 (${formatAckTime()})`, "ok");
+						requestSilentDebugSnapshot();
 					} else if (parts[1] === "ERR") {
 						setUserSetAck(`ESP32 回覆失敗：${parts.slice(2).join(',') || "BAD_COMMAND"}`, "error");
 					}
@@ -1949,15 +1996,7 @@
 			const nowMs = Date.now();
 			if (nowMs - lastHeightDebugPollMs >= HEIGHT_DEBUG_POLL_MS) {
 				lastHeightDebugPollMs = nowMs;
-				suppressSilentDebugResponse = true;
-				if (silentDebugSuppressTimer) {
-					clearTimeout(silentDebugSuppressTimer);
-				}
-				silentDebugSuppressTimer = setTimeout(() => {
-					suppressSilentDebugResponse = false;
-					silentDebugSuppressTimer = null;
-				}, 3500);
-				sendSilentCommand("DEBUG");
+				requestSilentDebugSnapshot();
 			}
 		}, 1000);
 		let selectedCondition = null;
