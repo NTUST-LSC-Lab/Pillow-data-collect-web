@@ -1304,7 +1304,7 @@
 			monitorState.pressure.head = values[2];
 			updateMonitorDisplay();
 			appendMonitorLog(
-				`${new Date().toLocaleTimeString()} 壓力 Monitor=${formatPressureValue(values[0])} Neck=${formatPressureValue(values[1])} Head=${formatPressureValue(values[2])}`
+				`${new Date().toLocaleTimeString()} 壓力 Monitor=${formatPressureValue(values[0])} Head=${formatPressureValue(values[2])} Neck=${formatPressureValue(values[1])}`
 			);
 		}
 
