@@ -87,9 +87,9 @@
 					}
 				}
 			}
-		};
+			};
 
-		// Initialize the chart
+			// Initialize the chart
 		const ctx = document.getElementById('pressureChart').getContext('2d');
 		const chart = new Chart(ctx, {
 			type: 'line',  // Chart type (line, bar, etc.)
@@ -772,33 +772,33 @@
 				}
 			});
 
-		serial_userSet.addEventListener('click', async () => {
-			if (rxCharacteristic) {
-				try {
-					if (userForm && typeof userForm.reportValidity === "function" && !userForm.reportValidity()) {
-						return;
-					}
-					let gender = document.querySelector('input[name="gender"]:checked').value === 'female' ? '0' : '1';
-					let age = document.getElementById('age').value;
-					let height = document.getElementById('height').value;
-					let weight = document.getElementById('weight').value;
-					let infoString = `${gender},${age},${height},${weight}`;
-					setUserDimensionSummaryPending();
+			serial_userSet.addEventListener('click', async () => {
+				if (rxCharacteristic) {
+					try {
+						if (userForm && typeof userForm.reportValidity === "function" && !userForm.reportValidity()) {
+							return;
+						}
+						let gender = document.querySelector('input[name="gender"]:checked').value === 'female' ? '0' : '1';
+						let age = document.getElementById('age').value;
+						let height = document.getElementById('height').value;
+						let weight = document.getElementById('weight').value;
+						let infoString = `${gender},${age},${height},${weight}`;
+						setUserDimensionSummaryPending();
 
-					var msg = "USER," + infoString;
-					logCommand(msg);
-					serial_message(msg, "orange");
+							var msg = "USER," + infoString;
+							logCommand(msg);
+							serial_message(msg, "orange");
 						serial_text.value = "";
 						queueBleWrite(normalizeCommand(msg));
 						setUserSetAck("設定指令已送出，等待 ESP32 回覆", "pending");
-				} catch (error) {
-					setUserSetAck(`送出失敗：${error.message}`, "error");
-					serial_message(error.message, "red");
+					} catch (error) {
+						setUserSetAck(`送出失敗：${error.message}`, "error");
+						serial_message(error.message, "red");
+					}
+				} else {
+					setUserSetAck("尚未連線 BLE，指令未送出", "error");
 				}
-			} else {
-				setUserSetAck("尚未連線 BLE，指令未送出", "error");
-			}
-		});
+			});
 
 		db_exportData.addEventListener('click', async () => {
 			DBModule.exportCSV().then(() => {
@@ -1153,13 +1153,13 @@
 		}
 
 		function setUserDimensionSummaryPending() {
-			safeSetText(userDimensionSummary, "目前尺寸：讀取 ESP32 中...");
+			safeSetText(userDimensionSummary, "目前估算尺寸：讀取 ESP32 中...");
 		}
 
 		function renderUserDimensionSummary(headWidth, neckWidth, shoulderWidth) {
 			safeSetText(
 				userDimensionSummary,
-				`目前尺寸：頭寬 ${formatWidthMm(headWidth)} ｜ 頸寬 ${formatWidthMm(neckWidth)} ｜ 肩寬 ${formatWidthMm(shoulderWidth)}`
+				`目前估算尺寸：頭寬 ${formatWidthMm(headWidth)} ｜ 頸寬 ${formatWidthMm(neckWidth)} ｜ 肩寬 ${formatWidthMm(shoulderWidth)}`
 			);
 		}
 
@@ -1222,7 +1222,16 @@
 		}
 
 		function enableSideCalibrationControls(enabled) {
-			const ids = ['sideHeadInput', 'sideNeckInput', 'sideHeadPlus', 'sideHeadMinus', 'sideNeckPlus', 'sideNeckMinus', 'confirmSideCalibAdjustBtn'];
+			const ids = [
+				'sideHeadInput',
+				'sideNeckInput',
+				'sideHeadPlus',
+				'sideHeadMinus',
+				'sideNeckPlus',
+				'sideNeckMinus',
+				'confirmSideHeadAdjustBtn',
+				'confirmSideNeckAdjustBtn'
+			];
 			ids.forEach(id => {
 				const node = document.getElementById(id);
 				if (node) {
@@ -1318,16 +1327,16 @@
 			);
 		}
 
-		function updateHeightMonitorFromParsed(source) {
-			updateHeightMonitorFromValues(
-				source,
-				parsedData.headNumber,
-				parsedData.neckNumber,
-				parsedData.currentHeadNumber,
-				parsedData.currentNeckNumber
-			);
-			updateUserDimensionsFromParsed();
-		}
+			function updateHeightMonitorFromParsed(source) {
+				updateHeightMonitorFromValues(
+					source,
+					parsedData.headNumber,
+					parsedData.neckNumber,
+					parsedData.currentHeadNumber,
+					parsedData.currentNeckNumber
+				);
+				updateUserDimensionsFromParsed();
+			}
 
 		function clearClassifyStartRetry() {
 			if (classifyStartRetryTimer) {
@@ -1534,6 +1543,7 @@
 
 						if (pendingAnchorTarget === target) {
 							pendingAnchorTarget = null;
+							updateCalibAnchorButtonState(target === "BSHS" ? "S" : "L");
 							const hint = document.getElementById(target === "BSHS" ? 'supineCalibHint' : 'sideCalibHint');
 							if (hint) {
 								hint.textContent = `${target} 校正成功。`;
@@ -1571,6 +1581,7 @@
 				}
 
 				if (parts[1] === "ERR" && parts[2] === "TIMEOUT" && pendingAnchorTarget) {
+					const timeoutMode = pendingAnchorTarget === "BSHS" ? "S" : "L";
 					const hint = document.getElementById(pendingAnchorTarget === "BSHS" ? 'supineCalibHint' : 'sideCalibHint');
 					if (hint) {
 						hint.textContent = "校正逾時，請重試。";
@@ -1580,6 +1591,7 @@
 						enableSideCalibrationControls(true);
 					}
 					pendingAnchorTarget = null;
+					updateCalibAnchorButtonState(timeoutMode);
 				}
 				return;
 			}
@@ -1824,7 +1836,7 @@
 											enableSideCalibrationControls(true);
 											const sideHint = document.getElementById('sideCalibHint');
 											if (sideHint) {
-												sideHint.textContent = "已進入 STANDBY，現在可微調。";
+												sideHint.textContent = "已進入 STANDBY，現在可微調，請分別確認頭部與頸部高度。";
 											}
 										}
 									} else {
@@ -1994,10 +2006,10 @@
 			}
 
 			const nowMs = Date.now();
-			if (nowMs - lastHeightDebugPollMs >= HEIGHT_DEBUG_POLL_MS) {
-				lastHeightDebugPollMs = nowMs;
-				requestSilentDebugSnapshot();
-			}
+				if (nowMs - lastHeightDebugPollMs >= HEIGHT_DEBUG_POLL_MS) {
+					lastHeightDebugPollMs = nowMs;
+					requestSilentDebugSnapshot();
+				}
 		}, 1000);
 		let selectedCondition = null;
 		const numberInput1 = document.getElementById('numberInput1');
@@ -2179,20 +2191,6 @@
 				}
 			}
 
-				function sendHeightPair(condition, mode, headInput, neckInput, markClean) {
-					const head = setHeightInputValue(headInput, headInput?.value, "HEAD");
-					const neck = setHeightInputValue(neckInput, neckInput?.value, "NECK");
-				if (!head || !neck) {
-					return false;
-				}
-				sendCommand(`SET,NORM,${condition},${mode},HEAD,${head}`);
-				sendCommand(`SET,NORM,${condition},${mode},NECK,${neck}`);
-				if (markClean) {
-					markClean();
-					}
-					return true;
-				}
-
 				function sendSingleHeight(condition, mode, channel, inputNode, markClean) {
 					const normalizedChannel = channel === "NECK" ? "NECK" : "HEAD";
 					const value = setHeightInputValue(inputNode, inputNode?.value, normalizedChannel);
@@ -2308,26 +2306,99 @@
 			const sideNeckInput = document.getElementById('sideNeckInput');
 			const supineCalibHint = document.getElementById('supineCalibHint');
 			const sideCalibHint = document.getElementById('sideCalibHint');
-			const confirmSupineCalibAdjustBtn = document.getElementById('confirmSupineCalibAdjustBtn');
-			const confirmSideCalibAdjustBtn = document.getElementById('confirmSideCalibAdjustBtn');
+			const confirmSupineHeadAdjustBtn = document.getElementById('confirmSupineHeadAdjustBtn');
+			const confirmSupineNeckAdjustBtn = document.getElementById('confirmSupineNeckAdjustBtn');
+			const confirmSideHeadAdjustBtn = document.getElementById('confirmSideHeadAdjustBtn');
+			const confirmSideNeckAdjustBtn = document.getElementById('confirmSideNeckAdjustBtn');
 
 			configureHeightInput(supineHeadInput, "HEAD");
 			configureHeightInput(supineNeckInput, "NECK");
 			configureHeightInput(sideHeadInput, "HEAD");
 			configureHeightInput(sideNeckInput, "NECK");
 
-			const calibDirty = { S: false, L: false };
-			const calibConfirmed = { S: false, L: false };
+			const calibDirty = {
+				S: { HEAD: false, NECK: false },
+				L: { HEAD: false, NECK: false }
+			};
+			const calibConfirmed = {
+				S: { HEAD: false, NECK: false },
+				L: { HEAD: false, NECK: false }
+			};
 
-			function markCalibDirty(mode, dirty = true) {
-				calibDirty[mode] = dirty;
+			function getCalibHintNode(mode) {
+				return mode === "S" ? supineCalibHint : sideCalibHint;
+			}
+
+			function getCalibAnchorName(mode) {
+				return mode === "S" ? "BSHS" : "BLHL";
+			}
+
+			function getCalibAnchorButton(mode) {
+				return mode === "S" ? completeSupineCalibBtn : completeSideCalibBtn;
+			}
+
+			function getCalibChannelLabel(channel) {
+				return channel === "NECK" ? "頸部" : "頭部";
+			}
+
+			function isCalibReadyForAnchor(mode) {
+				return !calibDirty[mode].HEAD &&
+					!calibDirty[mode].NECK &&
+					calibConfirmed[mode].HEAD &&
+					calibConfirmed[mode].NECK;
+			}
+
+			function updateCalibAnchorButtonState(mode) {
+				const button = getCalibAnchorButton(mode);
+				if (!button) {
+					return;
+				}
+				const anchorName = getCalibAnchorName(mode);
+				button.disabled = !isCalibReadyForAnchor(mode) || pendingAnchorTarget === anchorName;
+			}
+
+			function resetCalibState(mode) {
+				calibDirty[mode].HEAD = false;
+				calibDirty[mode].NECK = false;
+				calibConfirmed[mode].HEAD = false;
+				calibConfirmed[mode].NECK = false;
+				updateCalibAnchorButtonState(mode);
+			}
+
+			function buildCalibAnchorBlockedHint(mode) {
+				const dirtyChannels = ["HEAD", "NECK"].filter(channel => calibDirty[mode][channel]);
+				if (dirtyChannels.length) {
+					return `尚未送出${dirtyChannels.map(getCalibChannelLabel).join("與")}高度，請先按右側「確認」。`;
+				}
+				const pendingChannels = ["HEAD", "NECK"].filter(channel => !calibConfirmed[mode][channel]);
+				if (pendingChannels.length) {
+					return `請先確認${pendingChannels.map(getCalibChannelLabel).join("與")}高度，再送出 ${getCalibAnchorName(mode)} anchor。`;
+				}
+				return `${mode === "S" ? "仰躺" : "側躺"}頭/頸高度已送出，可按「確認送出 ${getCalibAnchorName(mode)} anchor」。`;
+			}
+
+			function updateCalibHint(mode, overrideText) {
+				const hint = getCalibHintNode(mode);
+				updateCalibAnchorButtonState(mode);
+				if (!hint) {
+					return;
+				}
+				if (typeof overrideText === "string") {
+					hint.textContent = overrideText;
+					return;
+				}
+				hint.textContent = buildCalibAnchorBlockedHint(mode);
+			}
+
+			function markCalibDirty(mode, channel, dirty = true) {
+				if (!calibDirty[mode] || !Object.prototype.hasOwnProperty.call(calibDirty[mode], channel)) {
+					return;
+				}
+				calibDirty[mode][channel] = dirty;
 				if (dirty) {
-					calibConfirmed[mode] = false;
+					calibConfirmed[mode][channel] = false;
 				}
-				const hint = mode === "S" ? supineCalibHint : sideCalibHint;
-				if (hint && dirty) {
-					hint.textContent = "高度已暫存，按「確定調整」後才會送到 ESP32。";
-				}
+				updateCalibHint(mode);
 			}
 
 			function showCalibScreen(name) {
@@ -2352,7 +2423,7 @@
 
 			function makeStepHandler(inputNode, step, mode, channel) {
 				return function () {
-					stepHeightInput(inputNode, step, channel, () => markCalibDirty(mode));
+					stepHeightInput(inputNode, step, channel, () => markCalibDirty(mode, channel));
 				};
 			}
 
@@ -2365,28 +2436,36 @@
 			document.getElementById('sideNeckPlus')?.addEventListener('click', makeStepHandler(sideNeckInput, HEIGHT_STEP, "L", "NECK"));
 			document.getElementById('sideNeckMinus')?.addEventListener('click', makeStepHandler(sideNeckInput, -HEIGHT_STEP, "L", "NECK"));
 
-			[supineHeadInput, supineNeckInput].forEach(input => input?.addEventListener('input', () => markCalibDirty("S")));
-			[sideHeadInput, sideNeckInput].forEach(input => input?.addEventListener('input', () => markCalibDirty("L")));
+			supineHeadInput?.addEventListener('input', () => markCalibDirty("S", "HEAD"));
+			supineNeckInput?.addEventListener('input', () => markCalibDirty("S", "NECK"));
+			sideHeadInput?.addEventListener('input', () => markCalibDirty("L", "HEAD"));
+			sideNeckInput?.addEventListener('input', () => markCalibDirty("L", "NECK"));
 
-			confirmSupineCalibAdjustBtn?.addEventListener('click', function () {
-				if (sendHeightPair(getCalibCondition(), "S", supineHeadInput, supineNeckInput, () => {
-					calibDirty.S = false;
-				})) {
-					calibConfirmed.S = true;
-					if (supineCalibHint) {
-						supineCalibHint.textContent = "仰躺高度已送出，可按完成校正擷取 BSHS。";
-					}
+			confirmSupineHeadAdjustBtn?.addEventListener('click', function () {
+				if (sendSingleHeight(getCalibCondition(), "S", "HEAD", supineHeadInput, () => markCalibDirty("S", "HEAD", false))) {
+					calibConfirmed.S.HEAD = true;
+					updateCalibHint("S");
 				}
 			});
 
-			confirmSideCalibAdjustBtn?.addEventListener('click', function () {
-				if (sendHeightPair(getCalibCondition(), "L", sideHeadInput, sideNeckInput, () => {
-					calibDirty.L = false;
-				})) {
-					calibConfirmed.L = true;
-					if (sideCalibHint) {
-						sideCalibHint.textContent = "側躺高度已送出，可按完成校正擷取 BLHL。";
-					}
+			confirmSupineNeckAdjustBtn?.addEventListener('click', function () {
+				if (sendSingleHeight(getCalibCondition(), "S", "NECK", supineNeckInput, () => markCalibDirty("S", "NECK", false))) {
+					calibConfirmed.S.NECK = true;
+					updateCalibHint("S");
+				}
+			});
+
+			confirmSideHeadAdjustBtn?.addEventListener('click', function () {
+				if (sendSingleHeight(getCalibCondition(), "L", "HEAD", sideHeadInput, () => markCalibDirty("L", "HEAD", false))) {
+					calibConfirmed.L.HEAD = true;
+					updateCalibHint("L");
+				}
+			});
+
+			confirmSideNeckAdjustBtn?.addEventListener('click', function () {
+				if (sendSingleHeight(getCalibCondition(), "L", "NECK", sideNeckInput, () => markCalibDirty("L", "NECK", false))) {
+					calibConfirmed.L.NECK = true;
+					updateCalibHint("L");
 				}
 			});
 
@@ -2415,11 +2494,8 @@
 				anchorPollingTarget = "BSHS";
 				awaitingInitMode = "S";
 				showCalibScreen('supine');
-				if (supineCalibHint) {
-					supineCalibHint.textContent = "請先按「確定調整仰躺高度」再完成校正。";
-				}
-				calibDirty.S = false;
-				calibConfirmed.S = false;
+				resetCalibState("S");
+				updateCalibHint("S");
 				sendCommand("INIT,NORM,S");
 				sendCommand("DEBUG");
 				applyParsedDataToCalib();
@@ -2433,11 +2509,8 @@
 				enableSideCalibrationControls(false);
 				sideStandbyWatchActive = true;
 				sideStandbyConsecutive = 0;
-				if (sideCalibHint) {
-					sideCalibHint.textContent = "等待 state==STANDBY 連續 2 筆後開放微調，送出確定後才可完成校正。";
-				}
-				calibDirty.L = false;
-				calibConfirmed.L = false;
+				resetCalibState("L");
+				updateCalibHint("L", "等待 state==STANDBY 連續 2 筆後開放微調，之後請分別確認頭部與頸部高度。");
 				if (sideStandbyTimer) {
 					clearTimeout(sideStandbyTimer);
 				}
@@ -2446,7 +2519,7 @@
 						stopSideStandbyWatch();
 						enableSideCalibrationControls(true);
 						if (sideCalibHint) {
-							sideCalibHint.textContent = "超過 8 秒仍未到位，已開放人工微調。";
+							sideCalibHint.textContent = "超過 8 秒仍未到位，已開放人工微調，請分別確認頭部與頸部高度。";
 						}
 						serial_message("側躺等待逾時，改為人工微調。", "orange");
 					}
@@ -2475,14 +2548,13 @@
 			});
 
 			completeSupineCalibBtn?.addEventListener('click', function () {
-				if (calibDirty.S || !calibConfirmed.S) {
-					serial_message("請先按「確定調整仰躺高度」再完成校正。", "orange");
-					if (supineCalibHint) {
-						supineCalibHint.textContent = "高度尚未送出，請先按確定調整。";
-					}
+				if (!isCalibReadyForAnchor("S")) {
+					serial_message("請先分別確認仰躺頭部與頸部高度，再送出 BSHS anchor。", "orange");
+					updateCalibHint("S", buildCalibAnchorBlockedHint("S"));
 					return;
 				}
 				pendingAnchorTarget = "BSHS";
+				updateCalibAnchorButtonState("S");
 				if (supineCalibHint) {
 					supineCalibHint.textContent = "正在擷取 BSHS anchor，請保持姿勢。";
 				}
@@ -2491,14 +2563,13 @@
 			});
 
 			completeSideCalibBtn?.addEventListener('click', function () {
-				if (calibDirty.L || !calibConfirmed.L) {
-					serial_message("請先按「確定調整側躺高度」再完成校正。", "orange");
-					if (sideCalibHint) {
-						sideCalibHint.textContent = "高度尚未送出，請先按確定調整。";
-					}
+				if (!isCalibReadyForAnchor("L")) {
+					serial_message("請先分別確認側躺頭部與頸部高度，再送出 BLHL anchor。", "orange");
+					updateCalibHint("L", buildCalibAnchorBlockedHint("L"));
 					return;
 				}
 				pendingAnchorTarget = "BLHL";
+				updateCalibAnchorButtonState("L");
 				if (sideCalibHint) {
 					sideCalibHint.textContent = "正在擷取 BLHL anchor，請保持姿勢。";
 				}

@@ -41,12 +41,12 @@ https://fustyles.github.io/webduino/WebSerial.html
 						<label for="systemStateDisplay">State:</label>
 						<input type="text" id="systemStateDisplay" readonly>
 						<div class="indicator-container">
-							<div id="led_s1" class="indicator" title="Motor">S1</div>
-							<div id="led_s2" class="indicator" title="Detect Valve">S2</div>
-							<div id="led_s3" class="indicator" title="Neck Valve">S3</div>
-							<div id="led_s4" class="indicator" title="Head Valve">S4</div>
-							<div id="led_s5" class="indicator" title="Pump In">S5</div>
-							<div id="led_s6" class="indicator" title="Pump In">S6</div>
+							<div id="led_s1" class="indicator" title="Motor">M</div>
+							<div id="led_s2" class="indicator" title="Detect Valve">D</div>
+							<div id="led_s3" class="indicator" title="Neck Valve">N</div>
+							<div id="led_s4" class="indicator" title="Head Valve">H</div>
+							<div id="led_s5" class="indicator" title="Pump In">PI</div>
+							<div id="led_s6" class="indicator" title="Pump Out">PO</div>
 						</div>
 					</div>
 						<div class="status-actions">
@@ -146,7 +146,7 @@ https://fustyles.github.io/webduino/WebSerial.html
 								<button id="openModalBtn" type="button">微調</button>
 							</div>
 							<div id="userSetAck" class="mode-ack">使用者資料狀態：尚未設定</div>
-							<div id="userDimensionSummary" class="user-dimension-summary">目前尺寸：頭寬 - mm ｜ 頸寬 - mm ｜ 肩寬 - mm</div>
+							<div id="userDimensionSummary" class="user-dimension-summary">目前估算尺寸：頭寬 - mm ｜ 頸寬 - mm ｜ 肩寬 - mm</div>
 						</form>
 					</div>
 				</section>
@@ -400,23 +400,24 @@ https://fustyles.github.io/webduino/WebSerial.html
 				<div class="calib-image-box">
 					<img src="../Images/s.png" style="height: 100%">
 				</div>
-				<div>
+				<div class="micro-adjust-row">
 					<label for="supineHeadInput">仰躺頭部高度:</label>
 					<input type="number" id="supineHeadInput" value="7" min="7" max="16" step="0.5">
 					<button id="supineHeadPlus" type="button">+</button>
 					<button id="supineHeadMinus" type="button">-</button>
+					<button id="confirmSupineHeadAdjustBtn" type="button" class="inline-confirm-btn">確認</button>
 				</div>
-				<div>
+				<div class="micro-adjust-row">
 					<label for="supineNeckInput">仰躺頸部高度:</label>
 					<input type="number" id="supineNeckInput" value="10" min="10" max="14" step="0.5">
 					<button id="supineNeckPlus" type="button">+</button>
 					<button id="supineNeckMinus" type="button">-</button>
+					<button id="confirmSupineNeckAdjustBtn" type="button" class="inline-confirm-btn">確認</button>
 				</div>
 				<p id="supineCalibHint" class="calib-hint"></p>
-				<button id="confirmSupineCalibAdjustBtn" type="button" class="full">確定調整仰躺高度</button>
 				<div class="button-container">
 					<button id="backSupineCalibBtn" type="button">回上一頁</button>
-					<button id="completeSupineCalibBtn" type="button">完成校正</button>
+					<button id="completeSupineCalibBtn" type="button">確認送出 BSHS anchor</button>
 				</div>
 			</div>
 
@@ -425,23 +426,24 @@ https://fustyles.github.io/webduino/WebSerial.html
 				<div class="calib-image-box">
 					<img src="../Images/l.png" style="height: 100%">
 				</div>
-				<div>
+				<div class="micro-adjust-row">
 					<label for="sideHeadInput">側躺頭部高度:</label>
 					<input type="number" id="sideHeadInput" value="14" min="7" max="16" step="0.5">
 					<button id="sideHeadPlus" type="button">+</button>
 					<button id="sideHeadMinus" type="button">-</button>
+					<button id="confirmSideHeadAdjustBtn" type="button" class="inline-confirm-btn">確認</button>
 				</div>
-				<div>
+				<div class="micro-adjust-row">
 					<label for="sideNeckInput">側躺頸部高度:</label>
 					<input type="number" id="sideNeckInput" value="14" min="10" max="14" step="0.5">
 					<button id="sideNeckPlus" type="button">+</button>
 					<button id="sideNeckMinus" type="button">-</button>
+					<button id="confirmSideNeckAdjustBtn" type="button" class="inline-confirm-btn">確認</button>
 				</div>
 				<p id="sideCalibHint" class="calib-hint"></p>
-				<button id="confirmSideCalibAdjustBtn" type="button" class="full">確定調整側躺高度</button>
 				<div class="button-container">
 					<button id="backSideCalibBtn" type="button">回上一頁</button>
-					<button id="completeSideCalibBtn" type="button">完成校正</button>
+					<button id="completeSideCalibBtn" type="button">確認送出 BLHL anchor</button>
 				</div>
 			</div>
 		</div>

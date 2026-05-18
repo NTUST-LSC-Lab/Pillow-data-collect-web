@@ -4,7 +4,7 @@
 
 本分支與本 README 基於 ESP32 韌體 `pose_pre_v3.1` 進行修改。Web 端已對應 `pose_pre_v3.1` 的高度上下限、0.5 cm 高度步進、手動/自動分類模式、ESP32 Manual 控制、壓力/高度監測、右側線圖監測與指令合輯。
 
-修改日期時間：`2026-05-16 20:39:00 CST (+0800)`
+修改日期時間：`2026-05-14 16:40:00 CST (+0800)`
 
 ## 對應版本
 
@@ -87,7 +87,7 @@ http://localhost:8080/spp3/
 - `Connect BLE`：連接 ESP32 BLE。
 - `Disconnect`：中斷 BLE。
 - `State`：顯示 ESP32 目前 state 名稱。
-- `S1` 到 `S6`：顯示馬達/閥門輸出狀態。
+- `M / D / N / H / PI / PO`：顯示馬達/閥門輸出狀態。
 - `Sync UTC Time`：同步目前 UNIX time 到 ESP32。
 - `Export Data`：匯出 IndexedDB 收集資料與訊息紀錄。
 
@@ -165,12 +165,6 @@ USER,OK
 
 使用者資料會影響韌體計算 Head / Neck 初始高度。
 
-目前 `使用者資料` 區塊在按下 `設定` 後，會新增顯示一行：
-
-- `目前尺寸：頭寬 / 頸寬 / 肩寬`
-
-這三個值不再由 Web 端自行重算，而是在收到 `USER,OK` 後，立刻再向 ESP32 silent 送出 `DEBUG`，並以韌體回傳的 `head_width`、`neck_width`、`shoulder_width` 作為唯一顯示來源。這樣可以避免 Web 與韌體公式或邊界條件不同步。
-
 ## 校正與分類狀態
 
 此區塊可收合。主要顯示校正流程、anchor、分類與 PRED 狀態。
@@ -225,8 +219,8 @@ PRED,START
 1. 選擇頸椎狀態。
 2. 進入仰躺校正或側躺校正。
 3. 使用 `+ / -` 修改 Head / Neck 高度。
-4. 按「確定調整」送出高度。
-5. 按「完成校正」擷取 anchor。
+4. 分別按頭部與頸部的「確認」送出高度。
+5. 兩者都確認後，按「確認送出 ... anchor」擷取 anchor。
 
 ### 仰躺 BSHS
 
@@ -237,14 +231,17 @@ INIT,NORM,S
 DEBUG
 ```
 
-按「確定調整仰躺高度」會送：
+按仰躺頭部或頸部的「確認」會各自送：
 
 ```text
 SET,NORM,<condition>,S,HEAD,<height_cm>
+```
+
+```text
 SET,NORM,<condition>,S,NECK,<height_cm>
 ```
 
-按「完成校正」會送：
+按「確認送出 BSHS anchor」會送：
 
 ```text
 SET,OK
@@ -262,14 +259,17 @@ DEBUG
 
 Web 會等待 ESP32 進入 `STANDBY` 後開放側躺微調。若等待逾時，會開放人工微調。
 
-按「確定調整側躺高度」會送：
+按側躺頭部或頸部的「確認」會各自送：
 
 ```text
 SET,NORM,<condition>,L,HEAD,<height_cm>
+```
+
+```text
 SET,NORM,<condition>,L,NECK,<height_cm>
 ```
 
-按「完成校正」會送：
+按「確認送出 BLHL anchor」會送：
 
 ```text
 SET,OK
