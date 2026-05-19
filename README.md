@@ -541,6 +541,7 @@ MOTORPWM,128
 按 `Export Data` 會匯出：
 
 - CSV：壓力、差值、last5、prev5、state、onoff、predict pose、pose 等資料。
+  壓力欄位輸出順序為 `Monitor, Head, Neck`。
 - TXT：訊息紀錄。
 
 資料來源為瀏覽器 IndexedDB。重新整理頁面或重新開始實驗前，請先匯出需要保存的資料。

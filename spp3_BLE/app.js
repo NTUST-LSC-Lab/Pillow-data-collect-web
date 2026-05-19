@@ -495,11 +495,37 @@
 
 			function exportToCSV() {
 				return getAllData().then(data => {
-					let csvContent = 'timestamp,pressure1,pressure2,pressure3,differential,last5pointAvg,prev5pointAvg,state,onoff_event,predict_Pose,Pose_event,command\n';
+					let csvContent = 'timestamp,Monitor,Head,Neck,differential,last5pointAvg,prev5pointAvg,state,onoff_event,predict_Pose,Pose_event,command\n';
 
 						data.forEach(item => {
 							const commandStr = item.command ? `"${item.command.replace(/"/g, '""')}"` : "";
-							const row = [formatLocalTimestamp(item.timestamp), ...item.values, commandStr].join(',');
+							const values = Array.isArray(item.values) ? item.values : [];
+							const [
+								monitorPressure = "",
+								neckPressure = "",
+								headPressure = "",
+								differentialValue = "",
+								last5Value = "",
+								prev5Value = "",
+								stateValue = "",
+								onoffEventValue = "",
+								predictPoseValue = "",
+								poseEventValue = ""
+							] = values;
+							const row = [
+								formatLocalTimestamp(item.timestamp),
+								monitorPressure,
+								headPressure,
+								neckPressure,
+								differentialValue,
+								last5Value,
+								prev5Value,
+								stateValue,
+								onoffEventValue,
+								predictPoseValue,
+								poseEventValue,
+								commandStr
+							].join(',');
 							csvContent += row + '\n';
 						});
 
@@ -839,9 +865,9 @@
 		// P指令回傳: 三組壓力值的浮點數 分別代表: 監測 頸部 頭部
 		// I指令回傳: 七組內部變數值 分別代表:
 		//         differential, state, onoff_event, last5pointAvg, prev5pointAvg, predict_Pose, Pose_event
-		// 資料庫欄位:
-		//         pressure1, pressure2, pressure3, differential, last5pointAvg, prev5pointAvg, state, onoff_event, predict_Pose, Pose_event
-		let pressure1, pressure2, pressure3, differential, state, onoff_event, last5pointAvg, prev5pointAvg, predict_Pose, Pose_event;
+		// 資料庫儲存順序:
+		//         Monitor, Neck, Head, differential, last5pointAvg, prev5pointAvg, state, onoff_event, predict_Pose, Pose_event
+		let pressureMonitor, pressureNeck, pressureHead, differential, state, onoff_event, last5pointAvg, prev5pointAvg, predict_Pose, Pose_event;
 		let pendingMicroClose = false;
 
 		const SystemState = [
@@ -1791,9 +1817,9 @@
 								if (chart_data_count > 50) {
 									chart.data.datasets[index].data.shift();
 								}
-								if (index == 0) pressure1 = value;
-								if (index == 1) pressure2 = value;
-								if (index == 2) pressure3 = value;
+								if (index == 0) pressureMonitor = value;
+								if (index == 1) pressureNeck = value;
+								if (index == 2) pressureHead = value;
 							}
 						});
 						updateChartSummary();
@@ -1940,7 +1966,7 @@
 						chart_data_count++;
 
 						// store to db
-						const dataToSave = [pressure1, pressure2, pressure3, differential, last5pointAvg, prev5pointAvg, state, onoff_event, predict_Pose, Pose_event];
+						const dataToSave = [pressureMonitor, pressureNeck, pressureHead, differential, last5pointAvg, prev5pointAvg, state, onoff_event, predict_Pose, Pose_event];
 
 						let combinedCommands = commandBuffer.join('; ');
 						DBModule.save(dataToSave, combinedCommands).then(() => {
