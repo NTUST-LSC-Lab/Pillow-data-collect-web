@@ -1327,6 +1327,29 @@
 			);
 		}
 
+		function formatSerialDisplayMessage(msg) {
+			const rawText = String(msg).replace(/\r?\n/g, '').trim();
+			const dataPoints = rawText.split(/[\s,]+/).filter(Boolean);
+			if (!dataPoints.length || !dataPoints[0].startsWith("P:")) {
+				return rawText;
+			}
+
+			let monitorValue = "";
+			let neckValue = "";
+			let headValue = "";
+			if (dataPoints[0] === "P:") {
+				[monitorValue = "", neckValue = "", headValue = ""] = dataPoints.slice(1, 4);
+			} else {
+				monitorValue = dataPoints[0].substring(2);
+				[neckValue = "", headValue = ""] = dataPoints.slice(1, 3);
+			}
+
+			if (!monitorValue || !neckValue || !headValue) {
+				return rawText;
+			}
+			return `P:${monitorValue} ${headValue} ${neckValue}`;
+		}
+
 			function updateHeightMonitorFromParsed(source) {
 				updateHeightMonitorFromValues(
 					source,
@@ -1703,7 +1726,8 @@
 		}
 
 		function serial_message(msg, colour, show = true) {
-			const safeMsg = String(msg).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+			const displayMsg = formatSerialDisplayMessage(msg);
+			const safeMsg = displayMsg.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 			var scrollControl = document.querySelector('input[name="scrollControl"]:checked')?.value || "auto";
 			if (show) {
 				serial_status.insertAdjacentHTML('beforeend', "<font color='" + colour + "'>" + safeMsg + "</font><br>");
@@ -2025,71 +2049,63 @@
 				const statusAccordionBody = document.getElementById('statusAccordionBody');
 				const userAccordionToggle = document.getElementById('userAccordionToggle');
 				const userAccordionBody = document.getElementById('userAccordionBody');
+				const monitorAccordionToggle = document.getElementById('monitorAccordionToggle');
+				const monitorAccordionBody = document.getElementById('monitorAccordionBody');
+				const serialAccordionToggle = document.getElementById('serialAccordionToggle');
+				const serialAccordionBody = document.getElementById('serialAccordionBody');
 
-			function getSavedStatusAccordionState() {
-				try {
-					return localStorage.getItem('statusAccordionExpanded');
-				} catch (error) {
-					return null;
-				}
-			}
-
-				function saveStatusAccordionState(expanded) {
+				function getSavedAccordionState(key) {
 					try {
-						localStorage.setItem('statusAccordionExpanded', expanded ? '1' : '0');
-					} catch (error) {
-						// Some file/browser contexts block localStorage; the accordion should still work.
-					}
-				}
-
-				function getSavedUserAccordionState() {
-					try {
-						return localStorage.getItem('userAccordionExpanded');
+						return localStorage.getItem(key);
 					} catch (error) {
 						return null;
 					}
 				}
 
-				function saveUserAccordionState(expanded) {
+				function saveAccordionState(key, expanded) {
 					try {
-						localStorage.setItem('userAccordionExpanded', expanded ? '1' : '0');
+						localStorage.setItem(key, expanded ? '1' : '0');
 					} catch (error) {
 						// Some file/browser contexts block localStorage; the accordion should still work.
 					}
 				}
 
-				function setStatusAccordionExpanded(expanded) {
-					if (!statusAccordionToggle || !statusAccordionBody) {
+				function setAccordionExpanded(toggleNode, bodyNode, storageKey, expanded) {
+					if (!toggleNode || !bodyNode) {
 						return;
 					}
-					statusAccordionBody.classList.toggle('is-collapsed', !expanded);
-					statusAccordionToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-					statusAccordionToggle.textContent = expanded ? '收合' : '展開';
-					saveStatusAccordionState(expanded);
+					bodyNode.classList.toggle('is-collapsed', !expanded);
+					toggleNode.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+					toggleNode.textContent = expanded ? '收合' : '展開';
+					saveAccordionState(storageKey, expanded);
 				}
 
-				function setUserAccordionExpanded(expanded) {
-					if (!userAccordionToggle || !userAccordionBody) {
-						return;
-					}
-					userAccordionBody.classList.toggle('is-collapsed', !expanded);
-					userAccordionToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-					userAccordionToggle.textContent = expanded ? '收合' : '展開';
-					saveUserAccordionState(expanded);
-				}
-
-				const savedAccordionState = getSavedStatusAccordionState();
-				setStatusAccordionExpanded(savedAccordionState !== '0');
+				const savedAccordionState = getSavedAccordionState('statusAccordionExpanded');
+				setAccordionExpanded(statusAccordionToggle, statusAccordionBody, 'statusAccordionExpanded', savedAccordionState !== '0');
 				statusAccordionToggle?.addEventListener('click', function () {
 					const expanded = statusAccordionToggle.getAttribute('aria-expanded') === 'true';
-					setStatusAccordionExpanded(!expanded);
+					setAccordionExpanded(statusAccordionToggle, statusAccordionBody, 'statusAccordionExpanded', !expanded);
 				});
 
-				const savedUserAccordionState = getSavedUserAccordionState();
-				setUserAccordionExpanded(savedUserAccordionState !== '0');
+				const savedUserAccordionState = getSavedAccordionState('userAccordionExpanded');
+				setAccordionExpanded(userAccordionToggle, userAccordionBody, 'userAccordionExpanded', savedUserAccordionState !== '0');
 				userAccordionToggle?.addEventListener('click', function () {
 					const expanded = userAccordionToggle.getAttribute('aria-expanded') === 'true';
-					setUserAccordionExpanded(!expanded);
+					setAccordionExpanded(userAccordionToggle, userAccordionBody, 'userAccordionExpanded', !expanded);
+				});
+
+				const savedMonitorAccordionState = getSavedAccordionState('monitorAccordionExpanded');
+				setAccordionExpanded(monitorAccordionToggle, monitorAccordionBody, 'monitorAccordionExpanded', savedMonitorAccordionState !== '0');
+				monitorAccordionToggle?.addEventListener('click', function () {
+					const expanded = monitorAccordionToggle.getAttribute('aria-expanded') === 'true';
+					setAccordionExpanded(monitorAccordionToggle, monitorAccordionBody, 'monitorAccordionExpanded', !expanded);
+				});
+
+				const savedSerialAccordionState = getSavedAccordionState('serialAccordionExpanded');
+				setAccordionExpanded(serialAccordionToggle, serialAccordionBody, 'serialAccordionExpanded', savedSerialAccordionState !== '0');
+				serialAccordionToggle?.addEventListener('click', function () {
+					const expanded = serialAccordionToggle.getAttribute('aria-expanded') === 'true';
+					setAccordionExpanded(serialAccordionToggle, serialAccordionBody, 'serialAccordionExpanded', !expanded);
 				});
 
 				const modal = document.getElementById('modal');

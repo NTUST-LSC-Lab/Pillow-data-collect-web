@@ -213,49 +213,59 @@ https://fustyles.github.io/webduino/WebSerial.html
 			</section>
 
 			<section class="panel-card monitor-card">
-				<h2>高度與壓力監測</h2>
-				<div class="monitor-current-grid">
-					<div class="monitor-tile">
-						<div class="monitor-label">Monitor 壓力</div>
-						<div id="monitorPressureValue" class="monitor-value">-</div>
-					</div>
-					<div class="monitor-tile">
-						<div class="monitor-label">Neck 壓力</div>
-						<div id="neckPressureValue" class="monitor-value">-</div>
-					</div>
-					<div class="monitor-tile">
-						<div class="monitor-label">Head 壓力</div>
-						<div id="headPressureValue" class="monitor-value">-</div>
-					</div>
-					<div class="monitor-tile">
-						<div class="monitor-label">Head 高度</div>
-						<div id="headHeightValue" class="monitor-value">目標 - / 目前 -</div>
-					</div>
-					<div class="monitor-tile">
-						<div class="monitor-label">Neck 高度</div>
-						<div id="neckHeightValue" class="monitor-value">目標 - / 目前 -</div>
-					</div>
-					<div class="monitor-tile">
-						<div class="monitor-label">更新時間</div>
-						<div id="monitorUpdateTime" class="monitor-value">-</div>
-					</div>
+				<div class="accordion-header">
+					<h2>高度與壓力監測</h2>
+					<button id="monitorAccordionToggle" type="button" class="accordion-toggle" aria-expanded="true" aria-controls="monitorAccordionBody">收合</button>
 				</div>
-				<div id="heightPressureLog" class="monitor-log"></div>
-				<div class="scroll-options">
-					<label><input type="radio" name="monitorScrollControl" value="auto" checked> 自動滾動</label>
-					<label><input type="radio" name="monitorScrollControl" value="fixed"> 固定滾動</label>
+				<div id="monitorAccordionBody" class="accordion-body">
+					<div class="monitor-current-grid">
+						<div class="monitor-tile">
+							<div class="monitor-label">Monitor 壓力</div>
+							<div id="monitorPressureValue" class="monitor-value">-</div>
+						</div>
+						<div class="monitor-tile">
+							<div class="monitor-label">Neck 壓力</div>
+							<div id="neckPressureValue" class="monitor-value">-</div>
+						</div>
+						<div class="monitor-tile">
+							<div class="monitor-label">Head 壓力</div>
+							<div id="headPressureValue" class="monitor-value">-</div>
+						</div>
+						<div class="monitor-tile">
+							<div class="monitor-label">Head 高度</div>
+							<div id="headHeightValue" class="monitor-value">目標 - / 目前 -</div>
+						</div>
+						<div class="monitor-tile">
+							<div class="monitor-label">Neck 高度</div>
+							<div id="neckHeightValue" class="monitor-value">目標 - / 目前 -</div>
+						</div>
+						<div class="monitor-tile">
+							<div class="monitor-label">更新時間</div>
+							<div id="monitorUpdateTime" class="monitor-value">-</div>
+						</div>
+					</div>
+					<div id="heightPressureLog" class="monitor-log"></div>
+					<div class="scroll-options">
+						<label><input type="radio" name="monitorScrollControl" value="auto" checked> 自動滾動</label>
+						<label><input type="radio" name="monitorScrollControl" value="fixed"> 固定滾動</label>
+					</div>
+					<button id="monitorClearLog" type="button" class="full">清空監測紀錄</button>
 				</div>
-				<button id="monitorClearLog" type="button" class="full">清空監測紀錄</button>
 			</section>
 
 			<section class="panel-card">
-				<h2>訊息紀錄</h2>
-				<div id="serial_status"></div>
-				<div class="scroll-options">
-					<label><input type="radio" name="scrollControl" value="auto" checked> 自動滾動</label>
-					<label><input type="radio" name="scrollControl" value="fixed"> 固定滾動</label>
+				<div class="accordion-header">
+					<h2>訊息紀錄</h2>
+					<button id="serialAccordionToggle" type="button" class="accordion-toggle" aria-expanded="true" aria-controls="serialAccordionBody">收合</button>
 				</div>
-				<button id="serial_clearText" class="full">Clear Text</button>
+				<div id="serialAccordionBody" class="accordion-body">
+					<div id="serial_status"></div>
+					<div class="scroll-options">
+						<label><input type="radio" name="scrollControl" value="auto" checked> 自動滾動</label>
+						<label><input type="radio" name="scrollControl" value="fixed"> 固定滾動</label>
+					</div>
+					<button id="serial_clearText" class="full">Clear Text</button>
+				</div>
 			</section>
 		</aside>
 
