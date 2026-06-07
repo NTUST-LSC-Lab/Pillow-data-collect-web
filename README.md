@@ -5,6 +5,18 @@
 - `spp3_BLE/`：Web Bluetooth 版本
 - `spp3/`：Web Serial 版本
 
+目前 GitHub Pages 對外網址：
+
+- `https://xue030130.github.io/Pillow-data-collect-web/spp3_BLE/`
+
+其中 `spp3_BLE/` 現在對應 `pose_pre_v3.1` 版本，包含：
+
+- 截圖精靈與 26 張固定姿勢收數流程
+- `R1~R5` 截圖命名規則
+- 可拖曳左右欄寬
+- 響應式截圖精靈卡片
+- 可收合 / 可滾動的右側線圖監測區
+
 兩個版本共用：
 
 - `chart.umd.min.js`（Chart.js）

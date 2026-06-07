@@ -1,4 +1,4 @@
-﻿
+
 <!--
 @license
 Copyright 2022 Taiwan (ChungYi Fu)
@@ -26,69 +26,94 @@ https://fustyles.github.io/webduino/WebSerial.html
 </head>
 
 <body>
-	<div id="title">台科大林上智教授團隊智慧枕墊資料收集系統</div>
+	<div id="title">台科大智慧枕墊資料收集系統</div>
 
-	<main class="app-layout">
+	<main id="appLayout" class="app-layout">
 		<aside class="left-panel">
-			<section class="panel-card">
-				<h2>圖表設定</h2>
-				<div class="field-grid">
-					<label for="yAxisMax">Y軸最大值</label>
-					<input type="number" id="yAxisMax" value="9000000">
-					<label for="yAxisMin">Y軸最小值</label>
-					<input type="number" id="yAxisMin" value="80000">
-				</div>
-				<button id="updateChart" class="full">更新圖表</button>
-			</section>
-
-			<section class="panel-card">
-				<h2>裝置連線與指令</h2>
-				<div class="button-row">
-					<button id="serial_request_port" class="primary">Connect BLE</button>
-					<button id="serial_close_port">Disconnect</button>
-				</div>
-				<div class="field-row">
-					<input type="text" id="serial_text" placeholder="輸入文字指令">
-					<select id="serial_newline">
-						<option value=""></option>
-						<option value="\r">\r</option>
-						<option value="\n">\n</option>
-						<option value="\r\n">\r\n</option>
-					</select>
-				</div>
-				<button id="serial_sendText" class="full">Send Text</button>
-
-				<div class="field-row">
-					<input type="text" id="serial_uint8" value="" placeholder="例如: 1,2,3">
-				</div>
-				<button id="serial_sendUint8" class="full">Send Uint8Array</button>
-			</section>
-
-			<section class="panel-card status-card">
-				<h2>系統狀態</h2>
-				<div class="status-grid">
-					<div class="status-state">
+			<section class="panel-card status-card device-status-card">
+				<h2>裝置連線、指令與狀態</h2>
+				<div class="device-main-row">
+					<div class="connection-actions">
+						<button id="serial_request_port" class="primary">Connect BLE</button>
+						<button id="serial_close_port">Disconnect</button>
+					</div>
+					<div class="device-state-strip">
 						<label for="systemStateDisplay">State:</label>
 						<input type="text" id="systemStateDisplay" readonly>
+						<div class="indicator-container">
+							<div id="led_s1" class="indicator" title="Motor">S1</div>
+							<div id="led_s2" class="indicator" title="Detect Valve">S2</div>
+							<div id="led_s3" class="indicator" title="Neck Valve">S3</div>
+							<div id="led_s4" class="indicator" title="Head Valve">S4</div>
+							<div id="led_s5" class="indicator" title="Pump In">S5</div>
+							<div id="led_s6" class="indicator" title="Pump In">S6</div>
+						</div>
 					</div>
-					<div class="indicator-container">
-						<div id="led_s1" class="indicator" title="Motor">S1</div>
-						<div id="led_s2" class="indicator" title="Detect Valve">S2</div>
-						<div id="led_s3" class="indicator" title="Neck Valve">S3</div>
-						<div id="led_s4" class="indicator" title="Head Valve">S4</div>
-						<div id="led_s5" class="indicator" title="Pump In">S5</div>
-						<div id="led_s6" class="indicator" title="Pump In">S6</div>
-					</div>
+						<div class="status-actions">
+							<button id="syncTime">Sync UTC Time</button>
+							<button id="exportData">Export Data</button>
+							<div id="syncTimeAck" class="mode-ack">時間同步狀態：尚未同步</div>
+						</div>
 				</div>
-				<div class="status-actions">
-					<button id="syncTime">Sync UTC Time</button>
-					<button id="exportData">Export Data</button>
+
+				<div class="device-detail-row">
+					<details class="advanced-command-details">
+						<summary>
+							<span>進階文字指令</span>
+							<button id="commandGuideBtn" type="button" class="mini-command-guide">指令合輯</button>
+						</summary>
+						<div class="field-row command-input-row">
+							<input type="text" id="serial_text" placeholder="輸入文字指令">
+							<select id="serial_newline">
+								<option value=""></option>
+								<option value="\r">\r</option>
+								<option value="\n">\n</option>
+								<option value="\r\n">\r\n</option>
+							</select>
+						</div>
+						<button id="serial_sendText" class="full">Send Text</button>
+						<div class="field-row">
+							<input type="text" id="serial_uint8" value="" placeholder="例如: 1,2,3">
+						</div>
+						<button id="serial_sendUint8" class="full">Send Uint8Array</button>
+					</details>
+
+					<details class="manual-control-block manual-control-details">
+						<summary class="manual-control-summary">
+							<span>ESP32 Manual 控制</span>
+							<span id="espManualStatus" class="pill pill-pending">未進入</span>
+						</summary>
+						<div class="manual-command-grid">
+							<button id="espManualEnterBtn" type="button">進入 ESP32 Manual</button>
+							<button id="espManualStopBtn" type="button">停止</button>
+							<button id="monitorFillBtn" type="button">Monitor 充氣</button>
+							<button id="monitorDrainBtn" type="button">Monitor 吸氣</button>
+							<button id="neckFillBtn" type="button">Neck 充氣</button>
+							<button id="neckDrainBtn" type="button">Neck 吸氣</button>
+							<button id="headFillBtn" type="button">Head 充氣</button>
+							<button id="headDrainBtn" type="button">Head 吸氣</button>
+							<button id="allDrainBtn" type="button">全部同時洩氣</button>
+						</div>
+						<div class="manual-startup-grid">
+							<label for="manualStartupHead">Head 目標</label>
+							<input type="number" id="manualStartupHead" value="7.0" min="7" max="16" step="0.5">
+							<label for="manualStartupNeck">Neck 目標</label>
+							<input type="number" id="manualStartupNeck" value="10.0" min="10" max="16" step="0.5">
+						</div>
+						<button id="manualStartupBtn" type="button" class="full">離開 ESP32 Manual 並回開機流程</button>
+						<div id="espManualAck" class="mode-ack">ESP32 Manual 狀態：尚未送出</div>
+					</details>
 				</div>
 			</section>
 
-			<section class="panel-card">
-				<h2>使用者資料</h2>
+			<section class="panel-card user-accordion">
+				<div class="accordion-header">
+					<h2>使用者資料</h2>
+					<button id="userAccordionToggle" type="button" class="accordion-toggle" aria-expanded="true" aria-controls="userAccordionBody">收合</button>
+				</div>
+				<div id="userAccordionBody" class="accordion-body">
 				<form id="userForm">
+					<div class="user-input-fields">
 					<div class="form-group gender-group">
 						<span class="gender-label">生理性別：</span>
 						<div class="gender-options">
@@ -114,11 +139,252 @@ https://fustyles.github.io/webduino/WebSerial.html
 						<label for="weight">體重（公斤）：</label>
 						<input type="number" id="weight" required>
 					</div>
-					<div class="button-row">
-						<button type="button" id="userSet">設定</button>
-						<button id="openModalBtn" type="button">微調</button>
 					</div>
-				</form>
+						<div class="button-row">
+							<button type="button" id="userSet">設定</button>
+							<button id="openCalibBtn" type="button">初始校正</button>
+							<button id="openModalBtn" type="button">微調</button>
+						</div>
+						<div id="userSetAck" class="mode-ack">使用者資料狀態：尚未設定</div>
+						<div id="userDimensionSummary" class="user-dimension-summary">目前估算尺寸：頭寬 - mm ｜ 頸寬 - mm ｜ 肩寬 - mm</div>
+					</form>
+				</div>
+				</section>
+
+			<section class="panel-card status-accordion">
+				<div class="accordion-header">
+					<h2>校正與分類狀態</h2>
+					<button id="statusAccordionToggle" type="button" class="accordion-toggle" aria-expanded="true" aria-controls="statusAccordionBody">收合</button>
+				</div>
+				<div id="statusAccordionBody" class="accordion-body">
+				<div class="mode-control-block">
+					<div>
+						<div class="info-title">目前模式</div>
+						<div><span id="controlModeBadge" class="pill pill-pending">手動模式</span></div>
+					</div>
+					<div class="mode-button-row">
+						<button id="manualModeBtn" type="button" class="primary mode-active">手動模式</button>
+						<button id="autoModeBtn" type="button">自動模式</button>
+					</div>
+					<div id="controlModeHint" class="calib-hint">手動模式不會自動啟動分類與高度自動調整。</div>
+					<div id="controlModeAck" class="mode-ack">模式指令狀態：尚未送出</div>
+				</div>
+				<div class="calib-top-row">
+					<div class="state-table">
+						<div>流程狀態</div>
+						<div><span id="workflowStateBadge" class="pill">未校正</span></div>
+						<div>BSHS 校正</div>
+						<div><span id="anchorBshsStatus" class="pill pill-pending">未完成</span></div>
+						<div>BLHL 校正</div>
+						<div><span id="anchorBlhlStatus" class="pill pill-pending">未完成</span></div>
+						<div>Anchor State</div>
+						<div id="anchorStateValue">IDLE</div>
+						<div>Anchor Target</div>
+						<div id="anchorTargetValue">NONE</div>
+					</div>
+
+					<div class="info-block anchor-info-block">
+						<div class="info-title">Anchor 數值</div>
+						<div class="kv"><span>BSHS</span><span id="anchorBshsValue">pm:- pn:- ph:- head:- neck:-</span></div>
+						<div class="kv"><span>BLHL</span><span id="anchorBlhlValue">pm:- pn:- ph:- head:- neck:-</span></div>
+					</div>
+				</div>
+
+				<div class="pose-pred-row">
+					<div class="info-block">
+						<div class="info-title">即時姿勢</div>
+						<div class="kv"><span>smoothLabel</span><span id="poseSmoothLabel">-</span></div>
+						<div class="kv"><span>rawLabel</span><span id="poseRawLabel">-</span></div>
+						<div class="kv"><span>更新時間</span><span id="poseUpdateTime">-</span></div>
+					</div>
+
+					<details class="info-block pred-block">
+						<summary>展開分數與預測控制</summary>
+						<div class="kv"><span>scoreE</span><span id="scoreEValue">-</span></div>
+						<div class="kv"><span>scoreSupine</span><span id="scoreSupineValue">-</span></div>
+						<div class="kv"><span>scoreSideMean</span><span id="scoreSideMeanValue">-</span></div>
+						<div class="kv"><span>scorePmRule</span><span id="scorePmRuleValue">-</span></div>
+						<div class="kv"><span>PRED enabled/stage</span><span id="predStageValue">-</span></div>
+						<div class="kv"><span>頸部 +/- ΔADC</span><span id="predNeckDelta">-</span></div>
+						<div class="kv"><span>頭部 +/- ΔADC</span><span id="predHeadDelta">-</span></div>
+					</details>
+				</div>
+				</div>
+			</section>
+
+			<section class="panel-card capture-wizard-card capture-accordion">
+				<div class="accordion-header">
+					<h2>截圖精靈</h2>
+					<div class="accordion-actions">
+						<button id="captureAccordionToggle" type="button" class="accordion-toggle" aria-expanded="true" aria-controls="captureAccordionBody">收合</button>
+					</div>
+				</div>
+				<div id="captureAccordionBody" class="accordion-body">
+					<div id="captureStatusBanner" class="capture-status-banner pending" role="status" aria-live="polite">
+						<span id="captureStatusBannerText">⚠ 請先選擇資料夾</span>
+					</div>
+					<div class="capture-wizard-stack capture-collapse-details">
+						<!-- 設定橫列工具欄 -->
+						<div class="capture-settings-bar capture-collapse-details">
+							<div id="captureConfigBody" class="capture-config-toolbar">
+								<div class="capture-bar-field">
+									<select id="captureSubjectSelect" class="capture-bar-select">
+										<option value="">選擇受試者...</option>
+									</select>
+								</div>
+
+								<div class="capture-bar-field">
+									<select id="captureAplSelect" class="capture-bar-select">
+										<option value="">選擇姿勢...</option>
+										<option value="BSHS">BSHS</option>
+										<option value="BSHL">BSHL</option>
+										<option value="BLHLB">BLHLB</option>
+										<option value="BLHLC">BLHLC</option>
+										<option value="BLHL">BLHL</option>
+									</select>
+								</div>
+
+									<div class="capture-bar-field capture-bar-folder-field">
+										<button id="captureFolderBtn" type="button" class="capture-toolbar-folder" title="選擇資料夾">
+											<span id="captureFolderPath" class="capture-toolbar-path">📁 選擇資料夾</span>
+										</button>
+									</div>
+
+								<button id="captureBuildRunBtn" type="button" class="primary capture-toolbar-start-btn">▶ 開始</button>
+							</div>
+							<div id="captureConfigSummary" class="capture-config-summary capture-bar-summary is-collapsed">
+								<span class="capture-bar-summary-text">本輪設定已鎖定 · 資料夾 <strong id="captureSummaryFolder">-</strong></span>
+								<button id="captureConfigEditBtn" type="button" class="capture-secondary-btn">修改</button>
+							</div>
+						</div>
+
+						<div class="capture-execution-panel">
+							<div id="capturePreview" class="capture-preview">
+
+								<!-- 下一張要拍 + 立即截圖（整合卡片） -->
+								<div class="capture-next-shot-card">
+									<div class="capture-next-shot-header">
+										<div class="capture-next-shot-info">
+											<div class="capture-next-shot-label">目前截取畫面為</div>
+											<div id="capturePreviewShotPose" class="capture-next-shot-pose">-</div>
+											<div id="captureCurrentLabel" class="capture-next-shot-detail">尚未建立截圖流程</div>
+										</div>
+										<div class="capture-shot-integrated">
+											<div class="capture-field capture-score-field">
+												<label for="captureScoreSelect">舒適度評分</label>
+												<select id="captureScoreSelect">
+													<option value="">評分 0~10</option>
+												</select>
+											</div>
+											<button id="captureShotBtn" type="button" class="primary capture-shot-btn">立即截圖</button>
+										</div>
+									</div>
+									<div id="captureAck" class="mode-ack capture-ack">操作狀態：尚未建立截圖流程</div>
+								</div>
+
+								<!-- 進度區 -->
+								<div class="capture-progress-card">
+									<div class="capture-progress-top">
+										<div class="capture-section-title">進度</div>
+										<div id="captureProgress" class="capture-progress-text">0 / 26</div>
+									</div>
+									<div class="capture-progress-bar">
+										<div id="captureProgressBarFill" class="capture-progress-bar-fill"></div>
+									</div>
+									<div id="captureStepButtons" class="capture-step-list"></div>
+								</div>
+
+								<!-- 感測資料：單一卡片四欄 -->
+								<div class="capture-live-unified">
+									<div class="capture-live-col">
+										<span>Monitor</span>
+										<strong id="capturePreviewMonitorPressure">-</strong>
+									</div>
+									<div class="capture-live-col">
+										<span>Neck</span>
+										<strong id="capturePreviewNeckPressure">-</strong>
+									</div>
+									<div class="capture-live-col">
+										<span>Head</span>
+										<strong id="capturePreviewHeadPressure">-</strong>
+									</div>
+									<div class="capture-live-col">
+										<span>更新時間</span>
+										<strong id="capturePreviewUpdateTime">-</strong>
+									</div>
+								</div>
+
+								<!-- 高度資訊：單一卡片左右排 -->
+								<div class="capture-height-unified">
+									<div class="capture-height-col">
+										<div class="capture-section-title">Head</div>
+										<div class="capture-height-line">目標 <strong id="capturePreviewHeadTarget">-</strong></div>
+										<div class="capture-height-line">目前 <strong id="capturePreviewHeadCurrent">-</strong></div>
+									</div>
+									<div class="capture-height-divider"></div>
+									<div class="capture-height-col">
+										<div class="capture-section-title">Neck</div>
+										<div class="capture-height-line">目標 <strong id="capturePreviewNeckTarget">-</strong></div>
+										<div class="capture-height-line">目前 <strong id="capturePreviewNeckCurrent">-</strong></div>
+									</div>
+								</div>
+
+								<!-- 受試者資訊：降級為一列 -->
+								<div class="capture-meta-row">
+									<span class="capture-meta-item">受試者 <strong id="capturePreviewSubject">-</strong></span>
+									<span class="capture-meta-sep">·</span>
+									<span class="capture-meta-item">固定姿勢最佳高度 <strong id="capturePreviewApl">-</strong></span>
+									<span class="capture-meta-sep">·</span>
+									<span class="capture-meta-item">評分 <strong id="capturePreviewScore">-</strong></span>
+									<span class="capture-meta-sep capture-meta-sep--right">·</span>
+									<button id="captureRetakeBtn" type="button" class="capture-retake-mini">重拍上一張</button>
+								</div>
+
+								<!-- 最近截圖：單行 -->
+								<div class="capture-recent-row">
+									<span class="capture-recent-label">最近截圖：</span><span id="captureLastFile" class="capture-recent-file">-</span>
+								</div>
+
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<section class="panel-card monitor-card">
+				<h2>高度與壓力監測</h2>
+				<div class="monitor-current-grid">
+					<div class="monitor-tile">
+						<div class="monitor-label">Monitor 壓力</div>
+						<div id="monitorPressureValue" class="monitor-value">-</div>
+					</div>
+					<div class="monitor-tile">
+						<div class="monitor-label">Neck 壓力</div>
+						<div id="neckPressureValue" class="monitor-value">-</div>
+					</div>
+					<div class="monitor-tile">
+						<div class="monitor-label">Head 壓力</div>
+						<div id="headPressureValue" class="monitor-value">-</div>
+					</div>
+					<div class="monitor-tile">
+						<div class="monitor-label">Head 高度</div>
+						<div id="headHeightValue" class="monitor-value">目標 - / 目前 -</div>
+					</div>
+					<div class="monitor-tile">
+						<div class="monitor-label">Neck 高度</div>
+						<div id="neckHeightValue" class="monitor-value">目標 - / 目前 -</div>
+					</div>
+					<div class="monitor-tile">
+						<div class="monitor-label">更新時間</div>
+						<div id="monitorUpdateTime" class="monitor-value">-</div>
+					</div>
+				</div>
+				<div id="heightPressureLog" class="monitor-log"></div>
+				<div class="scroll-options">
+					<label><input type="radio" name="monitorScrollControl" value="auto" checked> 自動滾動</label>
+					<label><input type="radio" name="monitorScrollControl" value="fixed"> 固定滾動</label>
+				</div>
+				<button id="monitorClearLog" type="button" class="full">清空監測紀錄</button>
 			</section>
 
 			<section class="panel-card">
@@ -132,10 +398,73 @@ https://fustyles.github.io/webduino/WebSerial.html
 			</section>
 		</aside>
 
-		<section class="right-panel">
-			<div class="chart-card large"><canvas id="pressureChart"></canvas></div>
-			<div class="chart-card"><canvas id="averChart"></canvas></div>
-			<div class="chart-card"><canvas id="diffChart"></canvas></div>
+		<div
+			id="appLayoutSplitter"
+			class="app-layout-splitter"
+			role="separator"
+			aria-orientation="vertical"
+			aria-label="調整左側與右側欄寬"
+			title="拖曳調整左右欄位寬度"></div>
+
+		<section id="chartPanel" class="right-panel chart-monitor-panel">
+			<div class="chart-panel-header">
+				<div class="chart-title-row">
+					<h2>線圖監測</h2>
+					<div class="chart-title-actions">
+						<span id="chartPanelStateBadge" class="pill pill-ok">展開中</span>
+						<button id="chartPanelInfoToggle" type="button" class="chart-panel-info-toggle" aria-expanded="true" aria-controls="chartPanelInfo">收合資訊</button>
+					</div>
+				</div>
+				<div class="chart-panel-info-scroll" aria-label="線圖監測數值資訊">
+					<div id="chartPanelInfo" class="chart-panel-info">
+						<div class="chart-scale-controls">
+							<label for="yAxisMax">Y軸最大值</label>
+							<input type="number" id="yAxisMax" value="9000000">
+							<label for="yAxisMin">Y軸最小值</label>
+							<input type="number" id="yAxisMin" value="80000">
+							<button id="updateChart" type="button">更新圖表</button>
+						</div>
+						<div class="chart-summary-grid" aria-live="polite">
+							<div><span>Monitor</span><strong id="chartSummaryMonitor">-</strong></div>
+							<div><span>Neck</span><strong id="chartSummaryNeck">-</strong></div>
+							<div><span>Head</span><strong id="chartSummaryHead">-</strong></div>
+							<div><span>last5</span><strong id="chartSummaryLast5">-</strong></div>
+							<div><span>prev5</span><strong id="chartSummaryPrev5">-</strong></div>
+							<div><span>Diff</span><strong id="chartSummaryDiff">-</strong></div>
+							<div><span>更新</span><strong id="chartSummaryTime">-</strong></div>
+						</div>
+					</div>
+				</div>
+				<div class="chart-panel-actions">
+					<button id="chartModePressure" type="button" class="primary">只看壓力</button>
+					<button id="chartModeAll" type="button">完整線圖</button>
+					<button id="chartModeSummary" type="button">只看摘要</button>
+					<button id="chartPanelToggle" type="button" aria-expanded="true" aria-controls="chartPanelBody">收合線圖</button>
+				</div>
+			</div>
+			<div id="chartPanelBody" class="chart-panel-body">
+				<details id="pressureChartSection" class="chart-section" open>
+					<summary>
+						<span>壓力線圖</span>
+						<span>Monitor / Neck / Head</span>
+					</summary>
+					<div class="chart-card large"><canvas id="pressureChart"></canvas></div>
+				</details>
+				<details id="averageChartSection" class="chart-section">
+					<summary>
+						<span>平均值線圖</span>
+						<span>last5 / prev5</span>
+					</summary>
+					<div class="chart-card"><canvas id="averChart"></canvas></div>
+				</details>
+				<details id="diffChartSection" class="chart-section">
+					<summary>
+						<span>差值線圖</span>
+						<span>Diff</span>
+					</summary>
+					<div class="chart-card"><canvas id="diffChart"></canvas></div>
+				</details>
+			</div>
 			<div class="hidden-canvas">
 				<canvas id="prev5Chart"></canvas>
 				<canvas id="stateChart"></canvas>
@@ -178,16 +507,18 @@ https://fustyles.github.io/webduino/WebSerial.html
 				</div>
 				<div>
 					<label for="numberInput1">仰躺頭部高度:</label>
-					<input type="number" id="numberInput1" value="7" min="5" max="20" style="width: 50px;">
+					<input type="number" id="numberInput1" value="7" min="7" max="16" step="0.5">
 					<button id="increaseBtn1">+</button>
 					<button id="decreaseBtn1">-</button>
 				</div>
 				<div>
 					<label for="numberInput2">仰躺頸部高度:</label>
-					<input type="number" id="numberInput2" value="10" min="5" max="20" style="width: 50px;">
+					<input type="number" id="numberInput2" value="10" min="10" max="16" step="0.5">
 					<button id="increaseBtn2">+</button>
 					<button id="decreaseBtn2">-</button>
 				</div>
+				<p id="microSupineHint" class="calib-hint"></p>
+				<button id="confirmSupineAdjustBtn" type="button" class="full">確定調整仰躺高度</button>
 				<div class="button-container">
 					<button id="backBtn1">回到上一頁</button>
 					<button id="switchScreenBtn2">切換到第三畫面</button>
@@ -201,16 +532,18 @@ https://fustyles.github.io/webduino/WebSerial.html
 				</div>
 				<div>
 					<label for="numberInput3">側躺頭部高度:</label>
-					<input type="number" id="numberInput3" value="14" min="5" max="20" style="width: 50px;">
+					<input type="number" id="numberInput3" value="14" min="7" max="16" step="0.5">
 					<button id="increaseBtn3">+</button>
 					<button id="decreaseBtn3">-</button>
 				</div>
 				<div>
 					<label for="numberInput4">側躺頸部高度:</label>
-					<input type="number" id="numberInput4" value="16" min="5" max="20" style="width: 50px;">
+					<input type="number" id="numberInput4" value="16" min="10" max="16" step="0.5">
 					<button id="increaseBtn4">+</button>
 					<button id="decreaseBtn4">-</button>
 				</div>
+				<p id="microSideHint" class="calib-hint"></p>
+				<button id="confirmSideAdjustBtn" type="button" class="full">確定調整側躺高度</button>
 				<div class="button-container">
 					<button id="backBtn2">回到上一頁</button>
 					<button id="closeBtn">結束</button>
@@ -219,10 +552,157 @@ https://fustyles.github.io/webduino/WebSerial.html
 		</div>
 	</div>
 
+	<div id="calibModal" class="modal">
+		<div class="modal-content">
+			<div id="calibMenuScreen" class="screen">
+				<h1>初始校正流程</h1>
+				<p>先選擇頸椎狀態，再進入仰躺或側躺初始校正。</p>
+				<form id="calibConditionForm">
+					<label><input type="radio" name="calibCondition" value="1" checked> 健康</label><br>
+					<label><input type="radio" name="calibCondition" value="2"> 輕度退化</label><br>
+					<label><input type="radio" name="calibCondition" value="3"> 中度退化</label><br>
+					<label><input type="radio" name="calibCondition" value="4"> 重度退化</label><br>
+					<label><input type="radio" name="calibCondition" value="5"> 有開刀過</label>
+				</form>
+				<div class="button-container">
+					<button id="startSupineCalibBtn" type="button">仰躺校正</button>
+					<button id="startSideCalibBtn" type="button">側躺校正</button>
+				</div>
+				<div class="button-container">
+					<button id="closeCalibModalBtn" type="button">關閉</button>
+				</div>
+			</div>
+
+			<div id="supineCalibScreen" class="screen" style="display:none;">
+				<h1>仰躺校正</h1>
+				<div class="calib-image-box">
+					<img src="../Images/s.png" style="height: 100%">
+				</div>
+				<div>
+					<label for="supineHeadInput">仰躺頭部高度:</label>
+					<input type="number" id="supineHeadInput" value="7" min="7" max="16" step="0.5">
+					<button id="supineHeadPlus" type="button">+</button>
+					<button id="supineHeadMinus" type="button">-</button>
+				</div>
+				<div>
+					<label for="supineNeckInput">仰躺頸部高度:</label>
+					<input type="number" id="supineNeckInput" value="10" min="10" max="16" step="0.5">
+					<button id="supineNeckPlus" type="button">+</button>
+					<button id="supineNeckMinus" type="button">-</button>
+				</div>
+				<p id="supineCalibHint" class="calib-hint"></p>
+				<button id="confirmSupineCalibAdjustBtn" type="button" class="full">確定調整仰躺高度</button>
+				<div class="button-container">
+					<button id="backSupineCalibBtn" type="button">回上一頁</button>
+					<button id="completeSupineCalibBtn" type="button">完成校正</button>
+				</div>
+			</div>
+
+			<div id="sideCalibScreen" class="screen" style="display:none;">
+				<h1>側躺校正</h1>
+				<div class="calib-image-box">
+					<img src="../Images/l.png" style="height: 100%">
+				</div>
+				<div>
+					<label for="sideHeadInput">側躺頭部高度:</label>
+					<input type="number" id="sideHeadInput" value="14" min="7" max="16" step="0.5">
+					<button id="sideHeadPlus" type="button">+</button>
+					<button id="sideHeadMinus" type="button">-</button>
+				</div>
+				<div>
+					<label for="sideNeckInput">側躺頸部高度:</label>
+					<input type="number" id="sideNeckInput" value="16" min="10" max="16" step="0.5">
+					<button id="sideNeckPlus" type="button">+</button>
+					<button id="sideNeckMinus" type="button">-</button>
+				</div>
+				<p id="sideCalibHint" class="calib-hint"></p>
+				<button id="confirmSideCalibAdjustBtn" type="button" class="full">確定調整側躺高度</button>
+				<div class="button-container">
+					<button id="backSideCalibBtn" type="button">回上一頁</button>
+					<button id="completeSideCalibBtn" type="button">完成校正</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<dialog id="commandGuideDialog" class="command-guide-dialog">
+		<div class="command-guide-head">
+			<h2>BLE 指令合輯</h2>
+			<button id="commandGuideClose" type="button" aria-label="關閉指令合輯">關閉</button>
+		</div>
+		<div class="command-guide-body">
+			<section>
+				<h3>送出方式</h3>
+				<p>在「進階文字指令」輸入指令後按 <strong>Send Text</strong>。newline 可留空，Web 端會自動補上換行。</p>
+			</section>
+			<section>
+				<h3>常用開機時間設定</h3>
+				<div class="command-table">
+					<div>指令</div><div>用途</div><div>範例</div>
+					<code>SET,MONITOR,&lt;ms&gt;</code><div>設定 Monitor 開機充氣時間。</div><code>set,monitor,14500,</code>
+					<code>SET,NECK,&lt;ms&gt;</code><div>設定 Neck 開機充氣時間。</div><code>set,neck,12000,</code>
+					<code>SET,HEAD,&lt;ms&gt;</code><div>設定 Head 開機充氣時間。</div><code>set,head,32000,</code>
+					<code>RESET</code><div>非 Manual 狀態下回到 DRAIN_ALL，重新跑開機流程。</div><code>reset,</code>
+					</div>
+					<p class="command-note">前三行會立即更新參數；若要讓新時間套用到開機流程，通常再送 <code>reset,</code>。</p>
+					<p class="command-note">註：<code>set,neck,&lt;ms&gt;</code> 建議大於 <code>10000</code>（10 秒）；<code>set,head,&lt;ms&gt;</code> 建議大於 <code>30000</code>（30 秒）。</p>
+				</section>
+			<section>
+				<h3>使用者與初始校正</h3>
+				<div class="command-table">
+					<div>指令</div><div>用途</div><div>範例</div>
+					<code>USER,&lt;gender&gt;,&lt;age&gt;,&lt;height&gt;,&lt;weight&gt;</code><div>設定使用者資料。</div><code>USER,1,25,170,65</code>
+					<code>INIT,NORM,S</code><div>讀取/套用仰躺初始高度。</div><code>INIT,NORM,S</code>
+					<code>INIT,NORM,L</code><div>讀取/套用側躺初始高度。</div><code>INIT,NORM,L</code>
+					<code>SET,OK</code><div>確認目前校正高度可擷取 anchor。</div><code>SET,OK</code>
+					<code>ANCHOR,START,BSHS</code><div>開始仰躺 anchor 擷取。</div><code>ANCHOR,START,BSHS</code>
+					<code>ANCHOR,START,BLHL</code><div>開始側躺 anchor 擷取。</div><code>ANCHOR,START,BLHL</code>
+				</div>
+			</section>
+			<section>
+				<h3>高度設定與模式</h3>
+				<div class="command-table">
+					<div>指令</div><div>用途</div><div>範例</div>
+					<code>SET,NORM,&lt;cond&gt;,&lt;S|L&gt;,HEAD,&lt;cm&gt;</code><div>設定 Head 目標高度，支援 0.5 cm。</div><code>SET,NORM,1,S,HEAD,7.5</code>
+					<code>SET,NORM,&lt;cond&gt;,&lt;S|L&gt;,NECK,&lt;cm&gt;</code><div>設定 Neck 目標高度，支援 0.5 cm。</div><code>SET,NORM,1,S,NECK,10.5</code>
+					<code>FEATURE,POSE,ON/OFF</code><div>開啟或關閉姿勢分類功能。</div><code>FEATURE,POSE,ON</code>
+					<code>FEATURE,PRED,ON/OFF</code><div>開啟或關閉 PRED 自動調整。</div><code>FEATURE,PRED,OFF</code>
+					<code>FEATURE,STATUS</code><div>查詢目前功能狀態。</div><code>FEATURE,STATUS</code>
+				</div>
+			</section>
+			<section>
+				<h3>分類、預測與資料查詢</h3>
+				<div class="command-table">
+					<div>指令</div><div>用途</div><div>範例</div>
+					<code>CLASSIFY,START</code><div>開始姿勢分類。</div><code>CLASSIFY,START</code>
+					<code>CLASSIFY,STOP</code><div>停止姿勢分類。</div><code>CLASSIFY,STOP</code>
+					<code>CLASSIFY,GET</code><div>查詢分類結果。</div><code>CLASSIFY,GET</code>
+					<code>PRED,START</code><div>開始 PRED 自動高度調整。</div><code>PRED,START</code>
+					<code>PRED,STOP</code><div>停止 PRED 自動高度調整。</div><code>PRED,STOP</code>
+					<code>PRED,GET</code><div>查詢 PRED 狀態。</div><code>PRED,GET</code>
+					<code>P</code><div>要求一筆三氣囊壓力資料。</div><code>P</code>
+					<code>I</code><div>要求一筆狀態/差值資料。</div><code>I</code>
+					<code>DEBUG</code><div>查詢高度、限制與模型 debug 資訊。</div><code>DEBUG</code>
+				</div>
+			</section>
+			<section>
+				<h3>ESP32 Manual 控制</h3>
+				<div class="command-table">
+					<div>指令</div><div>用途</div><div>範例</div>
+					<code>MANUAL,ENTER</code><div>進入 ESP32 Manual 控制。</div><code>MANUAL,ENTER</code>
+					<code>MANUAL,STOP</code><div>停止所有輸出，保留 Manual 狀態。</div><code>MANUAL,STOP</code>
+					<code>MANUAL,FILL,&lt;MONITOR|NECK|HEAD&gt;</code><div>單顆氣囊充氣。</div><code>MANUAL,FILL,HEAD</code>
+					<code>MANUAL,DRAIN,&lt;MONITOR|NECK|HEAD|ALL&gt;</code><div>單顆或全部吸氣/洩氣。</div><code>MANUAL,DRAIN,ALL</code>
+					<code>MANUAL,STARTUP,&lt;head_cm&gt;,&lt;neck_cm&gt;</code><div>離開 Manual 並回開機流程。</div><code>MANUAL,STARTUP,7.0,10.0</code>
+				</div>
+				<p class="command-note">在 Manual 狀態下，舊式 <code>reset,</code> 只會停止輸出並停留在 Manual；要回開機流程請用 <code>MANUAL,STARTUP,...</code>。</p>
+			</section>
+		</div>
+	</dialog>
+
 	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 	<script src="./app.js"></script>
 </body>
 
 </html>
-
