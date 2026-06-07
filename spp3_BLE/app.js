@@ -12,15 +12,19 @@
 			let db_exportData = document.getElementById('exportData');
 			let serial_userSet = document.getElementById('userSet');
 			let userSetAck = document.getElementById('userSetAck');
+			let userDimensionSummary = document.getElementById('userDimensionSummary');
 			let syncTimeAck = document.getElementById('syncTimeAck');
 			let espManualStatus = document.getElementById('espManualStatus');
 			let espManualAck = document.getElementById('espManualAck');
 		let manualStartupHead = document.getElementById('manualStartupHead');
 		let manualStartupNeck = document.getElementById('manualStartupNeck');
 		let appLayout = document.getElementById('appLayout');
+		let appLayoutSplitter = document.getElementById('appLayoutSplitter');
 		let chartPanelBody = document.getElementById('chartPanelBody');
 		let chartPanelToggle = document.getElementById('chartPanelToggle');
 		let chartPanelStateBadge = document.getElementById('chartPanelStateBadge');
+		let chartPanelInfo = document.getElementById('chartPanelInfo');
+		let chartPanelInfoToggle = document.getElementById('chartPanelInfoToggle');
 		let chartModePressure = document.getElementById('chartModePressure');
 		let chartModeAll = document.getElementById('chartModeAll');
 		let chartModeSummary = document.getElementById('chartModeSummary');
@@ -37,6 +41,8 @@
 		let commandGuideBtn = document.getElementById('commandGuideBtn');
 		let commandGuideDialog = document.getElementById('commandGuideDialog');
 		let commandGuideClose = document.getElementById('commandGuideClose');
+		const APP_LAYOUT_WIDTH_KEY = 'appLayoutLeftWidthPx';
+		const APP_LAYOUT_SPLITTER_WIDTH = 12;
 
 		// BLE Variables
 		let bluetoothDevice;
@@ -290,6 +296,136 @@
 			}
 		}
 
+		function setChartInfoExpanded(expanded, persist = true) {
+			chartPanelInfo?.classList.toggle('is-collapsed', !expanded);
+			if (chartPanelInfoToggle) {
+				chartPanelInfoToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+				chartPanelInfoToggle.textContent = expanded ? "收合資訊" : "展開資訊";
+			}
+			if (persist) {
+				saveChartSetting('chartPanelInfoExpanded', expanded ? '1' : '0');
+			}
+		}
+
+		function isDesktopTwoPanelLayout() {
+			return window.innerWidth > 960;
+		}
+
+		function getAppLayoutMinLeft() {
+			return window.innerWidth > 1400 ? 460 : 380;
+		}
+
+		function getAppLayoutMinRight() {
+			return chartPanelExpanded ? 360 : 300;
+		}
+
+		function clearAppLayoutCustomWidth() {
+			if (!appLayout) {
+				return;
+			}
+			appLayout.style.gridTemplateColumns = '';
+		}
+
+		function getSavedAppLayoutWidth() {
+			const raw = getSavedChartSetting(APP_LAYOUT_WIDTH_KEY);
+			const value = Number(raw);
+			return Number.isFinite(value) ? value : null;
+		}
+
+		function saveAppLayoutWidth(value) {
+			saveChartSetting(APP_LAYOUT_WIDTH_KEY, String(Math.round(value)));
+		}
+
+		function applyAppLayoutWidth(leftWidth, persist = true) {
+			if (!appLayout || !isDesktopTwoPanelLayout()) {
+				clearAppLayoutCustomWidth();
+				return;
+			}
+			const totalWidth = appLayout.getBoundingClientRect().width;
+			if (!Number.isFinite(totalWidth) || totalWidth <= 0) {
+				return;
+			}
+			const minLeft = getAppLayoutMinLeft();
+			const minRight = getAppLayoutMinRight();
+			const maxLeft = Math.max(minLeft, totalWidth - APP_LAYOUT_SPLITTER_WIDTH - minRight);
+			const safeLeft = Math.min(Math.max(leftWidth, minLeft), maxLeft);
+			appLayout.style.gridTemplateColumns = `${safeLeft}px ${APP_LAYOUT_SPLITTER_WIDTH}px minmax(${minRight}px, 1fr)`;
+			if (persist) {
+				saveAppLayoutWidth(safeLeft);
+			}
+		}
+
+		function syncAppLayoutWidth() {
+			if (!appLayout) {
+				return;
+			}
+			if (!isDesktopTwoPanelLayout()) {
+				clearAppLayoutCustomWidth();
+				return;
+			}
+			const savedWidth = getSavedAppLayoutWidth();
+			if (savedWidth) {
+				applyAppLayoutWidth(savedWidth, false);
+				return;
+			}
+			const totalWidth = appLayout.getBoundingClientRect().width;
+			if (!Number.isFinite(totalWidth) || totalWidth <= 0) {
+				return;
+			}
+			const preferredRatio = chartPanelExpanded ? 0.5 : 0.58;
+			applyAppLayoutWidth(totalWidth * preferredRatio, false);
+		}
+
+		function setupAppLayoutResizer() {
+			if (!appLayout || !appLayoutSplitter) {
+				return;
+			}
+
+			let isDragging = false;
+
+			const stopDragging = () => {
+				if (!isDragging) {
+					return;
+				}
+				isDragging = false;
+				appLayout.classList.remove('is-resizing');
+				document.body.classList.remove('is-resizing');
+			};
+
+			const updateWidthFromClientX = (clientX) => {
+				const rect = appLayout.getBoundingClientRect();
+				const desiredLeft = clientX - rect.left - APP_LAYOUT_SPLITTER_WIDTH / 2;
+				applyAppLayoutWidth(desiredLeft);
+				refreshVisibleCharts();
+			};
+
+			appLayoutSplitter.addEventListener('pointerdown', (event) => {
+				if (!isDesktopTwoPanelLayout()) {
+					return;
+				}
+				isDragging = true;
+				appLayout.classList.add('is-resizing');
+				document.body.classList.add('is-resizing');
+				appLayoutSplitter.setPointerCapture?.(event.pointerId);
+				event.preventDefault();
+			});
+
+			appLayoutSplitter.addEventListener('pointermove', (event) => {
+				if (!isDragging) {
+					return;
+				}
+				updateWidthFromClientX(event.clientX);
+			});
+
+			appLayoutSplitter.addEventListener('pointerup', stopDragging);
+			appLayoutSplitter.addEventListener('pointercancel', stopDragging);
+			window.addEventListener('pointerup', stopDragging);
+			window.addEventListener('resize', () => {
+				syncAppLayoutWidth();
+				refreshVisibleCharts();
+			});
+		}
+
 		function updateChartModeButtons() {
 			chartModePressure?.classList.toggle('primary', activeChartMode === "pressure");
 			chartModeAll?.classList.toggle('primary', activeChartMode === "all");
@@ -337,6 +473,7 @@
 			if (persist) {
 				saveChartSetting('chartPanelExpanded', expanded ? '1' : '0');
 			}
+			syncAppLayoutWidth();
 			if (expanded) {
 				refreshVisibleCharts();
 			}
@@ -412,6 +549,11 @@
 			setChartMode(restoreMode);
 		});
 
+		chartPanelInfoToggle?.addEventListener('click', function () {
+			const expanded = chartPanelInfoToggle.getAttribute('aria-expanded') !== 'true';
+			setChartInfoExpanded(expanded);
+		});
+
 		chartModePressure?.addEventListener('click', () => setChartMode("pressure"));
 		chartModeAll?.addEventListener('click', () => setChartMode("all"));
 		chartModeSummary?.addEventListener('click', () => setChartMode("summary"));
@@ -422,10 +564,12 @@
 
 		const savedChartMode = getSavedChartSetting('chartMode');
 		const savedChartExpanded = getSavedChartSetting('chartPanelExpanded');
+		const savedChartInfoExpanded = getSavedChartSetting('chartPanelInfoExpanded');
 		setChartMode(savedChartMode === "all" || savedChartMode === "summary" ? savedChartMode : "pressure", false);
 		if (savedChartExpanded === '0') {
 			setChartMode("summary", false);
 		}
+		setChartInfoExpanded(savedChartInfoExpanded !== '0', false);
 
 		// indexeddb
 		// indexedDB操作模組
@@ -780,6 +924,7 @@
 					let height = document.getElementById('height').value;
 					let weight = document.getElementById('weight').value;
 					let infoString = `${gender},${age},${height},${weight}`;
+					setUserDimensionSummaryPending();
 
 						var msg = "USER," + infoString;
 						logCommand(msg);
@@ -887,6 +1032,7 @@
 		const monitorUpdateTime = document.getElementById('monitorUpdateTime');
 		const heightPressureLog = document.getElementById('heightPressureLog');
 		const monitorClearLog = document.getElementById('monitorClearLog');
+		let captureWizardModule = null;
 
 		let workflowState = WORKFLOW.UNCALIBRATED;
 		let anchorDone = { BSHS: false, BLHL: false };
@@ -1112,6 +1258,47 @@
 			}
 		}
 
+		function formatWidthMm(value) {
+			const numericValue = Number(value);
+			return Number.isFinite(numericValue) ? `${Math.trunc(numericValue)} mm` : "- mm";
+		}
+
+		function setUserDimensionSummaryPending() {
+			safeSetText(userDimensionSummary, "目前估算尺寸：讀取 ESP32 中...");
+		}
+
+		function renderUserDimensionSummary(headWidth, neckWidth, shoulderWidth) {
+			safeSetText(
+				userDimensionSummary,
+				`目前估算尺寸：頭寬 ${formatWidthMm(headWidth)} ｜ 頸寬 ${formatWidthMm(neckWidth)} ｜ 肩寬 ${formatWidthMm(shoulderWidth)}`
+			);
+		}
+
+		function updateUserDimensionsFromParsed() {
+			const headWidth = Number(parsedData.head_width);
+			const neckWidth = Number(parsedData.neck_width);
+			const shoulderWidth = Number(parsedData.shoulder_width);
+			if (!Number.isFinite(headWidth) || !Number.isFinite(neckWidth) || !Number.isFinite(shoulderWidth)) {
+				return;
+			}
+			if (headWidth <= 0 || neckWidth <= 0 || shoulderWidth <= 0) {
+				return;
+			}
+			renderUserDimensionSummary(headWidth, neckWidth, shoulderWidth);
+		}
+
+		function requestSilentDebugSnapshot() {
+			suppressSilentDebugResponse = true;
+			if (silentDebugSuppressTimer) {
+				clearTimeout(silentDebugSuppressTimer);
+			}
+			silentDebugSuppressTimer = setTimeout(() => {
+				suppressSilentDebugResponse = false;
+				silentDebugSuppressTimer = null;
+			}, 3500);
+			sendSilentCommand("DEBUG");
+		}
+
 		function setWorkflowState(nextState) {
 			workflowState = nextState;
 			safeSetText(workflowStateBadge, nextState);
@@ -1199,6 +1386,9 @@
 			safeSetText(headHeightValue, formatHeightMonitorValue(monitorState.height.targetHead, monitorState.height.currentHead));
 			safeSetText(neckHeightValue, formatHeightMonitorValue(monitorState.height.targetNeck, monitorState.height.currentNeck));
 			safeSetText(monitorUpdateTime, new Date().toLocaleTimeString());
+			if (captureWizardModule) {
+				captureWizardModule.refreshLiveMetrics();
+			}
 		}
 
 		function appendMonitorLog(message) {
@@ -1240,6 +1430,747 @@
 			appendMonitorLog(
 				`${new Date().toLocaleTimeString()} 高度 ${source} Head=${formatHeightMonitorValue(monitorState.height.targetHead, monitorState.height.currentHead)} Neck=${formatHeightMonitorValue(monitorState.height.targetNeck, monitorState.height.currentNeck)}`
 			);
+		}
+
+		function createCaptureWizardModule() {
+			const POSE_ORDER = ["BSHS", "BSHL", "BLHLB", "BLHLC", "BLHL"];
+			const TOTAL_REPEATS = 5;
+			const DEFAULT_CAPTURE_TOTAL = 26;
+			const state = {
+				folderHandle: null,
+				folderDisplayPath: "",
+				subjectId: "",
+				aplPose: "",
+				steps: [],
+				currentStepIndex: 0,
+				lastCompletedStepIndex: -1,
+				lastSavedFileName: "",
+				retakeStepIndex: null,
+				configCollapsed: false
+			};
+			const dom = {};
+			const supportsFileSystemAccess = typeof window.showDirectoryPicker === "function";
+
+			function cacheDom() {
+				dom.subjectSelect = document.getElementById('captureSubjectSelect');
+				dom.aplSelect = document.getElementById('captureAplSelect');
+				dom.folderBtn = document.getElementById('captureFolderBtn');
+				dom.folderPath = document.getElementById('captureFolderPath');
+				dom.configBody = document.getElementById('captureConfigBody');
+				dom.configSummary = document.getElementById('captureConfigSummary');
+				dom.configEditBtn = document.getElementById('captureConfigEditBtn');
+				dom.summarySubject = document.getElementById('captureSummarySubject');
+				dom.summaryApl = document.getElementById('captureSummaryApl');
+				dom.summaryFolder = document.getElementById('captureSummaryFolder');
+				dom.statusBanner = document.getElementById('captureStatusBanner');
+				dom.statusBannerText = document.getElementById('captureStatusBannerText');
+				dom.buildRunBtn = document.getElementById('captureBuildRunBtn');
+				dom.shotBtn = document.getElementById('captureShotBtn');
+				dom.progress = document.getElementById('captureProgress');
+				dom.progressBarFill = document.getElementById('captureProgressBarFill');
+				dom.currentLabel = document.getElementById('captureCurrentLabel');
+				dom.scoreSelect = document.getElementById('captureScoreSelect');
+				dom.stepButtons = document.getElementById('captureStepButtons');
+				dom.retakeBtn = document.getElementById('captureRetakeBtn');
+				dom.lastFile = document.getElementById('captureLastFile');
+				dom.ack = document.getElementById('captureAck');
+				dom.preview = document.getElementById('capturePreview');
+				dom.previewSubject = document.getElementById('capturePreviewSubject');
+				dom.previewApl = document.getElementById('capturePreviewApl');
+				dom.previewShotPose = document.getElementById('capturePreviewShotPose');
+				dom.previewScore = document.getElementById('capturePreviewScore');
+				dom.previewMonitorPressure = document.getElementById('capturePreviewMonitorPressure');
+				dom.previewNeckPressure = document.getElementById('capturePreviewNeckPressure');
+				dom.previewHeadPressure = document.getElementById('capturePreviewHeadPressure');
+				dom.previewHeadTarget = document.getElementById('capturePreviewHeadTarget');
+				dom.previewHeadCurrent = document.getElementById('capturePreviewHeadCurrent');
+				dom.previewNeckTarget = document.getElementById('capturePreviewNeckTarget');
+				dom.previewNeckCurrent = document.getElementById('capturePreviewNeckCurrent');
+				dom.previewUpdateTime = document.getElementById('capturePreviewUpdateTime');
+			}
+
+			function setAck(message, status = "") {
+				if (!dom.ack) {
+					return;
+				}
+				dom.ack.textContent = `操作狀態：${message}`;
+				dom.ack.classList.remove('pending', 'ok', 'error');
+				if (status) {
+					dom.ack.classList.add(status);
+				}
+			}
+
+			function setNodeText(node, text) {
+				if (node) {
+					node.textContent = text;
+				}
+			}
+
+			function populateSelects() {
+				if (dom.subjectSelect && dom.subjectSelect.options.length <= 1) {
+					for (let index = 1; index <= 500; index += 1) {
+						const option = document.createElement('option');
+						option.value = `S${String(index).padStart(2, '0')}`;
+						option.textContent = option.value;
+						dom.subjectSelect.appendChild(option);
+					}
+				}
+
+				if (dom.scoreSelect && dom.scoreSelect.options.length <= 1) {
+					for (let score = 0; score <= 10; score += 1) {
+						const option = document.createElement('option');
+						option.value = String(score);
+						option.textContent = String(score);
+						dom.scoreSelect.appendChild(option);
+					}
+				}
+			}
+
+			function getCompletedCount() {
+				return Math.max(0, state.lastCompletedStepIndex + 1);
+			}
+
+			function getInteractiveStep() {
+				if (Number.isInteger(state.retakeStepIndex)) {
+					return state.steps[state.retakeStepIndex] || null;
+				}
+				if (state.currentStepIndex >= 0 && state.currentStepIndex < state.steps.length) {
+					return state.steps[state.currentStepIndex];
+				}
+				return null;
+			}
+
+			function getCurrentLabelText() {
+				const step = getInteractiveStep();
+				const totalSteps = state.steps.length || DEFAULT_CAPTURE_TOTAL;
+				if (step) {
+					if (Number.isInteger(state.retakeStepIndex)) {
+						return `重拍 R${step.repeatId} · 第 ${step.index} 張 / 共 ${totalSteps} 張`;
+					}
+					return `R${step.repeatId} · 第 ${step.index} 張 / 共 ${totalSteps} 張`;
+				}
+				if (state.steps.length && getCompletedCount() === state.steps.length) {
+					return `R${state.steps[state.steps.length - 1]?.repeatId || TOTAL_REPEATS} · 第 ${state.steps.length} 張 / 共 ${state.steps.length} 張`;
+				}
+				return "尚未建立截圖流程";
+			}
+
+			function getStepScoreText(step) {
+				if (!step) {
+					return "-";
+				}
+				if (step.scoreMode === "fixed10") {
+					return "10";
+				}
+				if (step.scoreMode === "blank") {
+					return "";
+				}
+				return step.score || "-";
+			}
+
+			function getStepDisplayName(step) {
+				if (!step) {
+					return "-";
+				}
+				if (step.kind === "UNLOAD") {
+					return "UNLOAD";
+				}
+				return `${step.kind}-${step.actualPose || "-"}`;
+			}
+
+			function getStepTitleText(step) {
+				if (!step) {
+					return "-";
+				}
+				return `R${step.repeatId} ${getStepDisplayName(step)}`;
+			}
+
+			function getStepDetailText(step) {
+				if (!step) {
+					return "尚未建立截圖流程";
+				}
+				const totalSteps = state.steps.length || DEFAULT_CAPTURE_TOTAL;
+				return `第 ${step.index} 張 / 共 ${totalSteps} 張`;
+			}
+
+			function parseHeightDisplay(text) {
+				const source = typeof text === "string" ? text.trim() : "";
+				const match = source.match(/目標\s*([^/]+?)\s*\/\s*目前\s*(.+)$/);
+				if (!match) {
+					return { target: "-", current: source || "-" };
+				}
+				return {
+					target: match[1].trim() || "-",
+					current: match[2].trim() || "-"
+				};
+			}
+
+			function isStepReadyToCapture(step) {
+				if (!step) {
+					return false;
+				}
+				if (step.scoreMode !== "manual") {
+					return true;
+				}
+				return step.score !== "";
+			}
+
+			function updateFolderUi() {
+				const folderName = state.folderDisplayPath || "選擇資料夾";
+				setNodeText(dom.folderPath, `📁 ${folderName}`);
+				setNodeText(dom.summaryFolder, state.folderDisplayPath || "-");
+				if (dom.folderBtn) {
+					dom.folderBtn.disabled = !supportsFileSystemAccess;
+					dom.folderBtn.title = state.folderDisplayPath || "選擇資料夾";
+				}
+			}
+
+			function updateConfigUi() {
+				setNodeText(dom.summarySubject, state.subjectId || "-");
+				setNodeText(dom.summaryApl, state.aplPose || "-");
+				if (dom.configBody) {
+					dom.configBody.classList.toggle('is-collapsed', state.configCollapsed);
+				}
+				if (dom.configSummary) {
+					dom.configSummary.classList.toggle('is-collapsed', !state.configCollapsed);
+				}
+			}
+
+			function updateProgressUi() {
+				const completedCount = getCompletedCount();
+				const totalSteps = state.steps.length || DEFAULT_CAPTURE_TOTAL;
+				const progressRatio = totalSteps ? Math.min(1, completedCount / totalSteps) : 0;
+				setNodeText(dom.progress, `${completedCount} / ${totalSteps}`);
+				setNodeText(dom.currentLabel, getCurrentLabelText());
+				setNodeText(dom.lastFile, state.lastSavedFileName || "-");
+				if (dom.progressBarFill) {
+					dom.progressBarFill.style.width = `${progressRatio * 100}%`;
+				}
+			}
+
+			function updateScoreUi() {
+				const step = getInteractiveStep();
+				if (!dom.scoreSelect) {
+					return;
+				}
+				if (!step) {
+					dom.scoreSelect.value = "";
+					dom.scoreSelect.disabled = true;
+					return;
+				}
+				if (step.scoreMode === "fixed10") {
+					dom.scoreSelect.value = "10";
+					dom.scoreSelect.disabled = true;
+					return;
+				}
+				if (step.scoreMode === "blank") {
+					dom.scoreSelect.value = "";
+					dom.scoreSelect.disabled = true;
+					return;
+				}
+				dom.scoreSelect.disabled = false;
+				dom.scoreSelect.value = step.score || "";
+			}
+
+			function refreshLiveMetrics() {
+				const headHeight = parseHeightDisplay(headHeightValue?.textContent || "-");
+				const neckHeight = parseHeightDisplay(neckHeightValue?.textContent || "-");
+				setNodeText(dom.previewMonitorPressure, monitorPressureValue?.textContent || "-");
+				setNodeText(dom.previewNeckPressure, neckPressureValue?.textContent || "-");
+				setNodeText(dom.previewHeadPressure, headPressureValue?.textContent || "-");
+				setNodeText(dom.previewHeadTarget, headHeight.target);
+				setNodeText(dom.previewHeadCurrent, headHeight.current);
+				setNodeText(dom.previewNeckTarget, neckHeight.target);
+				setNodeText(dom.previewNeckCurrent, neckHeight.current);
+				setNodeText(dom.previewUpdateTime, monitorUpdateTime?.textContent || "-");
+			}
+
+			function updatePreviewMeta() {
+				const step = getInteractiveStep();
+				setNodeText(dom.previewSubject, state.subjectId || "-");
+				setNodeText(dom.previewApl, state.aplPose || "-");
+				if (state.steps.length && getCompletedCount() === state.steps.length) {
+					setNodeText(dom.previewShotPose, "完成");
+				} else {
+					setNodeText(dom.previewShotPose, state.steps.length ? getStepDisplayName(step) : "-");
+				}
+				setNodeText(dom.previewScore, getStepScoreText(step));
+				setNodeText(dom.currentLabel, getCurrentLabelText());
+			}
+
+			function updateStatusBanner() {
+				if (!dom.statusBanner || !dom.statusBannerText) {
+					return;
+				}
+
+				let className = "pending";
+				let message = "⚠ 請先選擇資料夾";
+
+				if (!supportsFileSystemAccess) {
+					className = "error";
+					message = "⚠ 目前瀏覽器不支援資料夾寫入功能，請改用 Chromium 系瀏覽器";
+				} else if (!state.folderHandle) {
+					className = "pending";
+					message = "⚠ 請先選擇資料夾";
+				} else if (!state.subjectId) {
+					className = "info";
+					message = "✓ 請選擇受試者";
+				} else if (!state.aplPose) {
+					className = "info";
+					message = "✓ 請選擇姿勢";
+				} else if (!state.steps.length) {
+					className = "info";
+					message = "✓ 請按「開始」";
+				} else if (getInteractiveStep()?.scoreMode === "manual" && !getInteractiveStep()?.score) {
+					className = "info";
+					message = "✓ 請先選舒適度評分，再按立即截圖";
+				} else if (getCompletedCount() >= state.steps.length) {
+					className = "ok";
+					message = "✓ 本輪截圖已完成";
+				} else {
+					className = "ok";
+					message = "✓ 請依照系統提示完成拍攝";
+				}
+
+				dom.statusBanner.classList.remove('pending', 'info', 'ok', 'error');
+				dom.statusBanner.classList.add(className);
+				setNodeText(dom.statusBannerText, message);
+			}
+
+			function updateBuildButtonState() {
+				if (!dom.buildRunBtn) {
+					return;
+				}
+				dom.buildRunBtn.disabled = !supportsFileSystemAccess || !state.folderHandle || !state.subjectId || !state.aplPose;
+			}
+
+			function updateShotButtonState() {
+				if (!dom.shotBtn) {
+					return;
+				}
+				const step = getInteractiveStep();
+				const hasRunnableStep = !!step && !!state.folderHandle && state.steps.length > 0;
+				dom.shotBtn.disabled = !hasRunnableStep || !isStepReadyToCapture(step);
+				dom.shotBtn.textContent = Number.isInteger(state.retakeStepIndex) ? "重拍這一張" : "立即截圖";
+			}
+
+			function updateRetakeButtonState() {
+				if (!dom.retakeBtn) {
+					return;
+				}
+				const canRetake = !!state.steps.length && state.lastCompletedStepIndex >= 0;
+				dom.retakeBtn.hidden = !canRetake;
+				dom.retakeBtn.disabled = !canRetake;
+				dom.retakeBtn.textContent = Number.isInteger(state.retakeStepIndex) ? "取消重拍上一張" : "重拍上一張";
+			}
+
+			function resetRunState(message = "", status = "") {
+				state.steps = [];
+				state.currentStepIndex = 0;
+				state.lastCompletedStepIndex = -1;
+				state.lastSavedFileName = "";
+				state.retakeStepIndex = null;
+				state.configCollapsed = false;
+				if (message) {
+					setAck(message, status);
+				}
+				updateUi();
+			}
+
+			function buildSteps() {
+				const steps = [];
+				const appendStep = (kind, actualPose, scoreMode, repeatId) => {
+					const index = steps.length + 1;
+					const displayIndex = String(index).padStart(2, '0');
+					const actionLabel = kind === "UNLOAD" ? "UNLOAD" : `${kind}-${actualPose}`;
+					steps.push({
+						index,
+						repeatId,
+						label: `${displayIndex} ${actionLabel}`,
+						kind,
+						actualPose,
+						fileName: `${state.subjectId}_APL-${state.aplPose}_${actionLabel}_R${repeatId}_${displayIndex}.png`,
+						scoreMode,
+						score: scoreMode === "fixed10" ? "10" : ""
+					});
+				};
+
+				appendStep("LOAD", state.aplPose, "fixed10", 1);
+				appendStep("UNLOAD", null, "blank", 1);
+				POSE_ORDER.filter(pose => pose !== state.aplPose).forEach(pose => appendStep("ACT", pose, "manual", 1));
+
+				for (let repeatId = 2; repeatId <= TOTAL_REPEATS; repeatId += 1) {
+					POSE_ORDER.forEach(pose => appendStep("ACT", pose, "manual", repeatId));
+				}
+
+				return steps;
+			}
+
+			function renderStepButtons() {
+				if (!dom.stepButtons) {
+					return;
+				}
+				dom.stepButtons.innerHTML = "";
+				if (!state.steps.length) {
+					return;
+				}
+
+				const activeIndex = Number.isInteger(state.retakeStepIndex) ? state.retakeStepIndex : state.currentStepIndex;
+				const hasActiveStep = Number.isInteger(state.retakeStepIndex) || state.currentStepIndex < state.steps.length;
+
+				state.steps.forEach((step, index) => {
+					const button = document.createElement('div');
+					button.className = 'capture-step-btn';
+					const stepTitle = getStepTitleText(step);
+					const stepDetail = getStepDetailText(step);
+
+					const isDone = index < state.currentStepIndex;
+					const isActive = hasActiveStep && index === activeIndex;
+					const mark = isDone ? "☑" : "☐";
+
+					button.innerHTML = `
+						<span class="capture-step-mark">${mark}</span>
+						<span class="capture-step-copy">
+							<strong>${stepTitle}</strong>
+							<small>${stepDetail}</small>
+						</span>
+					`;
+
+					button.classList.add(isActive ? 'capture-step-active' : isDone ? 'capture-step-done' : 'capture-step-disabled');
+					dom.stepButtons.appendChild(button);
+				});
+
+				if (hasActiveStep) {
+					const activeStepNode = dom.stepButtons.querySelector('.capture-step-active');
+					activeStepNode?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+				}
+			}
+
+			function triggerActiveCapture() {
+				const activeIndex = Number.isInteger(state.retakeStepIndex) ? state.retakeStepIndex : state.currentStepIndex;
+				if (!Number.isInteger(activeIndex) || activeIndex < 0 || activeIndex >= state.steps.length) {
+					setAck("目前沒有可截圖的步驟", "pending");
+					return;
+				}
+				captureStep(activeIndex, { retake: Number.isInteger(state.retakeStepIndex) });
+			}
+
+			function updateUi() {
+				updateConfigUi();
+				updateFolderUi();
+				updateStatusBanner();
+				updateBuildButtonState();
+				updateShotButtonState();
+				updateScoreUi();
+				updateProgressUi();
+				updateRetakeButtonState();
+				renderStepButtons();
+				updatePreviewMeta();
+				refreshLiveMetrics();
+			}
+
+			function syncSelectionState() {
+				const nextSubjectId = dom.subjectSelect?.value || "";
+				const nextAplPose = dom.aplSelect?.value || "";
+				const runChanged = state.steps.length > 0 && (state.subjectId !== nextSubjectId || state.aplPose !== nextAplPose);
+				state.subjectId = nextSubjectId;
+				state.aplPose = nextAplPose;
+				if (runChanged) {
+					resetRunState("受試者編號或實驗姿勢已變更，目前資料夾會繼續沿用，請重新開始本輪截圖", "pending");
+					return;
+				}
+				updateUi();
+			}
+
+			async function selectFolder() {
+				if (!supportsFileSystemAccess) {
+					setAck("瀏覽器不支援 File System Access API，請改用 Chromium 系瀏覽器", "error");
+					return;
+				}
+				try {
+					const handle = await window.showDirectoryPicker();
+					state.folderHandle = handle;
+					state.folderDisplayPath = handle?.name || "已選擇資料夾";
+					setAck(`已選好儲存資料夾：${state.folderDisplayPath}，後續每一輪都會沿用這個位置`, "ok");
+					updateUi();
+				} catch (error) {
+					if (error?.name === "AbortError") {
+						if (state.folderHandle) {
+							setAck(`取消重新選擇，沿用目前儲存位置：${state.folderDisplayPath}`, "pending");
+						} else {
+							setAck("已取消資料夾選擇，尚未設定儲存位置", "pending");
+						}
+						return;
+					}
+					setAck(`資料夾選擇失敗：${error.message}`, "error");
+				}
+			}
+
+			function buildRun() {
+				if (!supportsFileSystemAccess) {
+					setAck("瀏覽器不支援 File System Access API，請改用 Chromium 系瀏覽器", "error");
+					return;
+				}
+				if (!state.subjectId || !state.aplPose) {
+					setAck("請先選擇受試者編號與實驗姿勢", "error");
+					return;
+				}
+				if (!state.folderHandle) {
+					setAck("請先選擇儲存資料夾後再建立流程", "error");
+					return;
+				}
+
+				state.steps = buildSteps();
+				state.currentStepIndex = 0;
+				state.lastCompletedStepIndex = -1;
+				state.lastSavedFileName = "";
+				state.retakeStepIndex = null;
+				state.configCollapsed = true;
+				setAck(`已開始 ${state.subjectId} / ${state.aplPose} 的本輪截圖，共 ${state.steps.length} 張，請依照右側提示拍攝`, "ok");
+				updateUi();
+			}
+
+			function handleScoreChange() {
+				const step = getInteractiveStep();
+				if (step && step.scoreMode === "manual") {
+					step.score = dom.scoreSelect?.value || "";
+					if (!step.score) {
+						setAck("ACT 步驟需要先選舒適度評分 0 到 10 才能截圖", "pending");
+					}
+				}
+				updateUi();
+			}
+
+			function toggleRetakeMode() {
+				if (!state.steps.length || state.lastCompletedStepIndex < 0) {
+					setAck("目前沒有可重拍的上一張", "pending");
+					return;
+				}
+				if (Number.isInteger(state.retakeStepIndex)) {
+					state.retakeStepIndex = null;
+					setAck("已取消重拍模式", "pending");
+					updateUi();
+					return;
+				}
+				state.retakeStepIndex = state.lastCompletedStepIndex;
+				setAck(`重拍模式：${state.steps[state.retakeStepIndex].label}，存檔時會覆蓋上一張同名檔案`, "pending");
+				updateUi();
+			}
+
+			async function ensureFolderPermission() {
+				if (!state.folderHandle) {
+					return false;
+				}
+				const options = { mode: 'readwrite' };
+				if (typeof state.folderHandle.queryPermission !== "function" || typeof state.folderHandle.requestPermission !== "function") {
+					return true;
+				}
+				const currentPermission = await state.folderHandle.queryPermission(options);
+				if (currentPermission === 'granted') {
+					return true;
+				}
+				return (await state.folderHandle.requestPermission(options)) === 'granted';
+			}
+
+			async function fileExists(fileName) {
+				try {
+					await state.folderHandle.getFileHandle(fileName);
+					return true;
+				} catch (error) {
+					if (error?.name === 'NotFoundError') {
+						return false;
+					}
+					throw error;
+				}
+			}
+
+			function inlineComputedStyles(sourceNode, targetNode) {
+				if (!(sourceNode instanceof Element) || !(targetNode instanceof Element)) {
+					return;
+				}
+				const computedStyle = window.getComputedStyle(sourceNode);
+				const cssText = Array.from(computedStyle)
+					.map(name => `${name}:${computedStyle.getPropertyValue(name)};`)
+					.join('');
+				targetNode.setAttribute('style', cssText);
+
+				const sourceChildren = Array.from(sourceNode.children);
+				const targetChildren = Array.from(targetNode.children);
+				sourceChildren.forEach((child, index) => {
+					inlineComputedStyles(child, targetChildren[index]);
+				});
+			}
+
+			function waitForNextFrame() {
+				return new Promise(resolve => {
+					requestAnimationFrame(() => resolve());
+				});
+			}
+
+			function loadImage(url) {
+				return new Promise((resolve, reject) => {
+					const image = new Image();
+					image.onload = () => resolve(image);
+					image.onerror = () => reject(new Error("截圖預覽轉圖失敗"));
+					image.src = url;
+				});
+			}
+
+			function canvasToBlob(canvas) {
+				return new Promise((resolve, reject) => {
+					canvas.toBlob(blob => {
+						if (blob) {
+							resolve(blob);
+							return;
+						}
+						reject(new Error("無法產生 PNG 檔案"));
+					}, 'image/png');
+				});
+			}
+
+			async function capturePreviewAsBlob() {
+				if (!dom.preview) {
+					throw new Error("找不到截圖預覽框");
+				}
+				const rect = dom.preview.getBoundingClientRect();
+				const width = Math.max(1, Math.ceil(rect.width));
+				const height = Math.max(1, Math.ceil(rect.height));
+				const clone = dom.preview.cloneNode(true);
+				inlineComputedStyles(dom.preview, clone);
+				clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+
+				const serialized = new XMLSerializer().serializeToString(clone);
+				const svg = `
+					<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+						<foreignObject width="100%" height="100%">${serialized}</foreignObject>
+					</svg>
+				`;
+				const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+				const svgUrl = URL.createObjectURL(svgBlob);
+
+				try {
+					const image = await loadImage(svgUrl);
+					const scale = Math.max(2, Math.ceil(window.devicePixelRatio || 1));
+					const canvas = document.createElement('canvas');
+					canvas.width = width * scale;
+					canvas.height = height * scale;
+					const ctx = canvas.getContext('2d');
+					if (!ctx) {
+						throw new Error("無法建立 canvas");
+					}
+					ctx.scale(scale, scale);
+					ctx.drawImage(image, 0, 0, width, height);
+					return await canvasToBlob(canvas);
+				} finally {
+					URL.revokeObjectURL(svgUrl);
+				}
+			}
+
+			async function saveStepFile(step) {
+				if (!(await ensureFolderPermission())) {
+					throw new Error("尚未取得資料夾寫入權限");
+				}
+				const exists = await fileExists(step.fileName);
+				if (exists && !window.confirm(`檔名已存在，是否覆蓋？\n${step.fileName}`)) {
+					return { cancelled: true };
+				}
+
+				await waitForNextFrame();
+				const pngBlob = await capturePreviewAsBlob();
+				const fileHandle = await state.folderHandle.getFileHandle(step.fileName, { create: true });
+				const writable = await fileHandle.createWritable();
+				await writable.write(pngBlob);
+				await writable.close();
+				return { cancelled: false };
+			}
+
+			async function captureStep(stepIndex, { retake = false } = {}) {
+				const step = state.steps[stepIndex];
+				if (!step) {
+					setAck("找不到目前要拍的步驟，請重新建立流程", "error");
+					return;
+				}
+				if (!state.folderHandle) {
+					setAck("請先選擇儲存資料夾", "error");
+					return;
+				}
+				if (retake) {
+					if (state.retakeStepIndex !== stepIndex) {
+						setAck("目前只允許重拍上一張", "error");
+						return;
+					}
+				} else if (stepIndex !== state.currentStepIndex) {
+					setAck("目前只能拍下一張應拍的步驟", "error");
+					return;
+				}
+				if (step.scoreMode === "manual") {
+					step.score = dom.scoreSelect?.value || "";
+					if (!step.score) {
+						setAck("ACT 步驟需要先選舒適度評分 0 到 10 才能截圖", "error");
+						updateUi();
+						return;
+					}
+				}
+
+				try {
+					setAck(`正在儲存圖片：${step.fileName}`, "pending");
+					const result = await saveStepFile(step);
+					if (result.cancelled) {
+						setAck("已取消覆蓋，步驟維持不變", "pending");
+						return;
+					}
+
+					state.lastSavedFileName = step.fileName;
+					if (retake) {
+						state.retakeStepIndex = null;
+						setAck(`已覆蓋上一張：${step.fileName}`, "ok");
+					} else {
+						state.lastCompletedStepIndex = stepIndex;
+						state.currentStepIndex = Math.min(stepIndex + 1, state.steps.length);
+						if (state.currentStepIndex >= state.steps.length) {
+							setAck(`本輪 ${state.steps.length} 張已完成：${step.fileName}`, "ok");
+						} else if (state.steps[state.currentStepIndex]?.scoreMode === "manual" && !state.steps[state.currentStepIndex]?.score) {
+							setAck(`已儲存 ${step.fileName}，請先選舒適度評分，再拍下一張`, "pending");
+						} else {
+							setAck(`已儲存 ${step.fileName}，請繼續下一張`, "ok");
+						}
+					}
+				} catch (error) {
+					setAck(`截圖失敗：${error.message}`, "error");
+				}
+				updateUi();
+			}
+
+			function init() {
+				cacheDom();
+				populateSelects();
+
+				dom.subjectSelect?.addEventListener('change', syncSelectionState);
+				dom.aplSelect?.addEventListener('change', syncSelectionState);
+				dom.folderBtn?.addEventListener('click', selectFolder);
+				dom.buildRunBtn?.addEventListener('click', buildRun);
+				dom.shotBtn?.addEventListener('click', triggerActiveCapture);
+				dom.scoreSelect?.addEventListener('change', handleScoreChange);
+				dom.retakeBtn?.addEventListener('click', toggleRetakeMode);
+				dom.configEditBtn?.addEventListener('click', function () {
+					state.configCollapsed = false;
+					updateUi();
+				});
+
+				if (!supportsFileSystemAccess) {
+					setAck("瀏覽器不支援 File System Access API，請改用 Chromium 系瀏覽器", "error");
+				} else {
+					setAck("請先選擇儲存資料夾。選好一次後會沿用目前位置，再設定受試者編號與實驗姿勢。", "pending");
+				}
+
+				syncSelectionState();
+				updateUi();
+			}
+
+			return {
+				init,
+				refreshLiveMetrics
+			};
 		}
 
 		function updateHeightMonitorFromParsed(source) {
@@ -1352,6 +2283,7 @@
 				if (parts[0] === "USER") {
 					if (parts[1] === "OK") {
 						setUserSetAck(`已設定 (${formatAckTime()})`, "ok");
+						requestSilentDebugSnapshot();
 					} else if (parts[1] === "ERR") {
 						setUserSetAck(`ESP32 回覆失敗：${parts.slice(2).join(',') || "BAD_COMMAND"}`, "error");
 					}
@@ -1639,6 +2571,7 @@
 						parsedData[match[1]] = match[2] || '';
 					}
 					updateHeightMonitorFromParsed("DEBUG");
+					updateUserDimensionsFromParsed();
 					debugDataBuffer = "";
 				}
 			}
@@ -1918,15 +2851,7 @@
 			const nowMs = Date.now();
 			if (nowMs - lastHeightDebugPollMs >= HEIGHT_DEBUG_POLL_MS) {
 				lastHeightDebugPollMs = nowMs;
-				suppressSilentDebugResponse = true;
-				if (silentDebugSuppressTimer) {
-					clearTimeout(silentDebugSuppressTimer);
-				}
-				silentDebugSuppressTimer = setTimeout(() => {
-					suppressSilentDebugResponse = false;
-					silentDebugSuppressTimer = null;
-				}, 3500);
-				sendSilentCommand("DEBUG");
+				requestSilentDebugSnapshot();
 			}
 		}, 1000);
 		let selectedCondition = null;
@@ -1936,43 +2861,65 @@
 		const numberInput4 = document.getElementById('numberInput4');
 
 		document.addEventListener('DOMContentLoaded', function () {
+			setupAppLayoutResizer();
+			syncAppLayoutWidth();
 			setWorkflowState(WORKFLOW.UNCALIBRATED);
 			refreshAnchorBadgeUI();
+			captureWizardModule = createCaptureWizardModule();
+			captureWizardModule.init();
 
+			const userAccordionToggle = document.getElementById('userAccordionToggle');
+			const userAccordionBody = document.getElementById('userAccordionBody');
 			const statusAccordionToggle = document.getElementById('statusAccordionToggle');
 			const statusAccordionBody = document.getElementById('statusAccordionBody');
+			const captureAccordionToggle = document.getElementById('captureAccordionToggle');
+			const captureAccordionBody = document.getElementById('captureAccordionBody');
 
-			function getSavedStatusAccordionState() {
+			function getSavedAccordionState(key) {
 				try {
-					return localStorage.getItem('statusAccordionExpanded');
+					return localStorage.getItem(key);
 				} catch (error) {
 					return null;
 				}
 			}
 
-			function saveStatusAccordionState(expanded) {
+			function saveAccordionState(key, expanded) {
 				try {
-					localStorage.setItem('statusAccordionExpanded', expanded ? '1' : '0');
+					localStorage.setItem(key, expanded ? '1' : '0');
 				} catch (error) {
 					// Some file/browser contexts block localStorage; the accordion should still work.
 				}
 			}
 
-			function setStatusAccordionExpanded(expanded) {
-				if (!statusAccordionToggle || !statusAccordionBody) {
+			function setAccordionExpanded(toggleNode, bodyNode, storageKey, expanded) {
+				if (!toggleNode || !bodyNode) {
 					return;
 				}
-				statusAccordionBody.classList.toggle('is-collapsed', !expanded);
-				statusAccordionToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-				statusAccordionToggle.textContent = expanded ? '收合' : '展開';
-				saveStatusAccordionState(expanded);
+				bodyNode.classList.toggle('is-collapsed', !expanded);
+				toggleNode.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+				toggleNode.textContent = expanded ? '收合' : '展開';
+				saveAccordionState(storageKey, expanded);
 			}
 
-			const savedAccordionState = getSavedStatusAccordionState();
-			setStatusAccordionExpanded(savedAccordionState !== '0');
+			const savedUserAccordionState = getSavedAccordionState('userAccordionExpanded');
+			setAccordionExpanded(userAccordionToggle, userAccordionBody, 'userAccordionExpanded', savedUserAccordionState !== '0');
+			userAccordionToggle?.addEventListener('click', function () {
+				const expanded = userAccordionToggle.getAttribute('aria-expanded') === 'true';
+				setAccordionExpanded(userAccordionToggle, userAccordionBody, 'userAccordionExpanded', !expanded);
+			});
+
+			const savedStatusAccordionState = getSavedAccordionState('statusAccordionExpanded');
+			setAccordionExpanded(statusAccordionToggle, statusAccordionBody, 'statusAccordionExpanded', savedStatusAccordionState !== '0');
 			statusAccordionToggle?.addEventListener('click', function () {
 				const expanded = statusAccordionToggle.getAttribute('aria-expanded') === 'true';
-				setStatusAccordionExpanded(!expanded);
+				setAccordionExpanded(statusAccordionToggle, statusAccordionBody, 'statusAccordionExpanded', !expanded);
+			});
+
+			const savedCaptureAccordionState = getSavedAccordionState('captureAccordionExpanded');
+			setAccordionExpanded(captureAccordionToggle, captureAccordionBody, 'captureAccordionExpanded', savedCaptureAccordionState !== '0');
+			captureAccordionToggle?.addEventListener('click', function () {
+				const expanded = captureAccordionToggle.getAttribute('aria-expanded') === 'true';
+				setAccordionExpanded(captureAccordionToggle, captureAccordionBody, 'captureAccordionExpanded', !expanded);
 			});
 
 			const modal = document.getElementById('modal');

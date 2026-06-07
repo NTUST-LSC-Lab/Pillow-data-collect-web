@@ -1,4 +1,4 @@
-﻿
+
 <!--
 @license
 Copyright 2022 Taiwan (ChungYi Fu)
@@ -106,9 +106,14 @@ https://fustyles.github.io/webduino/WebSerial.html
 				</div>
 			</section>
 
-			<section class="panel-card">
-				<h2>使用者資料</h2>
+			<section class="panel-card user-accordion">
+				<div class="accordion-header">
+					<h2>使用者資料</h2>
+					<button id="userAccordionToggle" type="button" class="accordion-toggle" aria-expanded="true" aria-controls="userAccordionBody">收合</button>
+				</div>
+				<div id="userAccordionBody" class="accordion-body">
 				<form id="userForm">
+					<div class="user-input-fields">
 					<div class="form-group gender-group">
 						<span class="gender-label">生理性別：</span>
 						<div class="gender-options">
@@ -134,13 +139,16 @@ https://fustyles.github.io/webduino/WebSerial.html
 						<label for="weight">體重（公斤）：</label>
 						<input type="number" id="weight" required>
 					</div>
+					</div>
 						<div class="button-row">
 							<button type="button" id="userSet">設定</button>
 							<button id="openCalibBtn" type="button">初始校正</button>
 							<button id="openModalBtn" type="button">微調</button>
 						</div>
 						<div id="userSetAck" class="mode-ack">使用者資料狀態：尚未設定</div>
+						<div id="userDimensionSummary" class="user-dimension-summary">目前估算尺寸：頭寬 - mm ｜ 頸寬 - mm ｜ 肩寬 - mm</div>
 					</form>
+				</div>
 				</section>
 
 			<section class="panel-card status-accordion">
@@ -204,6 +212,145 @@ https://fustyles.github.io/webduino/WebSerial.html
 				</div>
 			</section>
 
+			<section class="panel-card capture-wizard-card capture-accordion">
+				<div class="accordion-header">
+					<h2>截圖精靈</h2>
+					<div class="accordion-actions">
+						<button id="captureAccordionToggle" type="button" class="accordion-toggle" aria-expanded="true" aria-controls="captureAccordionBody">收合</button>
+					</div>
+				</div>
+				<div id="captureAccordionBody" class="accordion-body">
+					<div id="captureStatusBanner" class="capture-status-banner pending" role="status" aria-live="polite">
+						<span id="captureStatusBannerText">⚠ 請先選擇資料夾</span>
+					</div>
+					<div class="capture-wizard-stack capture-collapse-details">
+						<!-- 設定橫列工具欄 -->
+						<div class="capture-settings-bar capture-collapse-details">
+							<div id="captureConfigBody" class="capture-config-toolbar">
+								<div class="capture-bar-field">
+									<select id="captureSubjectSelect" class="capture-bar-select">
+										<option value="">選擇受試者...</option>
+									</select>
+								</div>
+
+								<div class="capture-bar-field">
+									<select id="captureAplSelect" class="capture-bar-select">
+										<option value="">選擇姿勢...</option>
+										<option value="BSHS">BSHS</option>
+										<option value="BSHL">BSHL</option>
+										<option value="BLHLB">BLHLB</option>
+										<option value="BLHLC">BLHLC</option>
+										<option value="BLHL">BLHL</option>
+									</select>
+								</div>
+
+									<div class="capture-bar-field capture-bar-folder-field">
+										<button id="captureFolderBtn" type="button" class="capture-toolbar-folder" title="選擇資料夾">
+											<span id="captureFolderPath" class="capture-toolbar-path">📁 選擇資料夾</span>
+										</button>
+									</div>
+
+								<button id="captureBuildRunBtn" type="button" class="primary capture-toolbar-start-btn">▶ 開始</button>
+							</div>
+							<div id="captureConfigSummary" class="capture-config-summary capture-bar-summary is-collapsed">
+								<span class="capture-bar-summary-text">本輪設定已鎖定 · 資料夾 <strong id="captureSummaryFolder">-</strong></span>
+								<button id="captureConfigEditBtn" type="button" class="capture-secondary-btn">修改</button>
+							</div>
+						</div>
+
+						<div class="capture-execution-panel">
+							<div id="capturePreview" class="capture-preview">
+
+								<!-- 下一張要拍 + 立即截圖（整合卡片） -->
+								<div class="capture-next-shot-card">
+									<div class="capture-next-shot-header">
+										<div class="capture-next-shot-info">
+											<div class="capture-next-shot-label">目前截取畫面為</div>
+											<div id="capturePreviewShotPose" class="capture-next-shot-pose">-</div>
+											<div id="captureCurrentLabel" class="capture-next-shot-detail">尚未建立截圖流程</div>
+										</div>
+										<div class="capture-shot-integrated">
+											<div class="capture-field capture-score-field">
+												<label for="captureScoreSelect">舒適度評分</label>
+												<select id="captureScoreSelect">
+													<option value="">評分 0~10</option>
+												</select>
+											</div>
+											<button id="captureShotBtn" type="button" class="primary capture-shot-btn">立即截圖</button>
+										</div>
+									</div>
+									<div id="captureAck" class="mode-ack capture-ack">操作狀態：尚未建立截圖流程</div>
+								</div>
+
+								<!-- 進度區 -->
+								<div class="capture-progress-card">
+									<div class="capture-progress-top">
+										<div class="capture-section-title">進度</div>
+										<div id="captureProgress" class="capture-progress-text">0 / 26</div>
+									</div>
+									<div class="capture-progress-bar">
+										<div id="captureProgressBarFill" class="capture-progress-bar-fill"></div>
+									</div>
+									<div id="captureStepButtons" class="capture-step-list"></div>
+								</div>
+
+								<!-- 感測資料：單一卡片四欄 -->
+								<div class="capture-live-unified">
+									<div class="capture-live-col">
+										<span>Monitor</span>
+										<strong id="capturePreviewMonitorPressure">-</strong>
+									</div>
+									<div class="capture-live-col">
+										<span>Neck</span>
+										<strong id="capturePreviewNeckPressure">-</strong>
+									</div>
+									<div class="capture-live-col">
+										<span>Head</span>
+										<strong id="capturePreviewHeadPressure">-</strong>
+									</div>
+									<div class="capture-live-col">
+										<span>更新時間</span>
+										<strong id="capturePreviewUpdateTime">-</strong>
+									</div>
+								</div>
+
+								<!-- 高度資訊：單一卡片左右排 -->
+								<div class="capture-height-unified">
+									<div class="capture-height-col">
+										<div class="capture-section-title">Head</div>
+										<div class="capture-height-line">目標 <strong id="capturePreviewHeadTarget">-</strong></div>
+										<div class="capture-height-line">目前 <strong id="capturePreviewHeadCurrent">-</strong></div>
+									</div>
+									<div class="capture-height-divider"></div>
+									<div class="capture-height-col">
+										<div class="capture-section-title">Neck</div>
+										<div class="capture-height-line">目標 <strong id="capturePreviewNeckTarget">-</strong></div>
+										<div class="capture-height-line">目前 <strong id="capturePreviewNeckCurrent">-</strong></div>
+									</div>
+								</div>
+
+								<!-- 受試者資訊：降級為一列 -->
+								<div class="capture-meta-row">
+									<span class="capture-meta-item">受試者 <strong id="capturePreviewSubject">-</strong></span>
+									<span class="capture-meta-sep">·</span>
+									<span class="capture-meta-item">固定姿勢最佳高度 <strong id="capturePreviewApl">-</strong></span>
+									<span class="capture-meta-sep">·</span>
+									<span class="capture-meta-item">評分 <strong id="capturePreviewScore">-</strong></span>
+									<span class="capture-meta-sep capture-meta-sep--right">·</span>
+									<button id="captureRetakeBtn" type="button" class="capture-retake-mini">重拍上一張</button>
+								</div>
+
+								<!-- 最近截圖：單行 -->
+								<div class="capture-recent-row">
+									<span class="capture-recent-label">最近截圖：</span><span id="captureLastFile" class="capture-recent-file">-</span>
+								</div>
+
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+
 			<section class="panel-card monitor-card">
 				<h2>高度與壓力監測</h2>
 				<div class="monitor-current-grid">
@@ -251,27 +398,42 @@ https://fustyles.github.io/webduino/WebSerial.html
 			</section>
 		</aside>
 
+		<div
+			id="appLayoutSplitter"
+			class="app-layout-splitter"
+			role="separator"
+			aria-orientation="vertical"
+			aria-label="調整左側與右側欄寬"
+			title="拖曳調整左右欄位寬度"></div>
+
 		<section id="chartPanel" class="right-panel chart-monitor-panel">
 			<div class="chart-panel-header">
 				<div class="chart-title-row">
 					<h2>線圖監測</h2>
-					<span id="chartPanelStateBadge" class="pill pill-ok">展開中</span>
+					<div class="chart-title-actions">
+						<span id="chartPanelStateBadge" class="pill pill-ok">展開中</span>
+						<button id="chartPanelInfoToggle" type="button" class="chart-panel-info-toggle" aria-expanded="true" aria-controls="chartPanelInfo">收合資訊</button>
+					</div>
 				</div>
-				<div class="chart-scale-controls">
-					<label for="yAxisMax">Y軸最大值</label>
-					<input type="number" id="yAxisMax" value="9000000">
-					<label for="yAxisMin">Y軸最小值</label>
-					<input type="number" id="yAxisMin" value="80000">
-					<button id="updateChart" type="button">更新圖表</button>
-				</div>
-				<div class="chart-summary-grid" aria-live="polite">
-					<div><span>Monitor</span><strong id="chartSummaryMonitor">-</strong></div>
-					<div><span>Neck</span><strong id="chartSummaryNeck">-</strong></div>
-					<div><span>Head</span><strong id="chartSummaryHead">-</strong></div>
-					<div><span>last5</span><strong id="chartSummaryLast5">-</strong></div>
-					<div><span>prev5</span><strong id="chartSummaryPrev5">-</strong></div>
-					<div><span>Diff</span><strong id="chartSummaryDiff">-</strong></div>
-					<div><span>更新</span><strong id="chartSummaryTime">-</strong></div>
+				<div class="chart-panel-info-scroll" aria-label="線圖監測數值資訊">
+					<div id="chartPanelInfo" class="chart-panel-info">
+						<div class="chart-scale-controls">
+							<label for="yAxisMax">Y軸最大值</label>
+							<input type="number" id="yAxisMax" value="9000000">
+							<label for="yAxisMin">Y軸最小值</label>
+							<input type="number" id="yAxisMin" value="80000">
+							<button id="updateChart" type="button">更新圖表</button>
+						</div>
+						<div class="chart-summary-grid" aria-live="polite">
+							<div><span>Monitor</span><strong id="chartSummaryMonitor">-</strong></div>
+							<div><span>Neck</span><strong id="chartSummaryNeck">-</strong></div>
+							<div><span>Head</span><strong id="chartSummaryHead">-</strong></div>
+							<div><span>last5</span><strong id="chartSummaryLast5">-</strong></div>
+							<div><span>prev5</span><strong id="chartSummaryPrev5">-</strong></div>
+							<div><span>Diff</span><strong id="chartSummaryDiff">-</strong></div>
+							<div><span>更新</span><strong id="chartSummaryTime">-</strong></div>
+						</div>
+					</div>
 				</div>
 				<div class="chart-panel-actions">
 					<button id="chartModePressure" type="button" class="primary">只看壓力</button>
@@ -477,7 +639,7 @@ https://fustyles.github.io/webduino/WebSerial.html
 				<h3>常用開機時間設定</h3>
 				<div class="command-table">
 					<div>指令</div><div>用途</div><div>範例</div>
-					<code>SET,MONITOR,&lt;ms&gt;</code><div>設定 Monitor 開機充氣時間。</div><code>set,monitor,15000,</code>
+					<code>SET,MONITOR,&lt;ms&gt;</code><div>設定 Monitor 開機充氣時間。</div><code>set,monitor,14500,</code>
 					<code>SET,NECK,&lt;ms&gt;</code><div>設定 Neck 開機充氣時間。</div><code>set,neck,12000,</code>
 					<code>SET,HEAD,&lt;ms&gt;</code><div>設定 Head 開機充氣時間。</div><code>set,head,32000,</code>
 					<code>RESET</code><div>非 Manual 狀態下回到 DRAIN_ALL，重新跑開機流程。</div><code>reset,</code>
