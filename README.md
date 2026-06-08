@@ -4,7 +4,7 @@
 
 本分支與本 README 基於 ESP32 韌體 `pose_pre_v3.1` 進行修改。Web 端已對應 `pose_pre_v3.1` 的高度上下限、0.5 cm 高度步進、手動/自動分類模式、ESP32 Manual 控制、壓力/高度監測、右側線圖監測與指令合輯。
 
-修改日期時間：`2026-06-07 14:30:00 CST (+0800)`
+修改日期時間：`2026-06-08 17:55:26 CST (+0800)`
 
 ## 對應版本
 
@@ -126,19 +126,19 @@ http://localhost:8080/spp3/
 目前命名格式為：
 
 ```text
-{subject_id}_APL-{applied_height_pose}_{stage}_R{repeat_id}_{sequence}.png
+{subject_id}_APL-{applied_height_pose}_{stage}_R{repeat_id}_{sequence}.svg
 ```
 
 例如：
 
 ```text
-S01_APL-BSHS_LOAD-BSHS_R1_01.png
-S01_APL-BSHS_UNLOAD_R1_02.png
-S01_APL-BSHS_ACT-BSHL_R1_03.png
-S01_APL-BSHS_ACT-BLHLB_R1_04.png
-S01_APL-BSHS_ACT-BLHLC_R1_05.png
-S01_APL-BSHS_ACT-BLHL_R1_06.png
-S01_APL-BSHS_ACT-BSHS_R2_07.png
+S01_APL-BSHS_LOAD-BSHS_R1_01.svg
+S01_APL-BSHS_UNLOAD_R1_02.svg
+S01_APL-BSHS_ACT-BSHL_R1_03.svg
+S01_APL-BSHS_ACT-BLHLB_R1_04.svg
+S01_APL-BSHS_ACT-BLHLC_R1_05.svg
+S01_APL-BSHS_ACT-BLHL_R1_06.svg
+S01_APL-BSHS_ACT-BSHS_R2_07.svg
 ```
 
 欄位意義：
@@ -148,6 +148,15 @@ S01_APL-BSHS_ACT-BSHS_R2_07.png
 - `stage`：`LOAD`、`UNLOAD` 或 `ACT`
 - `R{repeat_id}`：第幾輪
 - `sequence`：第幾張圖，固定為 `01~26`
+
+## 2026-06-08 截圖修正
+
+時間：`2026-06-08 17:55:26 CST (+0800)`
+
+- 修正 `截圖精靈` 在 Chrome / Edge 下因 `canvas.toBlob()` 與外部字型造成的 `Tainted canvases may not be exported` 錯誤。
+- `spp3_BLE/app.js` 的截圖匯出流程改為直接生成 `SVG Blob` 並寫入使用者選定的資料夾，不再經過 canvas 轉 PNG。
+- 截圖檔案副檔名由 `.png` 改為 `.svg`，原有的資料夾權限、覆蓋確認、步驟推進與重拍流程維持不變。
+- 匯出時強制使用本機字型 stack，避免將 Google Fonts 之類的外部字型依賴帶入匯出流程後再次污染畫布。
 
 ### 截圖精靈畫面內容
 

@@ -1436,6 +1436,8 @@
 			const POSE_ORDER = ["BSHS", "BSHL", "BLHLB", "BLHLC", "BLHL"];
 			const TOTAL_REPEATS = 5;
 			const DEFAULT_CAPTURE_TOTAL = 26;
+			const CAPTURE_FILE_EXTENSION = "svg";
+			const CAPTURE_SAFE_FONT_STACK = '-apple-system, BlinkMacSystemFont, "PingFang TC", "Microsoft JhengHei", sans-serif';
 			const state = {
 				folderHandle: null,
 				folderDisplayPath: "",
@@ -1789,7 +1791,7 @@
 						label: `${displayIndex} ${actionLabel}`,
 						kind,
 						actualPose,
-						fileName: `${state.subjectId}_APL-${state.aplPose}_${actionLabel}_R${repeatId}_${displayIndex}.png`,
+						fileName: `${state.subjectId}_APL-${state.aplPose}_${actionLabel}_R${repeatId}_${displayIndex}.${CAPTURE_FILE_EXTENSION}`,
 						scoreMode,
 						score: scoreMode === "fixed10" ? "10" : ""
 					});
@@ -1989,10 +1991,17 @@
 					return;
 				}
 				const computedStyle = window.getComputedStyle(sourceNode);
-				const cssText = Array.from(computedStyle)
-					.map(name => `${name}:${computedStyle.getPropertyValue(name)};`)
-					.join('');
-				targetNode.setAttribute('style', cssText);
+				const cssPairs = Array.from(computedStyle).map(name => {
+					if (name === 'font-family') {
+						return `${name}:${CAPTURE_SAFE_FONT_STACK};`;
+					}
+					if (name === 'text-shadow' || name === 'filter' || name === 'backdrop-filter') {
+						return `${name}:none;`;
+					}
+					return `${name}:${computedStyle.getPropertyValue(name)};`;
+				});
+				cssPairs.push(`font-family:${CAPTURE_SAFE_FONT_STACK};`);
+				targetNode.setAttribute('style', cssPairs.join(''));
 
 				const sourceChildren = Array.from(sourceNode.children);
 				const targetChildren = Array.from(targetNode.children);
@@ -2007,28 +2016,7 @@
 				});
 			}
 
-			function loadImage(url) {
-				return new Promise((resolve, reject) => {
-					const image = new Image();
-					image.onload = () => resolve(image);
-					image.onerror = () => reject(new Error("截圖預覽轉圖失敗"));
-					image.src = url;
-				});
-			}
-
-			function canvasToBlob(canvas) {
-				return new Promise((resolve, reject) => {
-					canvas.toBlob(blob => {
-						if (blob) {
-							resolve(blob);
-							return;
-						}
-						reject(new Error("無法產生 PNG 檔案"));
-					}, 'image/png');
-				});
-			}
-
-			async function capturePreviewAsBlob() {
+			function buildPreviewSvgBlob() {
 				if (!dom.preview) {
 					throw new Error("找不到截圖預覽框");
 				}
@@ -2045,25 +2033,11 @@
 						<foreignObject width="100%" height="100%">${serialized}</foreignObject>
 					</svg>
 				`;
-				const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-				const svgUrl = URL.createObjectURL(svgBlob);
+				return new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+			}
 
-				try {
-					const image = await loadImage(svgUrl);
-					const scale = Math.max(2, Math.ceil(window.devicePixelRatio || 1));
-					const canvas = document.createElement('canvas');
-					canvas.width = width * scale;
-					canvas.height = height * scale;
-					const ctx = canvas.getContext('2d');
-					if (!ctx) {
-						throw new Error("無法建立 canvas");
-					}
-					ctx.scale(scale, scale);
-					ctx.drawImage(image, 0, 0, width, height);
-					return await canvasToBlob(canvas);
-				} finally {
-					URL.revokeObjectURL(svgUrl);
-				}
+			async function capturePreviewAsBlob() {
+				return buildPreviewSvgBlob();
 			}
 
 			async function saveStepFile(step) {
@@ -2076,10 +2050,10 @@
 				}
 
 				await waitForNextFrame();
-				const pngBlob = await capturePreviewAsBlob();
+				const captureBlob = await capturePreviewAsBlob();
 				const fileHandle = await state.folderHandle.getFileHandle(step.fileName, { create: true });
 				const writable = await fileHandle.createWritable();
-				await writable.write(pngBlob);
+				await writable.write(captureBlob);
 				await writable.close();
 				return { cancelled: false };
 			}
