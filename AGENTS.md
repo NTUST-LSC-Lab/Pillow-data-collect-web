@@ -9,18 +9,35 @@
 
 這份文件只補充這個 repo 自己的工作方式。
 
+## Current Basis
+
+最後確認日期：`2026-06-20`
+
+這份文件目前是依據下列來源撰寫：
+
+- `Pillow-data-collect-web` repo `main` 的實際專案結構
+- `Pillow-data-collect-web` repo `README.md`
+  - 最近 README commit：`0867150`
+  - 日期：`2026-06-08 17:57:52 +0800`
+- `Pillow-data-collect-web` branch `spp3_BLE_cls_pre_v3.1`
+  - 最近功能 commit：`0dfe6fd`
+  - 日期：`2026-06-08T09:57:52Z`
+  - 訊息：`fix: avoid tainted canvas in capture wizard export`
+- `lab-docs/docs/version-matrix.md`
+
 ## Current Working Assumptions
 
 - 主要新版入口目錄是 `spp3_BLE/`。
 - `spp3/` 是舊版或相容用途介面，不要把新版改動直接套回舊版而不確認需求。
 - `Images/` 與 `chart.umd.min.js` 是畫面與圖表依賴資產。
-- repo README 目前以 `spp3_BLE_cls_pre_v3` 脈絡說明 Web 對應流程。
+- 目前 repo `main` 的 README 與 code 狀態，已經明確對應 `pose_pre_v3.1` 這條主版相容線。
 
 ## Version Position
 
-- 目前 lab-level 已確認的主版 Web / firmware 配對是：
+- 目前 lab-level 已確認的 **主版 Web / firmware 相容線** 是：
   - Web: `Pillow-data-collect-web-spp3_BLE_cls_pre_v3.1/spp3_BLE`
   - ESP32: `ipillow-pose_pre_v3.1/node32_ipillow_3_BLE`
+- 對這個 repo 而言，這條 `v3.1` 線不是只靠總表推論，而是有目前 README、branch 與功能 commit 可對照支持。
 - 若你要改 BLE 協定、欄位順序或 workflow，先假設這條主版配對是要被保護的相容目標。
 
 ## Important Repo-Specific Rules
