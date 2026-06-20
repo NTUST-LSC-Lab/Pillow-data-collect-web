@@ -5,6 +5,7 @@
 完整共用規範請先讀：
 
 - `NTUST-LSC-Lab/lab-docs/AGENTS.md`
+- `NTUST-LSC-Lab/lab-docs/docs/version-matrix.md`
 
 這份文件只補充這個 repo 自己的工作方式。
 
@@ -14,6 +15,13 @@
 - `spp3/` 是舊版或相容用途介面，不要把新版改動直接套回舊版而不確認需求。
 - `Images/` 與 `chart.umd.min.js` 是畫面與圖表依賴資產。
 - repo README 目前以 `spp3_BLE_cls_pre_v3` 脈絡說明 Web 對應流程。
+
+## Version Position
+
+- 目前 lab-level 已確認的主版 Web / firmware 配對是：
+  - Web: `Pillow-data-collect-web-spp3_BLE_cls_pre_v3.1/spp3_BLE`
+  - ESP32: `ipillow-pose_pre_v3.1/node32_ipillow_3_BLE`
+- 若你要改 BLE 協定、欄位順序或 workflow，先假設這條主版配對是要被保護的相容目標。
 
 ## Important Repo-Specific Rules
 
