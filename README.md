@@ -7,9 +7,9 @@
 
 目前 GitHub Pages 對外網址：
 
-- `https://xue030130.github.io/Pillow-data-collect-web/spp3_BLE/`
+- `https://ntust-lsc-lab.github.io/Pillow-data-collect-web/spp3_BLE/`
 
-修改日期時間：`2026-06-08 17:55:26 CST (+0800)`
+修改日期時間：`2026-07-07 16:08:44 CST (+0800)`
 
 其中 `spp3_BLE/` 現在對應 `pose_pre_v3.1` 版本，包含：
 
@@ -18,6 +18,7 @@
 - 可拖曳左右欄寬
 - 響應式截圖精靈卡片
 - 可收合 / 可滾動的右側線圖監測區
+- 生物力學微調畫面的 `Reset` 基準流程按鈕
 
 兩個版本共用：
 
@@ -109,6 +110,14 @@ S01_APL-BSHS_ACT-BSHL_R1_03.svg
 - `spp3_BLE/app.js` 的截圖匯出流程改為直接生成 `SVG Blob` 並寫入使用者選定的資料夾，不再經過 canvas 轉 PNG。
 - 截圖檔案副檔名由 `.png` 改為 `.svg`，原有的資料夾權限、覆蓋確認、步驟推進與重拍流程維持不變。
 - 匯出時強制使用本機字型 stack，避免將 Google Fonts 之類的外部字型依賴帶入匯出流程後再次污染畫布。
+
+## 2026-07-07 Reset 基準流程按鈕
+
+時間：`2026-07-07 16:08:44 CST (+0800)`
+
+- 在 `生物力學調整模式` 的仰躺高度微調與側躺高度微調畫面各新增一個 `Reset` 按鈕。
+- 按 `Reset` 會送出 `MANUAL,STARTUP,7.0,10.0`，讓 ESP32 離開 manual 控制並回到開機流程：先 `DRAIN_ALL` 吸乾，再依序 `FILL_MONITOR`、`FILL_NECK`、`FILL_HEAD` 回到 Head `7.0 cm` / Neck `10.0 cm` 基準。
+- `Reset` 不會清除 IndexedDB，也不會重新計算既有匯出資料；後續壓力、姿勢與指令紀錄會繼續累計到同一份 export 資料中。
 
 ## 注意事項
 

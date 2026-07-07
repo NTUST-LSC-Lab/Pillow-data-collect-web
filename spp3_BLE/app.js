@@ -1189,10 +1189,11 @@
 		function sendEspManualCommand(command, pendingMessage) {
 			if (!rxCharacteristic || !serial_ready) {
 				setEspManualUi(false, "尚未連線 BLE，指令未送出", "error");
-				return;
+				return false;
 			}
 			setEspManualUi(!command.startsWith("MANUAL,STARTUP"), pendingMessage || "指令已送出，等待 ESP32 回覆", "pending");
 			sendCommand(command);
+			return true;
 		}
 
 		function formatAckTime() {
@@ -2918,6 +2919,8 @@
 			const decreaseBtn4 = document.getElementById('decreaseBtn4');
 			const confirmSupineAdjustBtn = document.getElementById('confirmSupineAdjustBtn');
 			const confirmSideAdjustBtn = document.getElementById('confirmSideAdjustBtn');
+			const resetSupineBaselineBtn = document.getElementById('resetSupineBaselineBtn');
+			const resetSideBaselineBtn = document.getElementById('resetSideBaselineBtn');
 			const microSupineHint = document.getElementById('microSupineHint');
 			const microSideHint = document.getElementById('microSideHint');
 
@@ -2968,8 +2971,7 @@
 			document.getElementById('manualStartupBtn')?.addEventListener('click', function () {
 				const head = setHeightInputValue(manualStartupHead, manualStartupHead?.value, "HEAD");
 				const neck = setHeightInputValue(manualStartupNeck, manualStartupNeck?.value, "NECK");
-				resetAutoControlStartState();
-				sendEspManualCommand(`MANUAL,STARTUP,${head},${neck}`, "回開機流程指令已送出");
+				sendStartupFlow(head, neck, "回開機流程指令已送出");
 			});
 
 			const microDirty = { S: false, L: false };
@@ -3005,6 +3007,17 @@
 					markClean();
 				}
 				return true;
+			}
+
+			function sendStartupFlow(head, neck, pendingMessage) {
+				resetAutoControlStartState();
+				return sendEspManualCommand(`MANUAL,STARTUP,${head},${neck}`, pendingMessage);
+			}
+
+			function resetToStartupBaseline(headInput, neckInput) {
+				const head = setHeightInputValue(headInput, HEIGHT_LIMITS.HEAD.min, "HEAD");
+				const neck = setHeightInputValue(neckInput, HEIGHT_LIMITS.NECK.min, "NECK");
+				return sendStartupFlow(head, neck, "Reset 已送出，回到 Head 7.0 / Neck 10.0 開機基準");
 			}
 
 			openModalBtn.addEventListener('click', function () {
@@ -3104,6 +3117,24 @@
 
 			confirmSideAdjustBtn?.addEventListener('click', function () {
 				sendHeightPair(selectedCondition || "1", "L", numberInput3, numberInput4, () => markMicroDirty("L", false));
+			});
+
+			resetSupineBaselineBtn?.addEventListener('click', function () {
+				if (resetToStartupBaseline(numberInput1, numberInput2)) {
+					markMicroDirty("S");
+					if (microSupineHint) {
+						microSupineHint.textContent = "Reset 已送出，已回到 Head 7.0 / Neck 10.0 基準；若要作為仰躺高度，請按確定調整。";
+					}
+				}
+			});
+
+			resetSideBaselineBtn?.addEventListener('click', function () {
+				if (resetToStartupBaseline(numberInput3, numberInput4)) {
+					markMicroDirty("L");
+					if (microSideHint) {
+						microSideHint.textContent = "Reset 已送出，已回到 Head 7.0 / Neck 10.0 基準；若要作為側躺高度，請按確定調整。";
+					}
+				}
 			});
 
 			[numberInput1, numberInput2].forEach(input => input?.addEventListener('input', () => markMicroDirty("S")));
