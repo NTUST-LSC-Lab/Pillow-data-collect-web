@@ -1,108 +1,53 @@
-# AGENTS.md
+# Pillow-data-collect-web agent instructions
 
-## Project Overview
+適用於 `NTUST-LSC-Lab/Pillow-data-collect-web` 的 `spp3_BLE_cls_pre_v3.1` 線。先讀 organization shared contract `NTUST-LSC-Lab/lab-docs/AGENTS.md` 與 version matrix；本檔只補充 Web repo 的執行細節。回答使用繁體中文。
 
-這個 branch 是 `NTUST-LSC-Lab/Pillow-data-collect-web` 的 `spp3_BLE_cls_pre_v3.1`。它是智慧枕墊的 Web Bluetooth 前端，用來做 BLE 連線、使用者資料設定、初始校正、anchor/classify/pred 狀態監測、ESP32 manual 控制，以及資料匯出。
+## Goal and completion bar
 
-## Repository Scope
+以最小 HTML／CSS／vanilla JS 變更完成指定 Web Bluetooth workflow，保留 BLE queue、協定解析、IndexedDB、export、responsive UI 與裝置 states。
 
-- 這個 repo 只包含前端靜態檔案。
-- 主要工作介面是 `spp3_BLE/`。
-- `spp3/` 保留舊版介面，不要在未確認需求下順手同步修改。
-- 這個 repo 不包含 ESP32 firmware 原始碼。
-- 這個 repo 不包含 Android App 原始碼。
-- 這個 repo 沒有後端 API、Node server 或 bundler。
+完成前確認：
 
-## Project Structure
+- 只修改明確指定的 `spp3_BLE/`；舊版 `spp3/` 不自動同步。
+- 未被要求的 token、欄位順序、workflow、badge、schema 與高度限制不變。
+- 已做 render／smoke；可用 target firmware 時完成受影響 BLE workflow。
+- 協定變更已查 `pose_pre_v3.1` sender 與 Android parser，或列出 blocker。
+- 最終先說結果，再列檔案、原因、驗證、風險與限制。
 
-- `spp3_BLE/index.html`
-- `spp3_BLE/styles.css`
-- `spp3_BLE/app.js`
-- `spp3/index.html`
-- `spp3/styles.css`
-- `spp3/app.js`
-- `Images/`
-- `chart.umd.min.js`
-- `README.md`
+## Scope and boundaries
 
-## Setup And Run Commands
+- 主介面：`spp3_BLE/index.html`、`styles.css`、`app.js`
+- 舊版：`spp3/`
+- 其他：`Images/`、vendored `chart.umd.min.js`、`README.md`
+- 沒有 backend API、Node server、bundler 或 framework。
+- 這條 Web 主線預設搭配 `ipillow` 的 `pose_pre_v3.1`，不得當成 demo client。
 
-- 用本機 HTTP server 啟動：
-- `python -m http.server 8080`
-- 主要入口：
-- `http://localhost:8080/spp3_BLE/`
-- 舊版介面：
-- `http://localhost:8080/spp3/`
+回答／診斷只讀；修改／修復可做此 repo 內必要編輯與非破壞性驗證。刪除資料、發布、替換 vendored dependency、改 branch 歷史或擴到其他 repo 前需確認。
 
-## Test And Validation
+## Implementation constraints
 
-- 這個 repo 沒有自動化測試。
-- 至少手動驗證：
-- 可正常載入 `spp3_BLE/`
-- BLE connect / disconnect
-- `USER` 設定
-- `INIT,NORM,S` 與 `INIT,NORM,L`
-- `ANCHOR,STATUS` / `ANCHOR,GET`
-- `CLASSIFY,GET`
-- `PRED,GET`
-- `FEATURE,STATUS`
-- `MANUAL,ENTER` / `MANUAL,STARTUP`
-- `Export Data`
-- 若沒有支援 Web Bluetooth 的瀏覽器或沒有 ESP32，請明講只做靜態檢查，未做裝置驗證。
+- 結構性搜尋先用 code intelligence；token、config、UI text 與 errors 用文字搜尋，空結果需 fallback 查證。
+- 維持純 HTML／CSS／vanilla JS，不自行增加 dependency、backend、功能或裝飾性 UI。
+- 指令只走 `sendCommand()`／`sendSilentCommand()` queue，不直接寫 characteristic。
+- Parser 在 `parseProtocolMessage()`／`serial_message()`。欄位變更需追查 workflow state、badge、chart、IndexedDB 與 exporter。
+- Silent polling 包含 `DEBUG`、`ANCHOR,STATUS`、`CLASSIFY,GET`、`PRED,GET`；`MANUAL,IGNORED,DEBUG` 是既有 firmware mode 的預期行為。
+- 保留 design tokens、responsive behavior 與 expected states；UI 變更須 render 檢查。
+- `chart.umd.min.js` 除非更新版本是任務本身，否則不替換。
 
-## Coding Style And Modification Rules
+## Protocol, data, and privacy
 
-- 維持純 HTML / CSS / vanilla JS 結構，不要未經要求導入 framework 或 bundler。
-- 改協定時，優先檢查：
-- `sendCommand()`
-- `sendSilentCommand()`
-- `parseProtocolMessage()`
-- `serial_message()`
-- 不要繞過既有 write queue 直接操作 characteristic。
-- `spp3_BLE/` 與 `spp3/` 是兩套不同介面，先確認目標再改。
-- UI 調整優先最小化，不要大幅重排 workflow 與 badge 狀態機。
+主要 command families：`USER`、`INIT,NORM`、`SET,NORM`、`SET,OK`、`ANCHOR`、`CLASSIFY`、`PRED`、`FEATURE`、`MANUAL`。Height：Head `7.0–16.0 cm`、Neck `10.0–14.0 cm`、step `0.5 cm`；firmware clamp 是最終安全界線。
 
-## Domain-Specific Rules
+記憶體與 CSV header／exporter 的 Head／Neck 順序可能不同；資料變更必須驗證實際輸出語意。不得提交 IndexedDB、BLE log、受試者資料、CSV／JSON、截圖或錄影。
 
-- 這個 branch 是對應 `ipillow` repo `pose_pre_v3.1` 的主 Web 線。
-- 主要工作流依賴下列文字協定：
-- `USER,<gender>,<age>,<height>,<weight>`
-- `INIT,NORM,S|L`
-- `SET,NORM,...`
-- `SET,OK`
-- `ANCHOR,START,BSHS|BLHL`
-- `ANCHOR,STATUS`
-- `ANCHOR,GET,...`
-- `CLASSIFY,START|STOP|GET`
-- `PRED,START|STOP|GET`
-- `FEATURE,POSE,ON|OFF`
-- `FEATURE,PRED,ON|OFF`
-- `FEATURE,STATUS`
-- `MANUAL,ENTER`
-- `MANUAL,STOP`
-- `MANUAL,FILL,...`
-- `MANUAL,DRAIN,...`
-- `MANUAL,STARTUP,<head_cm>,<neck_cm>`
-- `app.js` 會定期送 silent 指令輪詢狀態，包含 `DEBUG`、`ANCHOR,STATUS`、`CLASSIFY,GET`、`PRED,GET`。
-- README 已明確說明：ESP32 在 `MANUAL_CONTROL` 中可能回 `MANUAL,IGNORED,DEBUG`，這是預期行為，不要當成 parser bug。
-- 高度規則以 head `7.0-16.0 cm`、neck `10.0-14.0 cm`、step `0.5 cm` 為準。
-- `chart.umd.min.js` 是 vendored library，除非任務明確要求，不要隨意替換版本。
+## Run, validation, and stop rules
 
-## Data, Privacy, And Secrets Rules
+執行 `python -m http.server 8080`：主介面 `http://localhost:8080/spp3_BLE/`，舊版 `http://localhost:8080/spp3/`。
 
-- IndexedDB 匯出內容可能包含使用者資料、量測紀錄、BLE log 與實驗資料，不要提交這些匯出檔。
-- 不要提交含個資或實驗資料的 CSV、JSON、截圖或螢幕錄影。
-- 這個 repo 沒有 `.env` 或 API key 流程，但若後續加入任何 token/config，必須排除出版本控制。
+最低檢查頁面載入、console、layout；依變更檢查 BLE connect、`USER`、`INIT,NORM`、anchor、classify、PRED、feature、manual、badges、chart 與 export。無 Web Bluetooth／ESP32 時只回報 static／render，不宣稱實機通過。
 
-## Git Workflow
+核心 Web 請求完成後停止。若同一假設失敗兩次，回頭檢查 queue、chunking、parser branch、polling state 與 firmware mode；若 firmware 版本或實際 reply 缺失會改變結論，只詢問最小缺失資訊。
 
-- repo 的預設穩定分支仍是 `main`，但這份文件是針對 `spp3_BLE_cls_pre_v3.1` branch 撰寫。
-- 若需求屬於目前主 Web 線，應在 `spp3_BLE_cls_pre_v3.1` 上處理，不要直接假設 `main` 與本 branch 完全等價。
-- 不要刪除、改名或重寫既有 branches，除非使用者明確要求。
+## Changelog
 
-## Agent Behavior
-
-- 修改前先讀 `README.md`、`spp3_BLE/index.html`、`spp3_BLE/app.js` 與相關 UI 區塊。
-- 優先做最小且可驗證的修改。
-- 修改後請列出改動檔案、原因與手動驗證方式。
-- 如果沒有做實機 BLE / ESP32 測試，要明確說明。
+- 2026-07-15 依 GPT-5.6 guidance 重寫為 goal、completion、scope、constraints、validation 與 stop rules，保留 Web 主線不變式。
