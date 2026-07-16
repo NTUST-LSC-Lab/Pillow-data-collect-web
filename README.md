@@ -9,11 +9,11 @@
 
 - `https://ntust-lsc-lab.github.io/Pillow-data-collect-web/spp3_BLE/`
 
-修改日期時間：`2026-07-07 16:08:44 CST (+0800)`
+修改日期時間：`2026-07-16 12:56:21 CST (+0800)`
 
 其中 `spp3_BLE/` 現在對應 `pose_pre_v3.1` 版本，包含：
 
-- 截圖精靈與 26 張固定姿勢收數流程
+- 截圖精靈與每個 applied height pose 26 張的固定姿勢收數流程
 - `R1~R5` 截圖命名規則
 - 可拖曳左右欄寬
 - 響應式截圖精靈卡片
@@ -101,6 +101,21 @@ S01_APL-BSHS_LOAD-BSHS_R1_01.svg
 S01_APL-BSHS_UNLOAD_R1_02.svg
 S01_APL-BSHS_ACT-BSHL_R1_03.svg
 ```
+
+### 完整資料量與後續整理
+
+一位受測者需要依序完成 `BSHS`、`BSHL`、`BLHLB`、`BLHLC`、`BLHL` 五個 applied height pose。每個 pose 會產生 26 張 SVG，完整收集共 130 張，建議整理成以下結構：
+
+```text
+Sxx/
+├── BSHS/    # 26 SVG
+├── BSHL/    # 26 SVG
+├── BLHLB/   # 26 SVG
+├── BLHLC/   # 26 SVG
+└── BLHL/    # 26 SVG
+```
+
+收集完成後，可使用 [`NTUST-LSC-Lab/ipillow-data-records-automation`](https://github.com/NTUST-LSC-Lab/ipillow-data-records-automation) 驗證 130 張 SVG，並在保留每次執行前備份的前提下，自動更新 `5pose_calibration`、`Basic_Info` 與 `pose_matrix_5x5` 三份 Excel。
 
 ## 2026-06-08 截圖修正
 
