@@ -4,7 +4,7 @@
 
 本分支與本 README 基於 ESP32 韌體 `pose_pre_v3.1` 進行修改。Web 端已對應 `pose_pre_v3.1` 的高度上下限、0.5 cm 高度步進、手動/自動分類模式、ESP32 Manual 控制、壓力/高度監測、右側線圖監測與指令合輯。
 
-修改日期時間：`2026-07-08 11:04:28 CST (+0800)`
+修改日期時間：`2026-07-16 13:06:26 CST (+0800)`
 
 ## 對應版本
 
@@ -114,6 +114,21 @@ http://localhost:8080/spp3/
 - `R1 = 6 張`
 - `R2~R5 = 20 張`
 - `總共 = 26 張 / 固定姿勢`
+
+### 完整受測者資料與自動整理
+
+一位受測者需要依序完成 `BSHS`、`BSHL`、`BLHLB`、`BLHLC`、`BLHL` 五個固定姿勢最佳高度。每個姿勢會產生 26 張 SVG，完整收集共 130 張，建議整理成以下結構：
+
+```text
+Sxx/
+├── BSHS/    # 26 SVG
+├── BSHL/    # 26 SVG
+├── BLHLB/   # 26 SVG
+├── BLHLC/   # 26 SVG
+└── BLHL/    # 26 SVG
+```
+
+收集完成後，可使用 [`NTUST-LSC-Lab/ipillow-data-records-automation`](https://github.com/NTUST-LSC-Lab/ipillow-data-records-automation) 驗證 130 張 SVG，並在保留每次執行前備份的前提下，自動更新 `5pose_calibration`、`Basic_Info` 與 `pose_matrix_5x5` 三份 Excel。
 
 ### 分數規則
 
