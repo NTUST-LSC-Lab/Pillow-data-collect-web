@@ -1,4 +1,14 @@
-# Pillow Data Collect Web - spp3_BLE_cls_pre_v3.1
+# Pillow Data Collect Web - spp3_BLE_cls_pre_v3.2
+
+> ⚠️ **測試版本**
+>
+> 此分支 `spp3_BLE_cls_pre_v3.2` 目前為 Windows 長時間量測效能優化測試版，尚未設為 default branch。
+>
+> 本版本主要針對 Windows 電腦使用 Web Bluetooth 進行長時間量測時，網頁可能隨量測時間增加而逐漸卡頓的問題進行優化。
+>
+> 主要測試項目：BLE 長時間連線、即時壓力／高度監測、線圖更新、訊息紀錄及長時間操作流暢度。
+>
+> 待 Windows 長時間量測測試確認穩定後，再評估是否取代 `spp3_BLE_cls_pre_v3.1` 或設定為 default branch。
 
 此分支是 iPillow Web BLE 資料收集、校正、控制與監測介面。主要入口是 `spp3_BLE/`，透過 Web Bluetooth 與 ESP32 溝通。
 
@@ -9,7 +19,7 @@
 ## 對應版本
 
 - Web repo：`NTUST-LSC-Lab/Pillow-data-collect-web`
-- Web branch：`spp3_BLE_cls_pre_v3.1`
+- Web branch：`spp3_BLE_cls_pre_v3.2`
 - ESP32 repo：`XUE030130/ipillow`
 - ESP32 branch：`pose_pre_v3.1`
 - 主要 Web 目錄：`spp3_BLE/`
