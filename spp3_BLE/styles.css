@@ -2478,3 +2478,17 @@ button.full {
     text-align: left;
   }
 }
+
+/* Long-running measurement performance guards */
+#serial_status,
+.monitor-log {
+  /* Prevent scroll anchoring/repaint work from propagating through the whole page
+     while high-rate sensor messages are appended. */
+  overflow-anchor: none;
+  contain: paint;
+}
+
+.chart-card {
+  /* Keep canvas repaints local to each chart card. */
+  contain: paint;
+}

@@ -65,13 +65,107 @@
 		let serial_ready = false;
 		let commandBuffer = [];
 
-		// BLE Queue to handle sequential operations
+		// Performance guards for long-running experiments.
+		// Keep the visible DOM bounded while preserving the full text log for export.
+		const MAX_SERIAL_DOM_LINES = 1000;
+		const MAX_MONITOR_DOM_LINES = 500;
+		const MAX_DEBUG_BUFFER_CHARS = 131072;
+		const MAX_BLE_QUEUE = 24;
+		let serialDomLineCount = 0;
+		let monitorDomLineCount = 0;
+		let serialExportLog = [];
+		let serialAutoScroll = true;
+		let monitorAutoScroll = true;
+		const pendingScrollElements = new WeakSet();
+		const bleTextDecoder = new TextDecoder('utf-8');
+
+		document.querySelectorAll('input[name="scrollControl"]').forEach((input) => {
+			input.addEventListener('change', () => {
+				serialAutoScroll = input.checked ? input.value === "auto" : serialAutoScroll;
+			});
+		});
+		document.querySelectorAll('input[name="monitorScrollControl"]').forEach((input) => {
+			input.addEventListener('change', () => {
+				monitorAutoScroll = input.checked ? input.value === "auto" : monitorAutoScroll;
+			});
+		});
+
+		function scheduleAutoScroll(element) {
+			if (!element || pendingScrollElements.has(element)) return;
+			pendingScrollElements.add(element);
+			requestAnimationFrame(() => {
+				pendingScrollElements.delete(element);
+				element.scrollTop = element.scrollHeight;
+			});
+		}
+
+		function trimLineDom(container, maxLines, counterName) {
+			let count = counterName === "serial" ? serialDomLineCount : monitorDomLineCount;
+			while (count > maxLines && container.firstChild) {
+				// Every appended log line is stored as one content node followed by one <br>.
+				container.removeChild(container.firstChild);
+				if (container.firstChild && container.firstChild.nodeName === "BR") {
+					container.removeChild(container.firstChild);
+				}
+				count--;
+			}
+			if (counterName === "serial") serialDomLineCount = count;
+			else monitorDomLineCount = count;
+		}
+
+		function appendSerialDomLine(message, colour, keepForExport = true) {
+			if (!serial_status) return;
+			const text = String(message);
+			const fragment = document.createDocumentFragment();
+			const font = document.createElement('font');
+			font.setAttribute('color', colour);
+			font.textContent = text;
+			fragment.appendChild(font);
+			fragment.appendChild(document.createElement('br'));
+			serial_status.appendChild(fragment);
+			serialDomLineCount++;
+			trimLineDom(serial_status, MAX_SERIAL_DOM_LINES, "serial");
+			if (keepForExport) serialExportLog.push(text);
+		}
+
+		function appendMonitorDomLine(message) {
+			if (!heightPressureLog) return;
+			const fragment = document.createDocumentFragment();
+			fragment.appendChild(document.createTextNode(String(message)));
+			fragment.appendChild(document.createElement('br'));
+			heightPressureLog.appendChild(fragment);
+			monitorDomLineCount++;
+			trimLineDom(heightPressureLog, MAX_MONITOR_DOM_LINES, "monitor");
+		}
+
+		// BLE Queue: keep writes sequential, but never let recurring polling build an
+		// unbounded backlog on slower Windows Bluetooth stacks. Interactive commands
+		// are inserted ahead of droppable polling tasks while preserving FIFO order.
 		const bleQueue = {
 			queue: [],
 			isProcessing: false,
-			add: function (fn) {
-				this.queue.push(fn);
+			pendingKeys: new Set(),
+			add: function (fn, options = {}) {
+				const { key = null, priority = true, droppable = false } = options;
+				if (key && this.pendingKeys.has(key)) return false;
+				if (droppable && this.queue.length >= MAX_BLE_QUEUE) return false;
+
+				const task = { fn, key, droppable };
+				if (key) this.pendingKeys.add(key);
+
+				if (priority) {
+					const firstPollingTask = this.queue.findIndex(item => item.droppable);
+					if (firstPollingTask === -1) this.queue.push(task);
+					else this.queue.splice(firstPollingTask, 0, task);
+				} else {
+					this.queue.push(task);
+				}
 				this.process();
+				return true;
+			},
+			clear: function () {
+				this.queue.length = 0;
+				this.pendingKeys.clear();
 			},
 			process: async function () {
 				if (this.isProcessing || this.queue.length === 0) return;
@@ -80,15 +174,18 @@
 				const task = this.queue.shift();
 
 				try {
-					await task();
+					await task.fn();
 				} catch (error) {
-					console.error("BLE Queue Error:", error);
-					serial_message("Queue Error: " + error.message, "red");
-				} finally {
-					this.isProcessing = false;
-					if (this.queue.length > 0) {
-						this.process();
+					// A disconnect can invalidate the current write. Do not turn that into a
+					// second flood of DOM log messages.
+					if (serial_ready) {
+						console.error("BLE Queue Error:", error);
+						serial_message("Queue Error: " + error.message, "red");
 					}
+				} finally {
+					if (task.key) this.pendingKeys.delete(task.key);
+					this.isProcessing = false;
+					if (this.queue.length > 0) this.process();
 				}
 			}
 		};
@@ -648,9 +745,7 @@
 						});
 
 					// const txtContent = serial_status.innerHTML.replace(/<[^>]*>/g, ''); // Remove HTML tags
-					const txtContent = serial_status.innerHTML
-						.replace(/<br\s*\/?>/gi, '\n') // 將 <br> 和 <br/> 轉換成換行符號
-						.replace(/<[^>]*>/g, ''); // 移除剩餘的 HTML 標籤
+					const txtContent = serialExportLog.join('\n') + (serialExportLog.length ? '\n' : '');
 
 					const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
 					const txtBlob = new Blob([txtContent], { type: 'text/plain;charset=utf-8;' });
@@ -696,12 +791,9 @@
 
 		// BLE Notifications Handle
 		function handleNotifications(event) {
-			let value = event.target.value;
-			let a = [];
-			for (let i = 0; i < value.byteLength; i++) {
-				a.push(String.fromCharCode(value.getUint8(i)));
-			}
-			let str = a.join("");
+			const value = event.target.value;
+			const bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+			const str = bleTextDecoder.decode(bytes);
 
 			// Accumulate string to handle fragmented packets
 			serial_readSting += str;
@@ -716,7 +808,6 @@
 						line = line.trim();
 						if (line) {
 							clearTimeout(serial_timer);
-							console.log(line);
 							const ackLine = line.toLowerCase();
 							if (ackLine.startsWith("synctime")) {
 								setSyncTimeAck(`已同步 (${formatAckTime()})`, "ok");
@@ -746,6 +837,14 @@
 
 		var chart_data_count = 0;
 		function fillChartArray() {
+			// Reconnecting used to append another 50 seed points every time. Reset the
+			// fixed-size chart buffers first so reconnects cannot grow them indefinitely.
+			chart.data.labels.length = 0;
+			chart.data.datasets.forEach(dataset => { dataset.data.length = 0; });
+			chart2.data.labels.length = 0;
+			chart2.data.datasets.forEach(dataset => { dataset.data.length = 0; });
+			chart3.data.labels.length = 0;
+			chart3.data.datasets.forEach(dataset => { dataset.data.length = 0; });
 
 			for (var i = 0; i < 50; i++) {
 				chart.data.labels.push("");
@@ -805,8 +904,18 @@
 
 		function onDisconnected(event) {
 			const device = event.target;
-			serial_message(`Device ${device.name} is disconnected.`, "red");
 			serial_ready = false;
+			bleQueue.clear();
+			clearTimeout(serial_timer);
+			serial_readSting = "";
+			if (txCharacteristic) {
+				txCharacteristic.removeEventListener('characteristicvaluechanged', handleNotifications);
+			}
+			rxCharacteristic = null;
+			txCharacteristic = null;
+			nusService = null;
+			bluetoothServer = null;
+			serial_message(`Device ${device.name || "BLE"} is disconnected.`, "red");
 		}
 
 		serial_buttonClose.addEventListener('click', async () => {
@@ -863,7 +972,9 @@
 		});
 
 		serial_clearText.addEventListener('click', async () => {
-			serial_status.innerHTML = "";
+			serial_status.replaceChildren();
+			serialDomLineCount = 0;
+			serialExportLog = [];
 		});
 
 		commandGuideBtn?.addEventListener('click', function (event) {
@@ -1396,11 +1507,9 @@
 			if (!heightPressureLog) {
 				return;
 			}
-			const safeMsg = String(message).replace(/</g, "&lt;").replace(/>/g, "&gt;");
-			heightPressureLog.insertAdjacentHTML('beforeend', `${safeMsg}<br>`);
-			const scrollControl = document.querySelector('input[name="monitorScrollControl"]:checked')?.value || "auto";
-			if (scrollControl === "auto") {
-				heightPressureLog.scrollTop = heightPressureLog.scrollHeight;
+			appendMonitorDomLine(message);
+			if (monitorAutoScroll) {
+				scheduleAutoScroll(heightPressureLog);
 			}
 		}
 
@@ -2521,13 +2630,12 @@
 		}
 
 		function serial_message(msg, colour, show = true) {
-			const safeMsg = String(msg).replace(/</g, "&lt;").replace(/>/g, "&gt;");
-			var scrollControl = document.querySelector('input[name="scrollControl"]:checked')?.value || "auto";
+			const scrollControl = serialAutoScroll ? "auto" : "fixed";
 			if (show) {
-				serial_status.insertAdjacentHTML('beforeend', "<font color='" + colour + "'>" + safeMsg + "</font><br>");
+				appendSerialDomLine(msg, colour);
 			}
-			if (show && scrollControl === "auto") {
-				serial_status.scrollTop = serial_status.scrollHeight;
+			if (show && serialAutoScroll) {
+				scheduleAutoScroll(serial_status);
 			}
 
 
@@ -2538,6 +2646,9 @@
 
 			if (colour === "green" || colour === LOG_SUCCESS_GREEN) {
 				debugDataBuffer += `${msg}\n`;
+				if (debugDataBuffer.length > MAX_DEBUG_BUFFER_CHARS) {
+					debugDataBuffer = debugDataBuffer.slice(-MAX_DEBUG_BUFFER_CHARS);
+				}
 				if (debugDataBuffer.includes('N2LP=')) {
 					let cleanedData = debugDataBuffer.replace(/\r?\n|\r/g, ' ').replace(/\s+/g, ' ').trim();
 					const regex = /(\w+)=([^=\s]+)/g;
@@ -2608,10 +2719,8 @@
 					if (values.length >= 7) {
 						values.forEach((value, index) => {
 							if (index == 0) {
-								serial_status.innerHTML += "<font color='" + colour + "'>" + "diff: " + value + "</font><br>";
-								if (scrollControl === "auto") {
-									serial_status.scrollTop = serial_status.scrollHeight;
-								}
+								appendSerialDomLine("diff: " + value, colour);
+								if (scrollControl === "auto") scheduleAutoScroll(serial_status);
 								// Update chart data and labels
 								var now = new Date();
 								if (chart_data_count % 10 == 0) {
@@ -2632,10 +2741,8 @@
 							}
 
 							if (index == 1) {
-								serial_status.innerHTML += "<font color='" + colour + "'>" + "state: " + value + "</font><br>";
-								if (scrollControl === "auto") {
-									serial_status.scrollTop = serial_status.scrollHeight;
-								}
+								appendSerialDomLine("state: " + value, colour);
+								if (scrollControl === "auto") scheduleAutoScroll(serial_status);
 								state = value;
 								const stateName = SystemState[state] || "UNKNOWN (" + state + ")";
 								const stateDisplay = document.getElementById('systemStateDisplay');
@@ -2663,10 +2770,8 @@
 								}
 							}
 							if (index == 2) {
-								serial_status.innerHTML += "<font color='" + colour + "'>" + "onoff: " + value + "</font><br>";
-								if (scrollControl === "auto") {
-									serial_status.scrollTop = serial_status.scrollHeight;
-								}
+								appendSerialDomLine("onoff: " + value, colour);
+								if (scrollControl === "auto") scheduleAutoScroll(serial_status);
 								onoff_event = value;
 								for (let i = 1; i <= 6; i++) {
 									const isOn = (onoff_event >> (i - 1)) & 1;
@@ -2681,10 +2786,8 @@
 								}
 							}
 							if (index == 3) {
-								serial_status.innerHTML += "<font color='" + colour + "'>" + "last5: " + value + "</font><br>";
-								if (scrollControl === "auto") {
-									serial_status.scrollTop = serial_status.scrollHeight;
-								}
+								appendSerialDomLine("last5: " + value, colour);
+								if (scrollControl === "auto") scheduleAutoScroll(serial_status);
 								// Update chart data and labels
 								var now = new Date();
 								if (chart_data_count % 10 == 0) {
@@ -2702,10 +2805,8 @@
 								last5pointAvg = value;
 							}
 							if (index == 4) {
-								serial_status.innerHTML += "<font color='" + colour + "'>" + "prev5: " + value + "</font><br>";
-								if (scrollControl === "auto") {
-									serial_status.scrollTop = serial_status.scrollHeight;
-								}
+								appendSerialDomLine("prev5: " + value, colour);
+								if (scrollControl === "auto") scheduleAutoScroll(serial_status);
 								// Update chart data and labels
 								chart2.data.datasets[1].data.push(value);
 								if (chart_data_count > 50) {
@@ -2716,21 +2817,16 @@
 								updateChartIfVisible(chart2, averageChartSection);
 							}
 							if (index == 5) {
-								serial_status.innerHTML += "<font color='" + colour + "'>" + "predict_pose: " + value + "</font><br>";
-								if (scrollControl === "auto") {
-									serial_status.scrollTop = serial_status.scrollHeight;
-								}
+								appendSerialDomLine("predict_pose: " + value, colour);
+								if (scrollControl === "auto") scheduleAutoScroll(serial_status);
 								predict_Pose = value;
 							}
 							if (index == 6) {
-								serial_status.innerHTML += "<font color='" + colour + "'>" + "pose: " + value + "</font><br>";
-								if (scrollControl === "auto") {
-									serial_status.scrollTop = serial_status.scrollHeight;
-								}
+								appendSerialDomLine("pose: " + value, colour);
+								if (scrollControl === "auto") scheduleAutoScroll(serial_status);
 								Pose_event = value;
 							}
 						});
-						console.log(chart_data_count);
 						chart_data_count++;
 
 						// store to db
@@ -2738,7 +2834,6 @@
 
 						let combinedCommands = commandBuffer.join('; ');
 						DBModule.save(dataToSave, combinedCommands).then(() => {
-							console.log('Data saved');
 							commandBuffer = []; // Clear buffer after saving
 						}).catch(error => {
 							console.error('Save error:', error);
@@ -2760,17 +2855,18 @@
 				now.getMilliseconds().toString().padStart(3, '0');
 
 			commandBuffer.push(`${command} @${timeString}`);
-			console.log('Command buffered: ' + command);
 		}
 
-		function queueBleWrite(message) {
-			if (!rxCharacteristic) {
-				return;
-			}
-			const encoder = new TextEncoder();
-			bleQueue.add(async () => {
-				await rxCharacteristic.writeValue(encoder.encode(message));
-			});
+		const bleTextEncoder = new TextEncoder();
+		function queueBleWrite(message, options = {}) {
+			if (!rxCharacteristic) return false;
+			const characteristicAtQueueTime = rxCharacteristic;
+			const payload = bleTextEncoder.encode(message);
+			return bleQueue.add(async () => {
+				// Never let an old queued write leak into a newly reconnected characteristic.
+				if (characteristicAtQueueTime !== rxCharacteristic) return;
+				await characteristicAtQueueTime.writeValue(payload);
+			}, options);
 		}
 
 		function normalizeCommand(command) {
@@ -2778,26 +2874,31 @@
 		}
 
 		function sendCommand(cmdStr, options = {}) {
-			const { track = true, show = true } = options;
-			if (!rxCharacteristic) {
-				return;
-			}
+			const {
+				track = true,
+				show = true,
+				queueKey = null,
+				priority = true,
+				droppable = false
+			} = options;
+			if (!rxCharacteristic) return false;
 			const msg = normalizeCommand(cmdStr);
 			const logText = msg.replace(/[\r\n]+$/, '');
-			if (track) {
-				logCommand(logText);
-			}
-			if (show) {
-				serial_message(logText, "orange");
-			}
-			queueBleWrite(msg);
+			if (track) logCommand(logText);
+			if (show) serial_message(logText, "orange");
+			return queueBleWrite(msg, { key: queueKey, priority, droppable });
 		}
 
 		function sendSilentCommand(cmdStr) {
-			if (!rxCharacteristic || !serial_ready) {
-				return;
-			}
-			sendCommand(cmdStr, { track: false, show: false });
+			if (!rxCharacteristic || !serial_ready) return false;
+			const queueKey = `poll:${String(cmdStr).trim().toUpperCase()}`;
+			return sendCommand(cmdStr, {
+				track: false,
+				show: false,
+				queueKey,
+				priority: false,
+				droppable: true
+			});
 		}
 
 		var func_count = 0;
@@ -2926,7 +3027,8 @@
 
 			monitorClearLog?.addEventListener('click', function () {
 				if (heightPressureLog) {
-					heightPressureLog.innerHTML = "";
+					heightPressureLog.replaceChildren();
+					monitorDomLineCount = 0;
 				}
 			});
 
