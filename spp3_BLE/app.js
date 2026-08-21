@@ -789,6 +789,25 @@
 
 		const LOG_SUCCESS_GREEN = "#c8ffd7";
 
+		// A silent DEBUG reply is multi-line, but the ESP32 can interleave normal
+		// telemetry and ACKs while it is being returned. Keep those records in the
+		// export log so the CSV pressure snapshot remains traceable to its P:/I:
+		// source lines.
+		function isTelemetryOrProtocolLine(line) {
+			return /^(?:P:|I:|EXPERIMENT,|USER,|INIT,|SET,|ANCHOR,|CLASSIFY,|PRED,|FEATURE,|MANUAL,|HEIGHT_(?:SET|LIMIT),|synctime\b)/i.test(String(line).trim());
+		}
+
+		function finishSilentDebugResponse(line) {
+			if (!String(line).includes("pre_stable_label=")) {
+				return;
+			}
+			suppressSilentDebugResponse = false;
+			if (silentDebugSuppressTimer) {
+				clearTimeout(silentDebugSuppressTimer);
+				silentDebugSuppressTimer = null;
+			}
+		}
+
 		// BLE Notifications Handle
 		function handleNotifications(event) {
 			const value = event.target.value;
@@ -812,15 +831,9 @@
 							if (ackLine.startsWith("synctime")) {
 								setSyncTimeAck(`已同步 (${formatAckTime()})`, "ok");
 							}
-							const hideLine = suppressSilentDebugResponse;
+							const hideLine = suppressSilentDebugResponse && !isTelemetryOrProtocolLine(line);
 							serial_message(line, LOG_SUCCESS_GREEN, !hideLine);
-							if (hideLine && line.includes("pre_stable_label=")) {
-							suppressSilentDebugResponse = false;
-							if (silentDebugSuppressTimer) {
-								clearTimeout(silentDebugSuppressTimer);
-								silentDebugSuppressTimer = null;
-							}
-						}
+							finishSilentDebugResponse(line);
 					}
 				}
 			} else {
@@ -828,7 +841,10 @@
 				clearTimeout(serial_timer);
 				serial_timer = setTimeout(function () {
 					if (serial_readSting != "") {
-						serial_message(serial_readSting, LOG_SUCCESS_GREEN, !suppressSilentDebugResponse);
+						const partialLine = serial_readSting;
+						const hideLine = suppressSilentDebugResponse && !isTelemetryOrProtocolLine(partialLine);
+						serial_message(partialLine, LOG_SUCCESS_GREEN, !hideLine);
+						finishSilentDebugResponse(partialLine);
 						serial_readSting = "";
 					}
 				}, 100);
