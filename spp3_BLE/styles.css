@@ -159,8 +159,9 @@ body {
     "card3 card3"
     "card4 card4"
     "card5 card5"
-    "card6 card6";
-  grid-template-rows: max-content max-content max-content max-content max-content max-content;
+    "experiment experiment"
+    "message-log message-log";
+  grid-template-rows: repeat(7, max-content);
   align-content: start;
   align-items: stretch;
 }
@@ -170,7 +171,8 @@ body {
 .left-panel > .panel-card:nth-child(3) { grid-area: card3; }
 .left-panel > .panel-card:nth-child(4) { grid-area: card4; }
 .left-panel > .panel-card:nth-child(5) { grid-area: card5; }
-.left-panel > .panel-card:nth-child(6) { grid-area: card6; }
+.left-panel > .experiment-hub-card { grid-area: experiment; }
+.left-panel > .message-log-card { grid-area: message-log; }
 
 
 .panel-card,
@@ -216,7 +218,8 @@ body {
 
 .left-panel > .panel-card:nth-child(4),
 .left-panel > .panel-card:nth-child(5),
-.left-panel > .panel-card:nth-child(6) {
+.left-panel > .experiment-hub-card,
+.left-panel > .message-log-card {
   min-height: max-content;
   align-self: start;
 }
@@ -1377,6 +1380,276 @@ button.full {
   display: none;
 }
 
+.experiment-hub-card {
+  container: experiment-hub / inline-size;
+}
+
+.experiment-hub-card > .accordion-header {
+  margin-bottom: 0;
+}
+
+.experiment-hub-card > .accordion-body {
+  padding-top: 8px;
+}
+
+.experiment-hub-card > .accordion-body:not(.is-collapsed) {
+  display: grid;
+  gap: 8px;
+}
+
+.experiment-navigation {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.experiment-navigation button {
+  min-width: 36px;
+  min-height: 32px;
+  padding: 2px 10px;
+  font-size: calc(24px + var(--font-size-adjust));
+  line-height: 1;
+}
+
+#experimentCounter {
+  text-align: center;
+  color: #183560;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.experiment-title {
+  margin: 0;
+  color: #143265;
+  font-size: calc(17px + var(--font-size-adjust));
+  font-weight: 700;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.experiment-select-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.experiment-select-row select {
+  min-width: 0;
+}
+
+.experiment-status-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.experiment-content {
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.experiment-content-heading {
+  margin: 0 0 8px;
+  color: #183560;
+  font-size: calc(15px + var(--font-size-adjust));
+}
+
+#experimentView > :first-child {
+  margin-top: 0;
+}
+
+#experimentView > :last-child {
+  margin-bottom: 0;
+}
+
+.experiment-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: calc(13px + var(--font-size-adjust));
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.experiment-controls {
+  margin-bottom: 0;
+}
+
+.experiment-hub-card .pill-error {
+  background: #ffe8e8;
+  border-color: #e5a6a6;
+  color: #9b2525;
+}
+
+.pressure-experiment {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pressure-experiment p,
+.pressure-experiment dl {
+  margin: 0;
+}
+
+.pressure-experiment .pressure-purpose {
+  color: #183560;
+  line-height: 1.5;
+}
+
+.pressure-experiment .pressure-run-settings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+  min-inline-size: 0;
+  width: 100%;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.pressure-experiment legend {
+  padding: 0 4px;
+  color: #183560;
+  font-weight: 700;
+}
+
+.pressure-experiment .pressure-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  align-content: start;
+}
+
+.pressure-experiment .pressure-field-wide {
+  grid-column: 1 / -1;
+}
+
+.pressure-experiment input,
+.pressure-experiment select,
+.pressure-experiment textarea {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pressure-experiment textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #bdcbdf;
+  border-radius: 9px;
+  padding: 8px 10px;
+  background: #f8fbff;
+  color: var(--text);
+  font: inherit;
+}
+
+.pressure-experiment .pressure-field-hint {
+  color: var(--muted);
+  font-size: calc(13px + var(--font-size-adjust));
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.pressure-experiment .pressure-setup-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.5;
+}
+
+.pressure-experiment input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 3px 0 0;
+}
+
+.pressure-experiment .pressure-warning {
+  padding: 6px 8px;
+  border: 1px solid #e8c990;
+  border-radius: 8px;
+  background: #fff2dc;
+  color: #8a5b0b;
+  line-height: 1.5;
+}
+
+.pressure-experiment .pressure-warning:empty {
+  display: none;
+}
+
+.pressure-experiment .pressure-live-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+.pressure-experiment .pressure-live-grid > div {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.pressure-experiment .pressure-live-grid dt {
+  color: var(--muted);
+  font-size: calc(12px + var(--font-size-adjust));
+  line-height: 1.4;
+}
+
+.pressure-experiment .pressure-live-grid dd {
+  margin: 4px 0 0;
+  color: #183560;
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.pressure-experiment .pressure-chart-wrap {
+  position: relative;
+  min-width: 0;
+  height: 220px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.pressure-experiment .pressure-chart-wrap canvas {
+  max-width: 100%;
+}
+
+.pressure-experiment .pressure-run-summary {
+  color: #183560;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+@container experiment-hub (max-width: 420px) {
+  .experiment-select-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pressure-experiment .pressure-run-settings {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pressure-experiment .pressure-live-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pressure-experiment .pressure-chart-wrap {
+    height: 200px;
+  }
+}
+
 .capture-guide-panel {
   display: grid;
   gap: 12px;
@@ -1749,7 +2022,7 @@ button.full {
   word-break: break-word;
 }
 
-.left-panel > .panel-card:nth-child(6) #serial_status {
+.message-log-card #serial_status {
   min-height: clamp(220px, 30vh, 320px);
 }
 
@@ -2295,8 +2568,8 @@ button.full {
     display: block;
   }
 
-  .left-panel > .panel-card:nth-child(6) {
-    grid-area: card6;
+  .left-panel > .experiment-hub-card,
+  .left-panel > .message-log-card {
     display: block;
   }
 
@@ -2421,7 +2694,8 @@ button.full {
       "card3"
       "card4"
       "card5"
-      "card6";
+      "experiment"
+      "message-log";
   }
 
   .monitor-current-grid {

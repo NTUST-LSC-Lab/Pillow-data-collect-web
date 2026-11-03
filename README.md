@@ -1,63 +1,238 @@
-# Pillow Data Collect Web - spp3_BLE_cls_pre_v3.1
+# Pillow Data Collect Web - spp3_BLE_v4
 
-此分支是 iPillow Web BLE 資料收集、校正、控制與監測介面。主要入口是 `spp3_BLE/`，透過 Web Bluetooth 與 ESP32 溝通。
+台科大智慧枕墊資料收集系統（iPillow Web）。主要入口是 `spp3_BLE/`，以純 HTML／CSS／JavaScript 透過 Web Bluetooth 與 ESP32 溝通，提供資料收集、校正、控制與監測介面。
 
-本分支與本 README 基於 ESP32 韌體 `pose_pre_v3.1` 進行修改。Web 端已對應 `pose_pre_v3.1` 的高度上下限、0.5 cm 高度步進、手動/自動分類模式、ESP32 Manual 控制、壓力/高度監測、右側線圖監測與指令合輯。
+本版以 `spp3_BLE_cls_pre_v3.1` 為基礎，新增可收合的「實驗專區」及 Experiment 01 的 30 秒壓力資料收集、條件曲線保存、CSV＋PNG 匯出。保留既有雙欄介面、截圖精靈、BLE queue、IndexedDB、全站 Export Data、校正、分類、PRED 與 Manual 控制。
 
-修改日期時間：`2026-07-16 13:06:26 CST (+0800)`
+修改日期時間：`2026-11-03 21:42:11 CST (+0800)`（Asia/Taipei；本次功能整理與 README 更新時間）
+
+目前驗證狀態：**50 項 Node 回歸測試通過；使用者在 Mac Terminal 執行 Chrome 156.0.8078.80＋Chart.js 4.6.1 的合成資料瀏覽器測試通過。可提交此 Web 功能版本供實機驗證；尚未完成 ESP32 實機驗收，也不表示辨識穩健性已獲驗證。**
 
 ## 對應版本
 
-- Web repo：`NTUST-LSC-Lab/Pillow-data-collect-web`
-- Web branch：`spp3_BLE_cls_pre_v3.1`
+- Web repo：[`NTUST-LSC-Lab/Pillow-data-collect-web`](https://github.com/NTUST-LSC-Lab/Pillow-data-collect-web)
+- Web branch／本次提交目標：[`spp3_BLE_v4`](https://github.com/NTUST-LSC-Lab/Pillow-data-collect-web/tree/spp3_BLE_v4)
+- Web 基底：`spp3_BLE_cls_pre_v3.1`
 - ESP32 repo：`XUE030130/ipillow`
-- ESP32 branch：`pose_pre_v3.1`
-- 主要 Web 目錄：`spp3_BLE/`
+- ESP32 branch：`pose_pre_v3.1`；沿用基底版本的協定與預期配對，本次未更新 firmware 或重新驗證整套硬體相容性。
+- 主要 Web 目錄：`spp3_BLE/`；舊版 Web Serial 介面保留在 `spp3/`。
+
+本次已查證遠端 `spp3_BLE_v4` 分支存在。本機工作資料夾沒有 `.git`，不能把資料夾名稱當成已 checkout 的分支，也不能在此資料夾判定 Git 工作區乾淨；本文件更新不表示已 commit、push 或部署。
 
 ## 目錄結構
 
 ```text
 Pillow-data-collect-web/
 ├─ spp3_BLE/
-│  ├─ index.html
-│  ├─ styles.css
-│  └─ app.js
-├─ spp3/
-│  ├─ index.html
-│  ├─ styles.css
-│  └─ app.js
+│  ├─ index.html                 # 主頁、Experiment Hub 與實驗表單 template
+│  ├─ styles.css                 # 雙欄、七張左欄 Card 與實驗響應式樣式
+│  ├─ app.js                     # 既有 BLE／控制流程及已解析壓力樣本的橋接
+│  ├─ experiment-hub.js          # 九實驗選擇、共用控制及離頁保護
+│  ├─ pressure-experiment.js     # Experiment 01 表單、曲線、條件暫存及雙檔下載
+│  └─ pressure-recorder.js       # 30 秒記錄器、時間／中斷狀態及 CSV
+├─ tests/
+│  ├─ pressure-recorder.test.cjs
+│  ├─ pressure-bridge.test.cjs
+│  ├─ experiment-hub.test.cjs
+│  ├─ pressure-ui.test.cjs
+│  ├─ chart-options.test.cjs
+│  └─ chart-browser-smoke.cjs
+├─ spp3/                        # 保留原 Web Serial 版本
 ├─ Images/
 │  ├─ s.png
 │  └─ l.png
-├─ chart.umd.min.js
+├─ chart.umd.min.js              # 既有本機 Chart.js 4.4.1，未替換
+├─ AGENTS.md
 └─ README.md
 ```
 
 ## 啟動方式
 
-建議使用最新版 Chrome 或 Edge。Web Bluetooth 需要安全來源，請用本機 HTTP server 開啟，不建議直接雙擊 HTML。
+使用支援 Web Bluetooth 的 Chrome 或 Edge。Web Bluetooth 需要安全來源；本機開發可使用 `localhost`，部署時使用 HTTPS。不建議直接雙擊 HTML。
 
 在 repo 根目錄執行：
 
 ```bash
-python -m http.server 8080
+python3 -m http.server 8080
 ```
 
-開啟：
+開啟 `http://localhost:8080/spp3_BLE/`。舊版 Web Serial 入口為 `http://localhost:8080/spp3/`。
+
+主頁沿用 `https://cdn.jsdelivr.net/npm/chart.js` 載入 Chart.js，未鎖定 CDN 版本；本次瀏覽器實際載入的是 **4.6.1**。根目錄的 `chart.umd.min.js` 是 **4.4.1**，供既有用途及 options resolver 回歸測試使用，不代表主頁也載入 4.4.1。CDN 後續版本不同時需重新測試，不能沿用本次版本的通過結論。
+
+## 2026-11-03 v4 實驗功能與修正
+
+功能整理與文件更新時間：`2026-11-03 21:42:11 CST (+0800)`。下列為本日新增／修正內容，非各項功能的獨立完成時間。
+
+| 項目 | 新增或修正內容 |
+| --- | --- |
+| 共用 Experiment Hub | 新增左欄第六張 Card，位於監測與訊息紀錄之間；九實驗共用外框、上一個／下一個箭頭及 Dropdown，每次只顯示一個內容。首次收合，之後保留展開偏好；切換不 reload。 |
+| Experiment 01 | 實作固定睡姿、對應高度下的自然呼吸與微動資料收集；四條件各 30 秒。Experiment 02–09 保留未設定插槽，不提供虛構流程。 |
+| 記錄與狀態 | 新增受試者代號、試次、條件、高度、備註及人工確認；開始時建立快照，進行中鎖定切換，支援自動結束、提前結束、斷線／資料逾時中斷。 |
+| 實驗線圖 | 三通道共用 0–30 秒／ADC 圖表，沿用紅／綠／藍配色；四條件各保存最後一輪結果與曲線，切回可恢復。 |
+| CSV＋PNG | 每輪輸出 23 欄 CSV 與同名前綴線圖 PNG；畫面摘要及 PNG 不顯示 UUID，CSV 與檔名保留唯一 run_id。 |
+| 資料保護 | 同條件重測前須先要求匯出並確認替換；任一條件記錄中或有未匯出樣本時提供離頁提醒。資料仍僅存於記憶體。 |
+| 初始化修正 | 修正 Hub Dropdown 的區域變數遮蔽初始化 options，確保實驗模組取得 `getSystemState` 並正確更新開始按鈕。 |
+| Chart.js 修正 | 避免將已解析的 `chart.options.plugins` Proxy 指定回自身；在普通設定物件初始化 title，更新時只改 title.text，修正 `Maximum call stack size exceeded`。 |
+| 左欄排列 | 原六張 Card 調整為七張；實驗與訊息紀錄使用對應 grid area，避免新增 Card 後訊息紀錄的排列／高度失效。 |
+| 回歸驗證 | 新增記錄器、BLE parser bridge、Hub、UI／匯出、真實 Chart options resolver 與 Chrome smoke 測試；驗證範圍及結果詳見下方。 |
+
+## Experiment 01 壓力資料收集
+
+實驗專區位於左欄「高度與壓力監測」與「訊息紀錄」之間，九個實驗共用同一個 Hub。首次預設收合，收合僅隱藏介面；Experiment 02–09 仍為未設定插槽。「九個實驗的切換」與「Experiment 01 的四種條件」是兩個不同層級。
+
+### 目的與條件
+
+Experiment 01：**固定睡姿下自然呼吸與微動之辨識穩健性測試**。本階段只收集 ESP32 `P:` 訊息回傳的三通道 ADC，匯出 CSV 與 PNG；分類及穩健性評估在之後離線進行，網頁沒有即時準確率或分類結論，也未將研究分類模型加入 ESP32。
+
+| condition_id | actual_pose | height_condition | test_condition | 操作情境 |
+| --- | --- | --- | --- | --- |
+| 01 | pose1 | height1 | still | 睡姿一／對應高度／穩定不動、自然呼吸 |
+| 02 | pose1 | height1 | movement | 睡姿一／對應高度／微微作動、自然呼吸 |
+| 03 | pose5 | height5 | still | 睡姿五／對應高度／穩定不動、自然呼吸 |
+| 04 | pose5 | height5 | movement | 睡姿五／對應高度／微微作動、自然呼吸 |
+
+數字姿勢 ID 暫不映射 BSHS／BLHL。每條件各收集一輪 30 秒，四輪合計 120 秒記錄窗口；不含調整姿勢／高度、等待穩定及匯出。自然呼吸不憋氣；微動是同一睡姿的小幅調整，不另制定頻率、幅度或動作腳本。本實驗沒有高度錯配條件。
+
+### 操作者流程
+
+1. 用支援 Web Bluetooth 的瀏覽器開啟 `spp3_BLE/`，連接 ESP32。確認持續收到有效三通道資料；實驗顯示最新接收時間、ADC 與觀察間隔。開始前須已收到至少兩筆完整訊息且資料未過期，這不是自動判定受試者穩定。
+2. 展開「實驗專區」，選擇 Experiment 01，填受試者代號（例如 S01，不填姓名）及正整數試次編號。試次是同一受試者、同一條件的第幾次重測；四個條件的第一輪都可填 `1`，同條件再測時由操作者改為 `2`，不會自動遞增。
+3. 選一個條件，依畫面安排睡姿與對應高度，人工確認並填入 Head／Neck 本輪設定高度與可選備註。Head 為 7–16 cm，Neck 為 10–14 cm，步進 0.5 cm。這些數值是操作者紀錄，不是自動量測，也不下達控制命令。
+4. 檢查控制狀態提醒。既有自動模式／PRED 可能改變高度，與固定高度條件不符；由操作者確認及處理既有控制狀態，本實驗不會自行停止 PRED、切換模式、重送 USER、清除 anchors 或控制充放氣。
+5. 自行等待受試者穩定，勾選本輪設定確認，再按「開始記錄」。不另加等待秒數或自動判穩門檻。本輪設定與實驗切換在記錄期間鎖定；仍可收合 Hub，收集不會停止。
+6. 30 秒到時自動結束。若按「提前結束」，保留已有樣本並標示未完成。檢查本輪曲線、樣本數、狀態及條件快照。
+7. 按「匯出 CSV＋線圖」，確認同名前綴的 CSV 與 PNG 都已保存，再選下一條件。同一條件未要求匯出的樣本會阻擋重測；重測前仍會詢問是否已保存兩個檔案。瀏覽器若詢問多檔下載，需允許此網站；程式只能確認已要求下載，不能證明檔案已保存。
+
+四個條件各自在本頁暫存最後一輪資料與曲線。切到尚未記錄的條件顯示空圖及該條件標題；切回已有紀錄的條件會恢復原曲線與結果快照，並可匯出該輪的 CSV／PNG。輸入表單本身仍共用，每次開始前須重新確認本輪設定。其他條件尚未匯出的結果會顯示提醒，且仍受離頁保護；切換不會丟棄它們。每個條件仍只保留最後一輪，不依受試者或試次保存完整歷史；同條件重測前需先匯出，並確認替換。
+
+明確 BLE 斷線立即標記 `interrupted`；連續 **3 秒**沒有有效完整 P 訊息也中止本輪，不補造資料、不自動續接。這是基於現有每秒 P 查詢的初始門檻，**尚未實機驗證**；請利用顯示的實際接收間隔評估。`data_timeout_s=3` 與 `gap_timeout_ms=3000` 保存於 CSV。
+
+### 訊息、時間與圖表
+
+- 收集入口沿用既有通知分行與 P parser：`P:<pm> <pn> <ph>`，固定對應 Monitor、Neck、Head。只有已換行、恰好三個完整且有限數值的 BLE 回覆成為樣本；不收指令 echo、I／DEBUG 或 100 ms timeout 的未完成片段。網頁保存 P 訊息中的 ADC 數值，不另套校正公式或轉成 kPa。
+- 資料域說明：此處的 ADC 是 firmware 對外回傳的數值，不能等同感測器未濾波的原始讀值；既有 firmware 會先處理感測資料。介面部分沿用的 `raw ADC`／「原始 ADC」字樣應依此理解。本次沒有修改 firmware 的讀取或濾波行為。
+- 每列代表一筆完整有效訊息；相同數值的不同訊息仍分別保存。不新增 BLE 連線、通知 listener 或高頻輪詢；現有每秒查詢一次不等於實測取樣率。
+- `timestamp_iso` 是**網頁處理收到完整訊息時**產生的 UTC ISO 時間（Z），不是感測器量測時間。`elapsed_s` 是此接收時刻相對按下開始的 `performance.now()` 差值，範圍 0–30 秒；不強迫樣本落在兩端、不補點或插值。
+- 圖表 X 軸固定 0–30 秒，Y 軸標示「壓力（ADC）」；Monitor／Neck／Head 分別沿用紅／綠／藍配色。UI／繪圖以 250 ms 週期刷新，每筆有效訊息則立即保存，不因繪圖節流漏存。這個刷新週期不是感測器或 BLE 的取樣率；右欄既有圖表不變。
+- `completed` 僅表示走完 30 秒窗口且沒有已知的上述中斷，不保證取樣數／取樣率，更不代表已驗證辨識穩健性。`ended_early` 是操作者提前結束；`interrupted` 是已知斷線或資料中斷。零樣本不能正常完成或匯出資料列。
+
+### 每輪 CSV
+
+共 **23 欄**，依下列必要欄位與補充欄位順序輸出，不更動全站 Export Data 格式。
+
+必要欄位：`run_id, subject_id, trial_index, condition_id, actual_pose, height_condition, head_height_cm, neck_height_cm, test_condition, sample_index, timestamp_iso, elapsed_s, monitor_adc, neck_adc, head_adc, run_status`。
+
+補充欄位：`notes, height_source, data_timeout_s, gap_timeout_ms, interruption_reason, time_source, pressure_unit`。`height_source=operator`，`pressure_unit=ADC`；`time_source=browser_complete_pressure_message_received`。樣本編號從 1 起算，每列使用結束後的最終 `run_status`。條件、設定高度及備註在開始時建立快照，之後改表單不會改寫既有資料。
+
+| 欄位 | 定義 |
+| --- | --- |
+| `run_id` | 每輪唯一 UUID；畫面摘要省略，但 CSV 與檔名保留。 |
+| `subject_id` | 操作者填寫的受試者代號，不使用姓名。 |
+| `trial_index` | 同一受試者、同一條件的重測編號，正整數。 |
+| `condition_id` | `01`–`04`，對照上方條件表；不是九實驗的編號。 |
+| `actual_pose` | `pose1` 或 `pose5`，暫不映射其他姿勢 label。 |
+| `height_condition` | `height1` 或 `height5`，表示對應姿勢的高度條件。 |
+| `head_height_cm` | 本輪人工確認的 Head 設定高度，cm。 |
+| `neck_height_cm` | 本輪人工確認的 Neck 設定高度，cm。 |
+| `test_condition` | `still` 或 `movement`；兩者均自然呼吸。 |
+| `sample_index` | 本輪完整有效壓力訊息序號，從 1 開始。 |
+| `timestamp_iso` | 網頁處理完整訊息的 UTC ISO 接收時間，含 `Z`。 |
+| `elapsed_s` | 接收時刻與開始記錄的單調時鐘差，秒；輸出六位小數。 |
+| `monitor_adc` | P 訊息第一值，Monitor ADC。 |
+| `neck_adc` | P 訊息第二值，Neck ADC。 |
+| `head_adc` | P 訊息第三值，Head ADC。 |
+| `run_status` | 本輪最終狀態：`completed`、`ended_early` 或 `interrupted`。 |
+| `notes` | 操作者選填的本輪備註。 |
+| `height_source` | `operator`，人工紀錄，非實測高度時間線。 |
+| `data_timeout_s` | 有效完整訊息的中斷門檻，現為 `3` 秒。 |
+| `gap_timeout_ms` | 同一門檻的毫秒值，現為 `3000`。 |
+| `interruption_reason` | 程式記錄的中斷原因；無中斷則留空。 |
+| `time_source` | `browser_complete_pressure_message_received`。 |
+| `pressure_unit` | `ADC`。 |
+
+CSV 使用 UTF-8 BOM、CRLF，每個欄位均正確引用並將引號加倍，備註中的逗號、引號與換行會保留。檔名例如 `S01_pose1_height1_still_trial01_<唯一run_id>.csv`，其他三條件使用對應姿勢、高度及情境；每輪以新 UUID 避免重測混淆。
+
+同次操作也下載 `S01_pose1_height1_still_trial01_<唯一run_id>.png`。PNG 使用本條件專用曲線、白色背景與本輪快照標題（受試者、試次、條件、姿勢、高度、情境、筆數及狀態）；圖上不顯示 UUID。兩份內容先產生成功再要求下載，影像產生失敗時保留資料及未匯出保護。匯出需先展開並顯示該條件的曲線，避免輸出隱藏或上一條件的畫面。右欄既有圖表不受影響。
+
+四個條件的結果都只在本頁記憶體，**沒有持久化**，也未改動 IndexedDB schema 或全站 Export Data。任一條件仍在記錄或尚未要求匯出時有離頁警告；選擇離開／重新整理仍會遺失資料。要求下載不代表瀏覽器已保存，操作者務必自行確認 CSV 與 PNG。真實受試者資料與匯出不得提交版本控制。
+
+### 驗證紀錄與重跑方式
+
+驗證日期：`2026-11-03`（Asia/Taipei）。本次瀏覽器測試的最新 CSV／PNG 產物時間為 `2026-11-03 21:33:58 CST (+0800)`；這是檔案產生時間，不是感測器量測時間或測試開始時間。
+
+| 驗證項目 | 實際結果 | 範圍 |
+| --- | --- | --- |
+| Node 回歸 | **50／50 通過，退出碼 0** | Recorder 16、BLE parser bridge 8、Hub 6、UI／controller 17、Chart options 3。 |
+| 記錄與 CSV | 合成資料測試通過 | 30 秒時間窗、提前結束、3 秒中斷、斷線中斷、單調時間、三通道順序、四條件快照、CSV 引用及重測保護。 |
+| Chart options | 本機 **Chart.js 4.4.1** 的 3 項測試通過 | 使用真正 constructor／options resolver 與模擬 Canvas API；負向測試可重現舊的 Proxy 循環指定錯誤。 |
+| 真實 Chrome／Chart.js | 使用者於一般 Mac Terminal 執行，**Chrome 156.0.8078.80／Chart.js 4.6.1：PASS** | 真實瀏覽器、Chart.js、HTML／CSS、Hub／實驗模組；使用合成 S00 資料與可控時鐘。 |
+| 瀏覽器操作 | 通過，未捕捉到 `pageerror` | 展開、開始、30 秒記錄邏輯、條件曲線切換／恢復、收合後繼續記錄、提前結束。 |
+| 實際下載產物 | CSV **30 筆、23 欄**；PNG **588×290**，同檔名前綴 | 條件 01、S00、Head 8／Neck 11 cm、`completed`、`data_timeout_s=3`；已核對 CSV 三通道序列及 PNG 圖表。 |
+
+在專案根目錄重跑 Node 測試：
+
+```bash
+node --test --test-reporter=dot tests/*.test.cjs
+```
+
+Node 測試多數使用 fake clock、輕量 DOM／Chart stub；Chart options 測試才使用本機真實 Chart.js 4.4.1。兩者都不能取代 Chrome／CDN 版本的實際 render 或 ESP32 驗證。
+
+在能正常啟動 Chrome 的終端機重跑瀏覽器測試：
+
+```bash
+node tests/chart-browser-smoke.cjs
+```
+
+需先有可用的 Node.js、Playwright 與 Chrome；測試腳本不會自動安裝依賴。若 Playwright 不在 Node 的模組搜尋路徑中，指定已安裝模組的位置：
+
+```bash
+PLAYWRIGHT_MODULE_PATH="/absolute/path/to/node_modules/playwright" node tests/chart-browser-smoke.cjs
+```
+
+上述絕對路徑是佔位範例，需換成執行環境的實際路徑。可用 `CHROME_EXECUTABLE_PATH` 指定既有 Chrome；預設為 macOS 的 `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`。
+
+本次使用者 Terminal 回報：
 
 ```text
-http://localhost:8080/spp3_BLE/
+Real browser: 156.0.8078.80; real Chart.js: 4.6.1; synthetic S00 data only.
+PASS: real Chart.js 4.6.1; expand/start/30 s collection; CSV+PNG; condition restore; collapse; no page errors.
 ```
 
-舊版 Web Serial 介面保留在：
+腳本預設載入主頁相同的 Chart.js CDN，並嚴格確認版本為 `4.6.1`。離線測試可指定 `CHART_JS_PATH` 載入未修改的函式庫，以 `EXPECTED_CHART_VERSION` 明確指定預期版本；不可把測試 4.4.1 的結果當成 4.6.1 已通過。瀏覽器啟動失敗、CDN 未載入或版本不符都會回報失敗。
 
-```text
-http://localhost:8080/spp3/
-```
+測試產物位於 `tests/.artifacts/chart-browser/`，檔名標記 `SYNTHETIC`，CSV 備註也明示非人體／裝置量測。測試時鐘固定以 `2030-01-01` 為基準，因此合成 CSV 內的時間戳不代表實際執行日期。產物留在本機供檢查，不提交到 GitHub。
 
-## 近期 v3.1 Web 變更摘要
+本次 Codex 受限制的工作階段無法啟動 Chrome（啟動階段 `SIGABRT`）；上方瀏覽器 PASS 來自使用者在一般 Mac Terminal 的執行及其產物。環境啟動失敗與網頁的 Chart.js 錯誤分開記錄。
 
-這一版除了原本的 BLE 收數、校正、分類與 PRED 監測外，額外整理了資料收集 UI，重點放在：
+### 尚未驗證與使用限制
+
+- 瀏覽器 smoke 以合成 bootstrap 取代正式 `app.js` 的啟動流程，並控制 `Date`、`performance.now()` 與 UI refresh。它驗證 **30 秒計時邏輯**，未等待實際 30 秒，也未涵蓋完整 BLE app、背景分頁計時或所有既有硬體控制。
+- 本次 Chrome smoke 的 viewport 為 `1280×1000`。尚需對最終版本人工確認拖窄左欄、手機版面、Tab／Enter 鍵盤操作；不能由此次 PASS 推論全部響應式與無障礙驗證通過。
+- 真實瀏覽器測試完整收集／匯出條件 01，並測條件 02 提前結束；四條件的欄位對應由 Node UI 測試覆蓋，尚未以 ESP32 四條件各做一輪。
+- 正式收數前，接目標 ESP32 驗證持續收數、四條件各 30 秒、提前結束、斷線立即中止、3 秒未收有效訊息中止及匯出檔案。中斷測試需確認資料保留且不自動續接；不得把計時完成當成資料必定完整。
+- Web 現有每秒查詢一次 P 不保證恰好 1 Hz 或恰好 30 筆。若實際接收約 1 Hz，可能漏掉較短暫的微動波動；分類結論只能反映實際收集資料的時間解析度。
+- 固定高度仍由操作者安排與確認；CSV 高度是設定紀錄，網頁不保證既有自動控制在記錄期間不改變高度。
+- CSV＋PNG 綁定匯出；PNG 產生失敗時 CSV 也不會下載，但資料會保留。瀏覽器可能阻擋第二個下載，務必確認兩個檔案都已保存。
+- 各條件只暫存最後一輪，沒有跨重新整理的持久化。資料收集完成不表示已完成離線分類或辨識穩健性驗證。
+
+### 提交範圍
+
+本次於 `2026-11-03` 查核遠端 `spp3_BLE_v4`，基準 commit 為 `207cdc1e4176fd6b4e7930d6ecb80d5b606d1bb5`。相對該基準，應提交下列 **13 個原始碼／文件檔案**，保留原路徑：
+
+| 類型 | 檔案 |
+| --- | --- |
+| 修改 | `README.md`、`spp3_BLE/index.html`、`spp3_BLE/styles.css`、`spp3_BLE/app.js` |
+| 新增實驗模組 | `spp3_BLE/experiment-hub.js`、`spp3_BLE/pressure-experiment.js`、`spp3_BLE/pressure-recorder.js` |
+| 新增測試 | `tests/pressure-recorder.test.cjs`、`tests/pressure-bridge.test.cjs`、`tests/experiment-hub.test.cjs`、`tests/pressure-ui.test.cjs`、`tests/chart-options.test.cjs`、`tests/chart-browser-smoke.cjs` |
+
+不要整包上傳工作資料夾：排除 `.DS_Store`、`tests/.artifacts/`、真實受試者資料、實驗 CSV／PNG、BLE log、憑證與本機依賴。測試原始碼可提交，執行產物不在本次提交清單內。
+
+本機沒有 `.git`，若透過 Git 提交，需先在真正追蹤 `spp3_BLE_v4` 的 checkout 中核對遠端最新狀態與 diff，再套用上述檔案；不要用資料夾名稱推定分支，也不要覆蓋遠端之後新增的修改。提交到此功能分支不表示已通過實機驗收或已更新部署網站。
+
+## 沿用的 v3.1 Web 功能
+
+基底 README 修改日期時間：`2026-07-16 13:06:26 CST (+0800)`。下列既有功能與原歷史日期保留；本次 v4 未重新設計這些操作流程：
 
 - `截圖精靈`：支援固定姿勢最佳高度的重複截圖流程。
 - `可拖曳左右欄寬`：左側操作區與右側線圖區之間新增拖曳分隔條。
@@ -66,7 +241,7 @@ http://localhost:8080/spp3/
 
 ## 截圖精靈
 
-`截圖精靈` 是這次新增的主要收數區塊，目標是先完成實驗與截圖，之後再依照圖片內容回填 Excel。
+`截圖精靈` 是 v3.1 已有的收數區塊，目標是先完成實驗與截圖，之後再依照圖片內容回填 Excel；與本版新增的 Experiment 01 CSV／PNG 收集流程分開使用。
 
 ### 截圖精靈操作方式
 
@@ -288,7 +463,8 @@ S01_APL-BSHS_ACT-BSHS_R2_07.svg
 3. `校正與分類狀態`
 4. `截圖精靈`
 5. `高度與壓力監測`
-6. `訊息紀錄`
+6. `實驗專區`（可收合；Experiment 01 收集資料，02–09 待設定）
+7. `訊息紀錄`
 
 右側線圖監測欄：
 
@@ -504,9 +680,9 @@ Web 端與 `pose_pre_v3.1` 韌體共同限制高度：
 | 通道 | 最小值 | 最大值 | 步進 |
 |---|---:|---:|---:|
 | Head | 7.0 cm | 16.0 cm | 0.5 cm |
-| Neck | 10.0 cm | 16.0 cm | 0.5 cm |
+| Neck | 10.0 cm | 14.0 cm | 0.5 cm |
 
-所有高度輸入會：
+既有校正／高度控制欄位會：
 
 - 限制在合法上下限內。
 - snap 到最接近的 `0.5 cm`。
@@ -514,6 +690,8 @@ Web 端與 `pose_pre_v3.1` 韌體共同限制高度：
 - 按「確定調整」後才送出 BLE 指令。
 
 ESP32 端也會再次 clamp / snap，韌體仍是最後安全防線。
+
+Experiment 01 的 Head／Neck 欄位沿用相同上下限與 0.5 cm 步進，但只驗證並紀錄操作者輸入；按「開始記錄」不會送出高度調整指令。
 
 ## 高度與壓力監測
 
@@ -657,7 +835,7 @@ SET,NORM,<condition>,<S|L>,NECK,<height_cm>
 SET,NORM,1,S,HEAD,7.5
 SET,NORM,1,S,NECK,10.5
 SET,NORM,1,L,HEAD,14.0
-SET,NORM,1,L,NECK,16.0
+SET,NORM,1,L,NECK,14.0
 ```
 
 ### 功能開關
@@ -736,6 +914,8 @@ MOTORPWM,128
 
 ## 匯出資料
 
+本節說明既有全站 `Export Data`；Experiment 01 另外使用「匯出 CSV＋線圖」，兩者資料來源與欄位格式不同。
+
 按 `Export Data` 會匯出：
 
 - CSV：壓力、差值、last5、prev5、state、onoff、predict pose、pose 等資料。
@@ -771,7 +951,7 @@ MANUAL,STARTUP,<head_cm>,<neck_cm>
 
 ### 0.5 cm 高度是否會送到 ESP32
 
-會。Web 端使用 `0.5 cm` step，ESP32 `pose_pre_v3.1` 端也支援 0.5 cm clamp / snap。
+既有校正／高度控制介面按下確認後會送出，Web 與 ESP32 `pose_pre_v3.1` 均支援 0.5 cm 步進。Experiment 01 的高度欄位只做本輪紀錄，即使填入 0.5 cm 刻度也不會下達高度命令。
 
 ### `ESP32 Manual 狀態：ESP32 Manual 忽略指令：DEBUG` 是不是壞掉
 
@@ -805,11 +985,17 @@ MANUAL,OK,STARTUP,7.0,10.0
 - `spp3_BLE/index.html`：主要 DOM 結構。
 - `spp3_BLE/styles.css`：整體版面、卡片、accordion、線圖與 modal 樣式。
 - `spp3_BLE/app.js`：BLE 連線、指令送出、資料解析、圖表更新、校正流程與 UI 狀態。
+- `spp3_BLE/experiment-hub.js`：實驗清單與單一內容容器、共用開始／結束／匯出控制、切換鎖定及離頁保護。
+- `spp3_BLE/pressure-experiment.js`：四條件表單、各條件最後一輪暫存、獨立 Chart instance、CSV＋PNG 下載。
+- `spp3_BLE/pressure-recorder.js`：不依賴 DOM／BLE 的記錄器，負責 metadata 快照、樣本、計時、中斷狀態與 CSV 序列化。
+- `tests/`：合成資料回歸與獨立 Chrome smoke 腳本，不是正式頁面啟動依賴。
 - 修改 BLE 指令時，請同步更新：
   - Web 按鈕與 UI 文案
   - `指令合輯`
   - README 指令說明
   - ESP32 parser
+
+本次實驗資料流沿用 `app.js` 的 `handleNotifications()` 完整分行與 `serial_message()` 解析，將有效 P 樣本及接收時間交給 Hub 的 `receivePressure()`，再由實驗模組交給本輪 recorder。實驗圖表讀取 recorder 樣本，匯出使用開始時的快照；沒有第二套 BLE 通知監聽或輪詢。開始／結束只控制記錄器，不送硬體命令、不重設 BLE queue、不重建右欄 Chart、不清空監測紀錄，也不重新初始化整個 app。
 
 ## License
 

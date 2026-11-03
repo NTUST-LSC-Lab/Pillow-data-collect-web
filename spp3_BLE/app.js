@@ -722,7 +722,10 @@
 								setSyncTimeAck(`已同步 (${formatAckTime()})`, "ok");
 							}
 							const hideLine = suppressSilentDebugResponse;
-							serial_message(line, LOG_SUCCESS_GREEN, !hideLine);
+							serial_message(line, LOG_SUCCESS_GREEN, !hideLine, {
+								receivedMonotonicMs: performance.now(),
+								timestamp_iso: new Date().toISOString()
+							});
 							if (hideLine && line.includes("pre_stable_label=")) {
 							suppressSilentDebugResponse = false;
 							if (silentDebugSuppressTimer) {
@@ -807,6 +810,7 @@
 			const device = event.target;
 			serial_message(`Device ${device.name} is disconnected.`, "red");
 			serial_ready = false;
+			if (experimentHubModule) experimentHubModule.onDisconnected();
 		}
 
 		serial_buttonClose.addEventListener('click', async () => {
@@ -1033,6 +1037,7 @@
 		const heightPressureLog = document.getElementById('heightPressureLog');
 		const monitorClearLog = document.getElementById('monitorClearLog');
 		let captureWizardModule = null;
+		let experimentHubModule = null;
 
 		let workflowState = WORKFLOW.UNCALIBRATED;
 		let anchorDone = { BSHS: false, BLHL: false };
@@ -2520,7 +2525,7 @@
 			}
 		}
 
-		function serial_message(msg, colour, show = true) {
+		function serial_message(msg, colour, show = true, completeBleReceipt = null) {
 			const safeMsg = String(msg).replace(/</g, "&lt;").replace(/>/g, "&gt;");
 			var scrollControl = document.querySelector('input[name="scrollControl"]:checked')?.value || "auto";
 			if (show) {
@@ -2567,6 +2572,17 @@
 						values = [parseFloat(firstVal), ...dataPoints.slice(1).map(parseFloat)];
 					}
 
+					// Only newline-terminated BLE replies can become experiment samples.
+					// Existing logs, partial-message fallback and chart behavior are unchanged.
+					const pressureTokens = prefix === "P:" ? dataPoints.slice(1) : [prefix.slice(2), ...dataPoints.slice(1)];
+					const numericToken = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+					if (completeBleReceipt && experimentHubModule && serial_ready && values.length === 3 &&
+						values.every(Number.isFinite) && pressureTokens.every(token => numericToken.test(token))) {
+						experimentHubModule.receivePressure({
+							monitor_adc: values[0], neck_adc: values[1], head_adc: values[2],
+							...completeBleReceipt
+						});
+					}
 					if (values.length >= 3) {
 						updatePressureMonitor(values);
 							// Update chart data and labels
@@ -2896,6 +2912,34 @@
 				const expanded = captureAccordionToggle.getAttribute('aria-expanded') === 'true';
 				setAccordionExpanded(captureAccordionToggle, captureAccordionBody, 'captureAccordionExpanded', !expanded);
 			});
+
+			const experimentAccordionToggle = document.getElementById('experimentAccordionToggle');
+			const experimentAccordionBody = document.getElementById('experimentAccordionBody');
+			const experimentAccordionKey = 'experimentHub.v4.expanded';
+			setAccordionExpanded(experimentAccordionToggle, experimentAccordionBody, experimentAccordionKey, getSavedAccordionState(experimentAccordionKey) === '1');
+			experimentAccordionToggle?.addEventListener('click', function () {
+				const expanded = experimentAccordionToggle.getAttribute('aria-expanded') === 'true';
+				setAccordionExpanded(experimentAccordionToggle, experimentAccordionBody, experimentAccordionKey, !expanded);
+			});
+			experimentHubModule = createExperimentHub(document.getElementById('experimentHub'), {
+				// Operator-confirmed definitions: numerical pose IDs are not firmware labels.
+				pressureConfig: {
+					experimentId: '01',
+					title: '固定睡姿下自然呼吸與微動之辨識穩健性測試',
+					gapTimeoutMs: 3000, // Initial policy based on 1 s P requests; pending hardware validation.
+					conditions: [
+						{ id: '01', actual_pose: 'pose1', height_condition: 'height1', test_condition: 'still', poseText: '睡姿一', scenario: '穩定不動、自然呼吸', filePose: 'pose1', fileHeight: 'height1' },
+						{ id: '02', actual_pose: 'pose1', height_condition: 'height1', test_condition: 'movement', poseText: '睡姿一', scenario: '微微作動、自然呼吸', filePose: 'pose1', fileHeight: 'height1' },
+						{ id: '03', actual_pose: 'pose5', height_condition: 'height5', test_condition: 'still', poseText: '睡姿五', scenario: '穩定不動、自然呼吸', filePose: 'pose5', fileHeight: 'height5' },
+						{ id: '04', actual_pose: 'pose5', height_condition: 'height5', test_condition: 'movement', poseText: '睡姿五', scenario: '微微作動、自然呼吸', filePose: 'pose5', fileHeight: 'height5' }
+					]
+				},
+				getSystemState: () => ({
+					connected: Boolean(serial_ready && bluetoothDevice?.gatt?.connected),
+					autoHeightPossible: controlMode === CONTROL_MODE.AUTO || predEnabled || predStartRequested
+				})
+			});
+			experimentHubModule.init();
 
 			const modal = document.getElementById('modal');
 			const openModalBtn = document.getElementById('openModalBtn');

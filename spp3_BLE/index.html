@@ -387,7 +387,40 @@ https://fustyles.github.io/webduino/WebSerial.html
 				<button id="monitorClearLog" type="button" class="full">清空監測紀錄</button>
 			</section>
 
-			<section class="panel-card">
+			<section id="experimentHub" class="panel-card experiment-hub-card" aria-labelledby="experimentHubHeading">
+				<div class="accordion-header">
+					<h2 id="experimentHubHeading">實驗專區</h2>
+					<button id="experimentAccordionToggle" type="button" class="accordion-toggle" aria-expanded="false" aria-controls="experimentAccordionBody">展開</button>
+				</div>
+				<div id="experimentAccordionBody" class="accordion-body is-collapsed">
+					<div class="experiment-navigation" role="group" aria-label="切換實驗">
+						<button id="experimentPrev" type="button" aria-label="上一個實驗" disabled>‹</button>
+						<span id="experimentCounter" aria-live="polite" aria-atomic="true">實驗 01 / 09</span>
+						<button id="experimentNext" type="button" aria-label="下一個實驗">›</button>
+					</div>
+					<h3 id="experimentTitle" class="experiment-title">Experiment 01</h3>
+					<div class="form-group experiment-select-row">
+						<label for="experimentSelect">實驗選擇</label>
+						<select id="experimentSelect"></select>
+					</div>
+					<div class="experiment-status-row">
+						<span>實驗狀態</span>
+						<span id="experimentStatus" class="pill pill-pending" role="status">尚未開始</span>
+					</div>
+					<section id="experimentContent" class="experiment-content" aria-labelledby="experimentContentHeading">
+						<h3 id="experimentContentHeading" class="experiment-content-heading">實驗操作</h3>
+						<div id="experimentView"></div>
+					</section>
+					<p id="experimentHint" class="experiment-hint">此實驗的操作流程尚未設定，暫無法開始。</p>
+					<div class="button-row experiment-controls">
+						<button id="experimentStart" type="button" class="primary" aria-describedby="experimentHint" disabled>開始實驗</button>
+						<button id="experimentFinish" type="button" disabled>結束實驗</button>
+						<button id="experimentExport" type="button" disabled hidden>匯出 CSV＋線圖</button>
+					</div>
+				</div>
+			</section>
+
+			<section class="panel-card message-log-card">
 				<h2>訊息紀錄</h2>
 				<div id="serial_status"></div>
 				<div class="scroll-options">
@@ -702,8 +735,77 @@ https://fustyles.github.io/webduino/WebSerial.html
 		</div>
 	</dialog>
 
+	<template id="pressureExperimentTemplate">
+		<div class="pressure-experiment">
+			<p class="pressure-purpose">每輪記錄 30 秒 Monitor、Neck、Head 原始 ADC，供匯出後離線分類分析；本區不提供即時分類結果。</p>
+			<form id="pressureRunForm">
+				<fieldset id="pressureRunSettings" class="pressure-run-settings">
+					<legend>本輪設定</legend>
+					<div class="pressure-field">
+						<label for="pressureSubject">受試者編號</label>
+						<input id="pressureSubject" name="subject_id" type="text" pattern="S\d{2}" maxlength="3" placeholder="例如 S01" title="請輸入 S 加上兩位數字，例如 S01" autocomplete="off" required>
+					</div>
+					<div class="pressure-field">
+						<label for="pressureTrial">試次編號</label>
+						<input id="pressureTrial" name="trial_number" type="number" min="1" step="1" value="1" required>
+					</div>
+					<div class="pressure-field pressure-field-wide">
+						<label for="pressureCondition">實驗條件</label>
+						<select id="pressureCondition" name="condition_id" aria-describedby="pressureConditionDescription" required>
+							<option value="01">01｜睡姿一・對應高度・穩定／自然呼吸</option>
+							<option value="02">02｜睡姿一・對應高度・微動／自然呼吸</option>
+							<option value="03">03｜睡姿五・對應高度・穩定／自然呼吸</option>
+							<option value="04">04｜睡姿五・對應高度・微動／自然呼吸</option>
+						</select>
+					</div>
+					<p id="pressureConditionDescription" class="pressure-field-wide pressure-field-hint">請確認本輪實際睡姿、對應高度及動作情境。</p>
+					<div class="pressure-field">
+						<label for="pressureHeadHeight">Head 設定高度（cm）</label>
+						<input id="pressureHeadHeight" name="head_height_cm" type="number" min="7" max="16" step="0.5" aria-describedby="pressureHeightHint" required>
+					</div>
+					<div class="pressure-field">
+						<label for="pressureNeckHeight">Neck 設定高度（cm）</label>
+						<input id="pressureNeckHeight" name="neck_height_cm" type="number" min="10" max="14" step="0.5" aria-describedby="pressureHeightHint" required>
+					</div>
+					<p id="pressureHeightHint" class="pressure-field-wide pressure-field-hint">由操作者確認並填入本輪設定高度（cm）。這些欄位不下達高度控制指令，也不是自動帶入的實測高度。</p>
+					<div class="pressure-field pressure-field-wide">
+						<label for="pressureNotes">備註（選填）</label>
+						<textarea id="pressureNotes" name="notes" rows="2" maxlength="2000" placeholder="記錄本輪觀察，不填寫姓名等個人資料。"></textarea>
+					</div>
+					<p class="pressure-field-wide pressure-field-hint">全程維持選定睡姿並自然呼吸；微動僅為同一睡姿的小幅調整，不包含翻身或切換睡姿。</p>
+					<label class="pressure-setup-confirm pressure-field-wide" for="pressureSetupConfirmed">
+						<input id="pressureSetupConfirmed" name="setup_confirmed" type="checkbox" required>
+						<span>已確認本輪姿勢、對應高度與動作情境，並已等待受試者穩定（全程自然呼吸）</span>
+					</label>
+				</fieldset>
+			</form>
+			<p id="pressureControlWarning" class="pressure-warning" role="status" aria-live="polite">請確認裝置控制狀態；自動模式或 PRED 可能在收集期間改變高度。</p>
+			<dl class="pressure-live-grid" aria-label="本輪收集狀態與原始 ADC">
+				<div><dt>BLE 連線</dt><dd><output id="pressureBleStatus">尚未確認</output></dd></div>
+				<div><dt>本輪狀態</dt><dd><output id="pressureRunStatus">尚未開始</output></dd></div>
+				<div><dt>經過時間（秒，總長 30 秒）</dt><dd><output id="pressureElapsed">0.0</output></dd></div>
+				<div><dt>有效樣本數</dt><dd><output id="pressureSampleCount">0</output></dd></div>
+				<div><dt>最近接收時間</dt><dd><output id="pressureLastReceived">-</output></dd></div>
+				<div><dt>觀察接收間隔（ms）</dt><dd><output id="pressureObservedInterval">-</output></dd></div>
+				<div><dt>Monitor（raw ADC）</dt><dd><output id="pressureLiveMonitor">-</output></dd></div>
+				<div><dt>Neck（raw ADC）</dt><dd><output id="pressureLiveNeck">-</output></dd></div>
+				<div><dt>Head（raw ADC）</dt><dd><output id="pressureLiveHead">-</output></dd></div>
+			</dl>
+			<p id="pressureGapPolicy" class="pressure-field-hint">資料接收間隔的品質門檻待確認，設定後將顯示於此。</p>
+			<div class="pressure-chart-wrap">
+				<canvas id="pressureRunChart" role="img" aria-label="本輪 Monitor、Neck、Head 壓力 ADC；時間 0 至 30 秒" aria-describedby="pressureChartDescription">本輪 Monitor、Neck、Head 原始 ADC 時序圖。</canvas>
+			</div>
+			<p id="pressureChartDescription" class="pressure-field-hint">橫軸為本輪經過時間 0–30 秒，縱軸為 ADC；曲線為 Monitor、Neck、Head。切換條件會顯示該條件的上輪曲線，沒有紀錄時顯示空圖；其他條件的結果仍暫存在本頁。</p>
+			<p id="pressureRunSummary" class="pressure-run-summary" role="status" aria-live="polite">尚無本輪收集結果。</p>
+			<p class="pressure-field-hint">「匯出 CSV＋線圖」會下載同名的 CSV 與 PNG，請確認兩個檔案都已保存。各條件只保留最後一輪於本頁記憶體，離開或重新整理會遺失；瀏覽器若詢問多個檔案下載，請允許。</p>
+		</div>
+	</template>
+
 	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
+	<script src="./pressure-recorder.js"></script>
+	<script src="./pressure-experiment.js"></script>
+	<script src="./experiment-hub.js"></script>
 	<script src="./app.js"></script>
 </body>
 
