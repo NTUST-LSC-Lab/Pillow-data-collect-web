@@ -737,18 +737,54 @@ https://fustyles.github.io/webduino/WebSerial.html
 
 	<template id="pressureExperimentTemplate">
 		<div class="pressure-experiment">
+			<fieldset class="pressure-run-settings" id="pressureCalibrationPanel">
+				<legend>姿勢一／姿勢五獨立校正</legend>
+				<div class="pressure-field pressure-field-wide">
+					<label for="pressureSubject">受試者編號</label>
+					<input id="pressureSubject" name="subject_id" form="pressureRunForm" type="text" pattern="S\d{2}" maxlength="3" placeholder="例如 S01" title="請輸入 S 加上兩位數字，例如 S01" autocomplete="off" required>
+				</div>
+				<p class="pressure-field-wide pressure-field-hint">先填受試者編號再校正，完成後填寫下方本輪設定。直接微調 Head／Neck 高度，不採用身高、體重、年齡或舊校正建議。先讓受試者擺好選定睡姿，再微調並保存快照。</p>
+				<button id="pressureCalibrationPrepare" class="pressure-field-wide" type="button">準備微調（停止自動調整並讀取高度）</button>
+				<div class="pressure-field pressure-field-wide">
+					<label for="pressureCalibrationPose">目前校正姿勢</label>
+					<select id="pressureCalibrationPose"><option value="pose1">姿勢一（pose1／height1）</option><option value="pose5">姿勢五（pose5／height5）</option></select>
+				</div>
+				<div class="pressure-field">
+					<label for="pressureCalibrationHead">Head 目標高度（7–16 cm）</label>
+					<div class="pressure-height-stepper">
+						<button id="pressureCalibrationHeadMinus" type="button" aria-label="Head 目標減少 0.5 cm">−</button>
+						<input id="pressureCalibrationHead" type="number" min="7" max="16" step="0.5" aria-describedby="pressureCalibrationStepHint">
+						<button id="pressureCalibrationHeadPlus" type="button" aria-label="Head 目標增加 0.5 cm">＋</button>
+					</div>
+					<button id="pressureCalibrationHeadApply" type="button">套用 Head 高度</button>
+				</div>
+				<div class="pressure-field">
+					<label for="pressureCalibrationNeck">Neck 目標高度（10–14 cm）</label>
+					<div class="pressure-height-stepper">
+						<button id="pressureCalibrationNeckMinus" type="button" aria-label="Neck 目標減少 0.5 cm">−</button>
+						<input id="pressureCalibrationNeck" type="number" min="10" max="14" step="0.5" aria-describedby="pressureCalibrationStepHint">
+						<button id="pressureCalibrationNeckPlus" type="button" aria-label="Neck 目標增加 0.5 cm">＋</button>
+					</div>
+					<button id="pressureCalibrationNeckApply" type="button">套用 Neck 高度</button>
+				</div>
+				<p id="pressureCalibrationStepHint" class="pressure-field-wide pressure-field-hint">每次 0.5 cm；輸入與 ± 僅修改待套用值，按「套用」才會控制裝置。一次調整一個氣囊，待裝置回報到位後才可進行下一步。</p>
+				<p id="pressureCalibrationCurrent" class="pressure-field-wide pressure-run-summary">裝置高度：尚未讀取</p>
+				<p id="pressureCalibrationStatus" class="pressure-field-wide pressure-field-hint" role="status" aria-live="polite">請先連線並填入受試者編號，再準備微調。</p>
+				<label class="pressure-setup-confirm pressure-field-wide" for="pressureCalibrationStable">
+					<input id="pressureCalibrationStable" type="checkbox">
+					<span>已確認目前受試者維持選定姿勢、自然呼吸且已穩定</span>
+				</label>
+				<button id="pressureCalibrationCapture" class="pressure-field-wide" type="button">保存此姿勢校正快照</button>
+				<div class="pressure-calibration-saved pressure-field-wide" aria-label="兩姿勢校正數據，可供截圖">
+					<section><h4>姿勢一（pose1／height1）</h4><output id="pressureCalibrationPose1Saved">尚未保存</output></section>
+					<section><h4>姿勢五（pose5／height5）</h4><output id="pressureCalibrationPose5Saved">尚未保存</output></section>
+				</div>
+				<p class="pressure-field-wide pressure-field-hint">快照保存最新一筆完整 P 訊息（非平均值），兩姿勢依受試者分開暫存於本頁。高度為裝置依充放氣時間估計，並非感測器實測。請在重新整理前截圖；這些快照不寫入 ESP32 anchor，也不併入每輪的 CSV／線圖。</p>
+			</fieldset>
 			<p class="pressure-purpose">每輪記錄 30 秒 Monitor、Neck、Head 原始 ADC，供匯出後離線分類分析；本區不提供即時分類結果。</p>
 			<form id="pressureRunForm">
 				<fieldset id="pressureRunSettings" class="pressure-run-settings">
 					<legend>本輪設定</legend>
-					<div class="pressure-field">
-						<label for="pressureSubject">受試者編號</label>
-						<input id="pressureSubject" name="subject_id" type="text" pattern="S\d{2}" maxlength="3" placeholder="例如 S01" title="請輸入 S 加上兩位數字，例如 S01" autocomplete="off" required>
-					</div>
-					<div class="pressure-field">
-						<label for="pressureTrial">試次編號</label>
-						<input id="pressureTrial" name="trial_number" type="number" min="1" step="1" value="1" required>
-					</div>
 					<div class="pressure-field pressure-field-wide">
 						<label for="pressureCondition">實驗條件</label>
 						<select id="pressureCondition" name="condition_id" aria-describedby="pressureConditionDescription" required>
@@ -768,10 +804,6 @@ https://fustyles.github.io/webduino/WebSerial.html
 						<input id="pressureNeckHeight" name="neck_height_cm" type="number" min="10" max="14" step="0.5" aria-describedby="pressureHeightHint" required>
 					</div>
 					<p id="pressureHeightHint" class="pressure-field-wide pressure-field-hint">由操作者確認並填入本輪設定高度（cm）。這些欄位不下達高度控制指令，也不是自動帶入的實測高度。</p>
-					<div class="pressure-field pressure-field-wide">
-						<label for="pressureNotes">備註（選填）</label>
-						<textarea id="pressureNotes" name="notes" rows="2" maxlength="2000" placeholder="記錄本輪觀察，不填寫姓名等個人資料。"></textarea>
-					</div>
 					<p class="pressure-field-wide pressure-field-hint">全程維持選定睡姿並自然呼吸；微動僅為同一睡姿的小幅調整，不包含翻身或切換睡姿。</p>
 					<label class="pressure-setup-confirm pressure-field-wide" for="pressureSetupConfirmed">
 						<input id="pressureSetupConfirmed" name="setup_confirmed" type="checkbox" required>
@@ -806,6 +838,7 @@ https://fustyles.github.io/webduino/WebSerial.html
 	<script src="./pressure-recorder.js"></script>
 	<script src="./pressure-experiment.js"></script>
 	<script src="./experiment-hub.js"></script>
+	<script src="./experiment-height-control.js"></script>
 	<script src="./app.js"></script>
 </body>
 

@@ -46,6 +46,24 @@ function fixture(useHub = false) {
     let startClock = null;
     const epoch = Date.parse('2030-01-02T03:04:05.000Z');
     const system = { connected: true, autoHeightPossible: false };
+    const heightState = { prepared: false, ready: false, busy: false, reason: '尚未準備',
+        head: null, neck: null, targetHead: null, targetNeck: null, receivedMonotonicMs: null };
+    const heightCalls = [];
+    const heightControl = {
+        async prepare() {
+            heightCalls.push({ action: 'prepare' });
+            Object.assign(heightState, { prepared: true, ready: true, busy: false, reason: '',
+                head: 7, neck: 10, targetHead: 7, targetNeck: 10, receivedMonotonicMs: clock });
+        },
+        async adjust(channel, height) {
+            heightCalls.push({ action: 'adjust', channel, height });
+            const key = String(channel).toUpperCase() === 'HEAD' ? 'head' : 'neck';
+            Object.assign(heightState, { [key]: height, [key === 'head' ? 'targetHead' : 'targetNeck']: height,
+                ready: true, busy: false, reason: '', receivedMonotonicMs: clock });
+        },
+        getState: () => ({ ...heightState }),
+        tick() {}
+    };
     const timers = [];
     const timeouts = [];
     const charts = [];
@@ -74,6 +92,18 @@ function fixture(useHub = false) {
         dispatch(event, target = this) {
             for (const listener of this.listeners.get(event) || []) listener({ target, preventDefault() {} });
         }
+        checkValidity() {
+            if (this.disabled) return true;
+            if ('required' in this.attrs && (this.attrs.type === 'checkbox' ? !this.checked : !this.value)) return false;
+            if (this.attrs.pattern && this.value && !new RegExp(`^(?:${this.attrs.pattern})$`).test(this.value)) return false;
+            if (this.attrs.type === 'number' && this.value) {
+                const value = Number(this.value), min = Number(this.attrs.min || 0), step = Number(this.attrs.step || 1);
+                if (!Number.isFinite(value) || value < min || (this.attrs.max && value > Number(this.attrs.max))) return false;
+                if (Math.abs((value - min) / step - Math.round((value - min) / step)) > 1e-8) return false;
+            }
+            return true;
+        }
+        reportValidity() { return this.checkValidity(); }
         getContext() {
             const canvas = this;
             if (!this.drawingContext) this.drawingContext = {
@@ -118,13 +148,14 @@ function fixture(useHub = false) {
         nodes[match[2]] = new Element(match[2], attrs);
     }
     nodes.pressureCondition.value = '01';
+    if (nodes.pressureCalibrationPose) nodes.pressureCalibrationPose.value = 'pose1';
     // A deliberately small validity model using the actual template constraints.
     // This is not a substitute for native HTML constraint-validation/render tests.
     nodes.pressureRunForm.checkValidity = () => {
         if (nodes.pressureRunSettings.disabled) return true;
         const subject = nodes.pressureSubject;
         if (!new RegExp(`^(?:${subject.attrs.pattern})$`).test(subject.value)) return false;
-        for (const id of ['pressureTrial', 'pressureHeadHeight', 'pressureNeckHeight']) {
+        for (const id of ['pressureHeadHeight', 'pressureNeckHeight']) {
             const node = nodes[id]; const value = Number(node.value);
             if (!node.value || !Number.isFinite(value) || value < Number(node.attrs.min) ||
                 (node.attrs.max && value > Number(node.attrs.max)) ||
@@ -196,13 +227,13 @@ function fixture(useHub = false) {
         };
         vm.runInContext(source('experiment-hub.js'), context);
         hub = context.createExperimentHub({ querySelector: selector => nodes[selector.slice(1)] }, {
-            pressureConfig: actualConfig, getSystemState
+            pressureConfig: actualConfig, getSystemState, heightControl
         });
         hub.init();
     } else {
         module = context.createPressureCollectionExperiment(pressureRoot, {
             gapTimeoutMs: 3000, conditions: conditions.map(item => ({ ...item })),
-            getSystemState, onChange: state => uiChanges.push({ ...state })
+            getSystemState, heightControl, onChange: state => uiChanges.push({ ...state })
         });
     }
     function at(ms) { clock = ms; }
@@ -214,11 +245,11 @@ function fixture(useHub = false) {
         };
         if (hub) hub.receivePressure(sample); else module.receivePressure(sample);
     }
-    function fill(condition = '01', notes = '') {
-        nodes.pressureSubject.value = 'S01'; nodes.pressureTrial.value = '2';
+    function fill(condition = '01') {
+        nodes.pressureSubject.value = 'S01';
         changeCondition(condition);
         nodes.pressureHeadHeight.value = '9.5'; nodes.pressureNeckHeight.value = '11';
-        nodes.pressureNotes.value = notes; nodes.pressureSetupConfirmed.checked = true;
+        module.refresh(); nodes.pressureSetupConfirmed.checked = true;
     }
     function changeCondition(id, event = 'change') {
         nodes.pressureCondition.value = id;
@@ -231,8 +262,13 @@ function fixture(useHub = false) {
         return event;
     }
     function prime() { receive(); at(clock + 1000); receive(); module.refresh(); }
-    function begin(condition = '01', notes = '') {
-        fill(condition, notes); prime(); startClock = clock; module.start();
+    async function trigger(id, event = 'click') {
+        nodes[id].dispatch(event);
+        await new Promise(resolve => setImmediate(resolve));
+        module.refresh();
+    }
+    function begin(condition = '01') {
+        fill(condition); prime(); startClock = clock; module.start();
         assert.equal(module.getUiState().status, 'recording');
     }
     function elapsed(ms, values) { at(startClock + ms); if (values) receive(values); heartbeat(); }
@@ -247,7 +283,8 @@ function fixture(useHub = false) {
         return { ...download, png, ...parseCsv(await download.blob.text()) };
     }
     return {
-        module, hub, actualConfig, pressureRoot, nodes, system, timers, timeouts, charts, downloads, confirms,
+        module, hub, actualConfig, pressureRoot, nodes, system, heightState, heightCalls, heightControl,
+        trigger, timers, timeouts, charts, downloads, confirms,
         confirmationAnswers, uiChanges, at, heartbeat, receive, fill, prime, begin, elapsed, exported,
         changeCondition, beforeUnload, setPngFailure: value => { pngFailure = value; },
         clock: () => clock, setStartClock: () => { startClock = clock; }, systemStateReads: () => systemStateReads
@@ -258,6 +295,7 @@ test('template is a single inert view with explicit ADC, posture and operator-he
     assert.equal((html.match(/id="pressureExperimentTemplate"/g) || []).length, 1);
     assert.equal((template.match(/<form\b/g) || []).length, 1);
     assert.equal((template.match(/<option value="0[1-4]"/g) || []).length, 4);
+    assert.doesNotMatch(template, /id="(?:pressureNotes|pressureTrial|pressureCalibrationUse)"/);
     assert.match(template, /pattern="S\\d\{2\}"/);
     assert.match(template, /id="pressureHeadHeight"[^>]*min="7"[^>]*max="16"[^>]*step="0\.5"/);
     assert.match(template, /id="pressureNeckHeight"[^>]*min="10"[^>]*max="14"[^>]*step="0\.5"/);
@@ -265,7 +303,11 @@ test('template is a single inert view with explicit ADC, posture and operator-he
     assert.match(template, /不包含翻身或切換睡姿/);
     assert.match(template, /不提供即時分類結果/);
     assert.match(template, /原始 ADC/);
-    assert.doesNotMatch(template, /<button\b/);
+    const recordingForm = template.match(/<form id="pressureRunForm">([\s\S]*?)<\/form>/)?.[1];
+    assert.ok(recordingForm);
+    assert.doesNotMatch(recordingForm, /pressureCalibration(?:Prepare|Capture)/,
+        'independent calibration controls must not participate in recording form validation');
+    for (const button of template.matchAll(/<button\b([^>]*)>/g)) assert.match(button[1], /type="button"/);
 });
 
 test('start requires live complete messages and valid confirmed settings; form edits clear confirmation', () => {
@@ -386,13 +428,14 @@ test('all four condition metadata and filename segments survive actual Blob CSV 
         f.module.endEarly();
         const exported = await f.exported();
         assert.equal(exported.filename,
-            `S01_${condition.filePose}_${condition.fileHeight}_${condition.test_condition}_trial02_synthetic-run-1.csv`);
+            `S01_${condition.filePose}_${condition.fileHeight}_${condition.test_condition}_synthetic-run-1.csv`);
         const row = exported.rows[0];
         assert.equal(row.condition_id, condition.id);
         assert.equal(row.actual_pose, condition.actual_pose);
         assert.equal(row.height_condition, condition.height_condition);
         assert.equal(row.test_condition, condition.test_condition);
-        assert.equal(row.subject_id, 'S01'); assert.equal(row.trial_index, '2');
+        assert.equal(row.subject_id, 'S01'); assert.equal(row.trial_index, '');
+        assert.equal(row.notes, ''); assert.equal(exported.header.length, 23);
         assert.equal(row.head_height_cm, '9.5'); assert.equal(row.neck_height_cm, '11');
         assert.equal(row.height_source, 'operator'); assert.equal(row.pressure_unit, 'ADC');
         assert.equal(row.data_timeout_s, '3'); assert.equal(row.gap_timeout_ms, '3000');
@@ -401,19 +444,20 @@ test('all four condition metadata and filename segments survive actual Blob CSV 
     }
 });
 
-test('quoted notes and captured metadata remain immutable despite later form changes', async () => {
-    const notes = 'Synthetic note, with "quotes"\r\nand a second line';
-    const f = fixture(); f.begin('02', notes); f.elapsed(400, [1, 2, 3]); f.module.endEarly();
-    f.fill('02', 'replacement'); f.nodes.pressureSubject.value = 'S99';
-    f.nodes.pressureTrial.value = '8'; f.nodes.pressureHeadHeight.value = '15';
+test('captured metadata remain immutable after form changes; removed UI fields export empty compatibility columns', async () => {
+    const f = fixture(); f.begin('02'); f.elapsed(400, [1, 2, 3]); f.module.endEarly();
+    f.fill('02'); f.nodes.pressureSubject.value = 'S99';
+    f.nodes.pressureHeadHeight.value = '15';
     f.nodes.pressureNeckHeight.value = '14'; f.module.refresh();
     const first = await f.exported();
-    assert.equal(first.rows[0].notes, notes);
+    assert.equal(first.rows[0].notes, ''); assert.equal(first.rows[0].trial_index, '');
     assert.equal(first.rows[0].subject_id, 'S01'); assert.equal(first.rows[0].condition_id, '02');
-    assert.equal(first.rows[0].head_height_cm, '9.5'); assert.equal(first.rows[0].trial_index, '2');
-    assert.match(first.filename, /^S01_pose1_height1_micro_motion_trial02_/);
+    assert.equal(first.rows[0].head_height_cm, '9.5'); assert.equal(first.rows[0].neck_height_cm, '11');
+    assert.match(first.filename, /^S01_pose1_height1_micro_motion_/);
+    assert.doesNotMatch(first.filename, /_trial/);
     assert.equal(f.timeouts[0].delay, 10000, 'object URL revocation must be deferred');
     const retained = JSON.stringify(f.charts[0].data.datasets);
+    f.nodes.pressureSetupConfirmed.checked = true; f.module.refresh();
     f.confirmationAnswers.push(false); f.module.start();
     assert.equal(f.confirms.length, 1);
     assert.equal(f.module.getUiState().status, 'ended_early');
@@ -428,8 +472,10 @@ test('quoted notes and captured metadata remain immutable despite later form cha
     const second = await f.exported();
     assert.notEqual(second.rows[0].run_id, first.rows[0].run_id);
     assert.equal(second.rows[0].subject_id, 'S99'); assert.equal(second.rows[0].condition_id, '02');
-    assert.equal(second.rows[0].notes, 'replacement');
-    assert.match(second.filename, /^S99_pose1_height1_micro_motion_trial08_/);
+    assert.equal(second.rows[0].notes, ''); assert.equal(second.rows[0].trial_index, '');
+    assert.equal(second.rows[0].head_height_cm, '15'); assert.equal(second.rows[0].neck_height_cm, '14');
+    assert.match(second.filename, /^S99_pose1_height1_micro_motion_/);
+    assert.doesNotMatch(second.filename, /_trial/);
 });
 
 test('collapsed or detached view continues collecting; reopening redraws all stored samples', async () => {
@@ -453,10 +499,11 @@ test('collapsed or detached view continues collecting; reopening redraws all sto
     const exported = await f.exported(); assert.equal(exported.rows.length, 31);
 });
 
-test('control warning reflects existing system state without sending or inventing controls', () => {
+test('control warning reflects existing system state without automatically sending controls', () => {
     const f = fixture(); f.system.autoHeightPossible = true; f.module.refresh();
     assert.match(f.nodes.pressureControlWarning.textContent, /可能改變高度/);
-    assert.match(f.nodes.pressureControlWarning.textContent, /不會停止 PRED/);
+    assert.match(f.nodes.pressureControlWarning.textContent, /準備微調/);
+    assert.equal(f.heightCalls.length, 0);
     f.system.autoHeightPossible = false; f.module.refresh();
     assert.match(f.nodes.pressureControlWarning.textContent, /未回報自動高度調整啟用/);
     assert.match(f.nodes.pressureGapPolicy.textContent, /3\.0 秒/);
@@ -501,7 +548,7 @@ test('real Hub initializes the real pressure controller and recorder with the ap
     assert.equal(parsed.rows[0].test_condition, 'movement');
     assert.equal(parsed.rows[0].data_timeout_s, '3');
     assert.equal(parsed.rows[0].monitor_adc, '101.25');
-    assert.match(downloaded.filename, /^S01_pose5_height5_movement_trial02_/);
+    assert.match(downloaded.filename, /^S01_pose5_height5_movement_/);
     f.system.autoHeightPossible = true; f.heartbeat();
     assert.match(f.nodes.pressureControlWarning.textContent, /可能改變高度/);
 });
@@ -515,7 +562,7 @@ function decodedCanvas(download) {
 
 test('CSV and PNG share a run stem and immutable snapshot; visible PNG header excludes run UUID', async () => {
     const f = fixture(); f.begin('02'); f.elapsed(250, [12.5, 23.5, 34.5]); f.module.endEarly();
-    f.nodes.pressureSubject.value = 'S99'; f.nodes.pressureTrial.value = '9';
+    f.nodes.pressureSubject.value = 'S99';
     f.nodes.pressureHeadHeight.value = '15'; f.nodes.pressureNeckHeight.value = '14';
     const result = await f.exported();
     assert.equal(result.filename.replace(/\.csv$/, ''), result.png.filename.replace(/\.png$/, ''));
@@ -524,7 +571,8 @@ test('CSV and PNG share a run stem and immutable snapshot; visible PNG header ex
     const image = decodedCanvas(result.png);
     const header = image.calls.filter(call => call.kind === 'fillText').map(call => call.text).join('');
     assert.match(header, /固定睡姿下自然呼吸與微動之辨識穩健性測試/);
-    assert.match(header, /S01｜trial 2｜條件 02/);
+    assert.match(header, /S01｜條件 02/);
+    assert.doesNotMatch(header, /trial/i);
     assert.match(header, /synthetic_pose1／synthetic_height1／micro_motion/);
     assert.match(header, /Head 9\.5 cm｜Neck 11 cm｜1 筆/);
     assert.doesNotMatch(header, /synthetic-run|S99|Head 15/);
@@ -537,7 +585,8 @@ test('CSV and PNG share a run stem and immutable snapshot; visible PNG header ex
     assert.equal(drawing.data.datasets[0].data[0].y, 12.5);
     assert.equal(drawing.data.datasets[1].data[0].y, 23.5);
     assert.equal(drawing.data.datasets[2].data[0].y, 34.5);
-    assert.match(drawing.title, /條件 02｜S01／trial 2/);
+    assert.match(drawing.title, /條件 02｜S01/);
+    assert.doesNotMatch(drawing.title, /trial/i);
 });
 
 test('condition change starts with an empty view and switching back restores its unexported run and chart', () => {
@@ -568,7 +617,7 @@ test('condition change starts with an empty view and switching back restores its
 test('all four banks preserve independently exportable CSV/PNG metadata and correct curve pairs', async () => {
     const f = fixture(true); const ids = [];
     for (const [index, condition] of f.actualConfig.conditions.entries()) {
-        f.begin(condition.id, `synthetic bank ${condition.id}`);
+        f.begin(condition.id);
         f.elapsed(200, [index * 100 + 1, index * 100 + 2, index * 100 + 3]); f.module.endEarly();
     }
     for (const [index, condition] of f.actualConfig.conditions.entries()) {
@@ -579,10 +628,10 @@ test('all four banks preserve independently exportable CSV/PNG metadata and corr
         const row = result.rows[0]; ids.push(row.run_id);
         assert.equal(row.condition_id, condition.id); assert.equal(row.actual_pose, condition.actual_pose);
         assert.equal(row.height_condition, condition.height_condition); assert.equal(row.test_condition, condition.test_condition);
-        assert.equal(row.notes, `synthetic bank ${condition.id}`);
+        assert.equal(row.notes, ''); assert.equal(row.trial_index, '');
         assert.equal(row.monitor_adc, String(index * 100 + 1));
         assert.equal(result.filename.replace(/\.csv$/, ''), result.png.filename.replace(/\.png$/, ''));
-        assert.ok(result.filename.startsWith(`S01_${condition.filePose}_${condition.fileHeight}_${condition.test_condition}_trial02_`));
+        assert.ok(result.filename.startsWith(`S01_${condition.filePose}_${condition.fileHeight}_${condition.test_condition}_`));
         const drawing = decodedCanvas(result.png).calls.find(call => call.kind === 'drawImage');
         assert.match(drawing.title, new RegExp(`條件 ${condition.id}｜`));
         assert.equal(drawing.data.datasets[0].data[0].y, index * 100 + 1);
@@ -640,4 +689,174 @@ test('PNG encoding failure or a hidden chart downloads nothing and never acknowl
         assert.equal(f.downloads.length, 2);
         assert.equal(f.module.needsLeaveProtection(), false);
     }
+});
+
+async function readyCalibration(f, pose = 'pose1', pressure = [101, 202, 303]) {
+    f.fill();
+    f.nodes.pressureCalibrationPose.value = pose;
+    await f.trigger('pressureCalibrationPose', 'change');
+    await f.trigger('pressureCalibrationPrepare');
+    f.prime();
+    f.at(f.clock() + 100); f.receive(pressure);
+    f.nodes.pressureCalibrationStable.checked = true;
+    await f.trigger('pressureCalibrationStable', 'change');
+}
+
+test('independent calibration preparation delegates once and never starts a recording', async () => {
+    const f = fixture(true); f.fill();
+    await f.trigger('pressureCalibrationPrepare');
+    assert.deepEqual(f.heightCalls, [{ action: 'prepare' }]);
+    assert.equal(f.module.getUiState().status, 'idle');
+    assert.equal(f.nodes.pressureSampleCount.textContent, '0');
+    assert.equal(f.nodes.pressureSetupConfirmed.checked, false);
+    assert.equal(f.downloads.length, 0);
+});
+
+test('calibration snapshot requires subject, current pressure after height feedback, stable confirmation and ready control', async () => {
+    const f = fixture();
+    await readyCalibration(f);
+    assert.equal(f.nodes.pressureCalibrationCapture.disabled, false);
+    for (const change of [
+        () => { f.nodes.pressureSubject.value = 's01'; },
+        () => { f.heightState.ready = false; },
+        () => { f.heightState.busy = true; },
+        () => { f.nodes.pressureCalibrationStable.checked = false; },
+        () => { f.heightState.receivedMonotonicMs = f.clock() + 1; },
+        () => { f.nodes.pressureCalibrationHead.value = '9'; }
+    ]) {
+        f.nodes.pressureSubject.value = 'S01'; f.heightState.ready = true; f.heightState.busy = false;
+        f.nodes.pressureCalibrationStable.checked = true; f.heightState.receivedMonotonicMs = 0;
+        f.nodes.pressureCalibrationHead.value = '7'; f.nodes.pressureCalibrationNeck.value = '10';
+        change(); f.module.refresh();
+        assert.equal(f.nodes.pressureCalibrationCapture.disabled, true);
+    }
+    f.heightState.receivedMonotonicMs = 0; f.nodes.pressureCalibrationStable.checked = true;
+    f.at(f.clock() + 3000); f.module.refresh();
+    assert.equal(f.nodes.pressureCalibrationCapture.disabled, true, 'stale ADC cannot become calibration');
+});
+
+test('two poses retain independent immutable pressure snapshots and changed subject cannot reuse them', async () => {
+    const f = fixture(true);
+    await readyCalibration(f, 'pose1', [111, 222, 333]);
+    await f.trigger('pressureCalibrationCapture');
+    const first = f.nodes.pressureCalibrationPose1Saved.textContent;
+    assert.match(first, /S01/); assert.match(first, /111/); assert.match(first, /222/); assert.match(first, /333/);
+    f.nodes.pressureCalibrationPose.value = 'pose5';
+    await f.trigger('pressureCalibrationPose', 'change');
+    f.nodes.pressureCalibrationHead.value = '12';
+    await f.trigger('pressureCalibrationHead', 'input');
+    await f.trigger('pressureCalibrationHeadApply');
+    f.nodes.pressureCalibrationNeck.value = '13';
+    await f.trigger('pressureCalibrationNeck', 'input');
+    await f.trigger('pressureCalibrationNeckApply');
+    f.at(f.clock() + 100); f.receive([444, 555, 666]);
+    f.nodes.pressureCalibrationStable.checked = true;
+    await f.trigger('pressureCalibrationStable', 'change');
+    await f.trigger('pressureCalibrationCapture');
+    const second = f.nodes.pressureCalibrationPose5Saved.textContent;
+    assert.match(second, /444/); assert.match(second, /555/); assert.match(second, /666/);
+    assert.equal(f.nodes.pressureCalibrationPose1Saved.textContent, first);
+    f.at(f.clock() + 100); f.receive([777, 888, 999]); f.module.refresh();
+    assert.equal(f.nodes.pressureCalibrationPose5Saved.textContent, second, 'saved capture must not follow live pressure');
+    f.nodes.pressureSubject.value = 'S02';
+    f.nodes.pressureSubject.dispatch('input');
+    assert.doesNotMatch(f.nodes.pressureCalibrationPose1Saved.textContent, /111/);
+    assert.doesNotMatch(f.nodes.pressureCalibrationPose5Saved.textContent, /444/);
+});
+
+test('capturing never fills run heights; manually entered heights must match the ready device before recording', async () => {
+    const f = fixture();
+    await readyCalibration(f);
+    f.nodes.pressureCalibrationHead.value = '8.5';
+    await f.trigger('pressureCalibrationHead', 'input');
+    await f.trigger('pressureCalibrationHeadApply');
+    f.nodes.pressureCalibrationNeck.value = '11.5';
+    await f.trigger('pressureCalibrationNeck', 'input');
+    await f.trigger('pressureCalibrationNeckApply');
+    f.at(f.clock() + 100); f.receive();
+    f.nodes.pressureCalibrationStable.checked = true;
+    await f.trigger('pressureCalibrationStable', 'change');
+    await f.trigger('pressureCalibrationCapture');
+    assert.equal(f.nodes.pressureHeadHeight.value, '9.5', 'calibration must not automatically fill run Head height');
+    assert.equal(f.nodes.pressureNeckHeight.value, '11', 'calibration must not automatically fill run Neck height');
+    f.nodes.pressureSetupConfirmed.checked = true; f.module.refresh();
+    assert.equal(f.module.getUiState().startDisabled, true, 'a confirmed but mismatched run must remain blocked');
+    const callsBefore = f.heightCalls.length;
+    f.nodes.pressureHeadHeight.value = '8.5';
+    f.nodes.pressureRunForm.dispatch('input', f.nodes.pressureHeadHeight);
+    f.nodes.pressureSetupConfirmed.checked = true; f.module.refresh();
+    assert.equal(f.module.getUiState().startDisabled, true, 'matching one channel is insufficient');
+    f.nodes.pressureNeckHeight.value = '11.5';
+    f.nodes.pressureRunForm.dispatch('input', f.nodes.pressureNeckHeight);
+    assert.equal(f.heightCalls.length, callsBefore);
+    assert.equal(f.nodes.pressureSetupConfirmed.checked, false);
+    f.nodes.pressureSetupConfirmed.checked = true; f.module.refresh();
+    assert.equal(f.module.getUiState().startDisabled, false);
+    f.heightState.ready = false; f.module.refresh();
+    assert.equal(f.module.getUiState().startDisabled, true, 'manual run heights must not bypass lost height readiness');
+    f.heightState.ready = true; f.heightState.busy = true; f.module.refresh();
+    assert.equal(f.module.getUiState().startDisabled, true);
+});
+
+test('calibration height edits cancel confirmations and validated apply delegates the requested channel only', async () => {
+    const f = fixture(); await readyCalibration(f);
+    f.nodes.pressureSetupConfirmed.checked = true;
+    f.nodes.pressureCalibrationHead.value = '9.5';
+    await f.trigger('pressureCalibrationHead', 'input');
+    assert.equal(f.nodes.pressureSetupConfirmed.checked, false);
+    assert.equal(f.nodes.pressureCalibrationStable.checked, false);
+    await f.trigger('pressureCalibrationHeadApply');
+    const applied = f.heightCalls.at(-1);
+    assert.equal(applied.action, 'adjust'); assert.equal(String(applied.channel).toUpperCase(), 'HEAD');
+    assert.equal(Number(applied.height), 9.5);
+    const count = f.heightCalls.length;
+    for (const invalid of ['16.5', '6.5', '9.25', '']) {
+        f.nodes.pressureCalibrationHead.value = invalid;
+        await f.trigger('pressureCalibrationHead', 'input');
+        await f.trigger('pressureCalibrationHeadApply');
+        assert.equal(f.heightCalls.length, count, `invalid Head height ${invalid} must not be sent`);
+    }
+});
+
+test('recording and height operation locks prevent new calibration or Hub navigation', async () => {
+    const f = fixture(true); f.begin();
+    for (const id of ['pressureCalibrationPrepare', 'pressureCalibrationHeadApply',
+        'pressureCalibrationNeckApply', 'pressureCalibrationCapture']) {
+        assert.equal(f.nodes[id].disabled, true, `${id} must be locked while recording`);
+    }
+    f.module.endEarly();
+    f.heightState.busy = true; f.module.refresh();
+    assert.equal(f.nodes.experimentSelect.disabled, true);
+    assert.equal(f.nodes.experimentNext.disabled, true);
+    f.nodes.experimentSelect.value = '02'; f.nodes.experimentSelect.dispatch('change');
+    assert.equal(f.nodes.experimentSelect.value, '01');
+    f.heightState.busy = false; f.module.refresh();
+    assert.equal(f.nodes.experimentSelect.disabled, false);
+});
+
+test('applying one channel preserves the other channel draft until explicitly applied', async () => {
+    const f = fixture(); await readyCalibration(f);
+    f.nodes.pressureCalibrationNeck.value = '13';
+    await f.trigger('pressureCalibrationNeck', 'input');
+    f.nodes.pressureCalibrationHead.value = '9.5';
+    await f.trigger('pressureCalibrationHead', 'input');
+    await f.trigger('pressureCalibrationHeadApply');
+    assert.equal(f.nodes.pressureCalibrationNeck.value, '13');
+    assert.notEqual(f.heightState.neck, 13, 'editing the other draft must not move that channel');
+    f.nodes.pressureCalibrationStable.checked = true; f.module.refresh();
+    assert.equal(f.nodes.pressureCalibrationCapture.disabled, true, 'both channel drafts must be applied before capture');
+});
+
+test('replacing a saved calibration requires confirmation and switching subjects preserves each record', async () => {
+    const f = fixture(); await readyCalibration(f, 'pose1', [111, 222, 333]);
+    await f.trigger('pressureCalibrationCapture');
+    const original = f.nodes.pressureCalibrationPose1Saved.textContent;
+    f.at(f.clock() + 100); f.receive([444, 555, 666]);
+    f.confirmationAnswers.push(false);
+    await f.trigger('pressureCalibrationCapture');
+    assert.equal(f.nodes.pressureCalibrationPose1Saved.textContent, original);
+    f.nodes.pressureSubject.value = 'S02'; f.module.refresh();
+    assert.doesNotMatch(f.nodes.pressureCalibrationPose1Saved.textContent, /111/);
+    f.nodes.pressureSubject.value = 'S01'; f.module.refresh();
+    assert.equal(f.nodes.pressureCalibrationPose1Saved.textContent, original);
 });

@@ -23,7 +23,7 @@ function createExperimentHub(root, options = {}) {
     function updateControls(uiState) {
         const selected = currentExperiment === pressureId && pressureExperiment;
         const state = selected ? uiState || pressureExperiment.getUiState() : null;
-        const running = pressureExperiment?.isRunning() || false;
+        const running = pressureExperiment?.isBusy() || false;
         const index = experimentRegistry.findIndex(experiment => experiment.id === currentExperiment);
         nodes.prev.disabled = running || index === 0;
         nodes.next.disabled = running || index === experimentRegistry.length - 1;
@@ -84,7 +84,7 @@ function createExperimentHub(root, options = {}) {
     }
 
     function selectExperiment(id) {
-        if (pressureExperiment?.isRunning()) {
+        if (pressureExperiment?.isBusy()) {
             nodes.select.value = currentExperiment;
             return;
         }
@@ -140,6 +140,7 @@ function createExperimentHub(root, options = {}) {
             pressureExperiment = createPressureCollectionExperiment(pressureView, {
                 gapTimeoutMs: pressureConfig.gapTimeoutMs, conditions: pressureConfig.conditions,
                 getSystemState: options.getSystemState,
+                heightControl: options.heightControl,
                 onChange: state => { if (currentExperiment === pressureId) updateControls(state); }
             });
         }
@@ -165,6 +166,7 @@ function createExperimentHub(root, options = {}) {
 
     return {
         init,
+        isRunning: () => pressureExperiment?.isRunning() || false,
         receivePressure: sample => pressureExperiment?.receivePressure(sample),
         onDisconnected: () => pressureExperiment?.onDisconnected()
     };

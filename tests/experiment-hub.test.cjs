@@ -70,6 +70,7 @@ function fixture(savedSelection = null) {
             receivePressure(sample) { if (status === 'recording') { samples.push({ ...sample }); chart.data.push(sample.monitor_adc); } },
             onDisconnected() { calls.disconnect++; if (status === 'recording') status = 'interrupted'; refresh(); },
             refresh, getUiState, isRunning: () => status === 'recording',
+            isBusy: () => status === 'recording',
             needsLeaveProtection: () => status === 'recording' || (samples.length > 0 && !exported)
         };
         pressureInstances.push({ view, options, module, samples, chart, calls });

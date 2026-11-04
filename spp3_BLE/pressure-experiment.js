@@ -1,4 +1,4 @@
-// One pressure-collection experiment. It observes parsed samples and never sends commands.
+// Pressure collection observes parsed samples; explicit calibration uses the height adapter.
 function createPressureCollectionExperiment(root, options) {
     const { gapTimeoutMs, conditions, getSystemState, onChange } = options;
     // Keep one last run per condition so changing the selector never discards unsaved results.
@@ -30,6 +30,148 @@ function createPressureCollectionExperiment(root, options) {
     let priorStatus = 'idle';
     let feedback = '';
     let lastUiState = null;
+    const heightControl = options.heightControl;
+    const calibrations = new Map();
+    let calibrationSubject = '';
+    let calibrationDrafts = {};
+    let calibrationFeedback = '';
+    let calibrationPending = false;
+    let calibrationUsed = false;
+
+    const subjectId = () => field('pressureSubject').value.trim();
+    const calibrationPose = () => field('pressureCalibrationPose').value;
+    const calibrationRecord = () => calibrations.get(subjectId())?.[calibrationPose()];
+    const heightState = () => heightControl?.getState() || { ready: false, busy: false, reason: '高度控制尚未載入。' };
+    const calibrationBusy = () => calibrationPending || heightState().busy;
+    const validHeight = (channel, value) => value !== '' && Number.isFinite(Number(value)) &&
+        Number(value) >= (channel === 'Head' ? 7 : 10) && Number(value) <= (channel === 'Head' ? 16 : 14) &&
+        Number.isInteger(Number(value) * 2);
+
+    function resetCalibrationConfirmation() {
+        confirmed.checked = false;
+        field('pressureCalibrationStable').checked = false;
+    }
+
+    function saveCalibrationDraft() {
+        calibrationDrafts[calibrationPose()] = {
+            head: field('pressureCalibrationHead').value, neck: field('pressureCalibrationNeck').value
+        };
+        resetCalibrationConfirmation();
+        calibrationFeedback = '';
+    }
+
+    function showCalibrationDraft() {
+        const draft = calibrationDrafts[calibrationPose()];
+        field('pressureCalibrationHead').value = draft?.head ?? '';
+        field('pressureCalibrationNeck').value = draft?.neck ?? '';
+        resetCalibrationConfirmation();
+    }
+
+    function canCaptureCalibration(height) {
+        return /^S\d{2}$/.test(subjectId()) && !calibrationBusy() && height.ready &&
+            recorder.getState().status !== 'recording' && freshStream() &&
+            latestSample.receivedMonotonicMs >= (height.settledMonotonicMs ?? height.receivedMonotonicMs) &&
+            ['monitor_adc', 'neck_adc', 'head_adc'].every(key => Number.isFinite(latestSample[key])) &&
+            Number(field('pressureCalibrationHead').value) === height.head &&
+            Number(field('pressureCalibrationNeck').value) === height.neck &&
+            field('pressureCalibrationStable').checked;
+    }
+
+    function calibrationRunBlocked() {
+        const height = heightState();
+        return calibrationBusy() || (calibrationUsed && (!height.ready ||
+            Number(field('pressureHeadHeight').value) !== height.head ||
+            Number(field('pressureNeckHeight').value) !== height.neck));
+    }
+
+    function refreshCalibration(running) {
+        if (subjectId() !== calibrationSubject) {
+            calibrationSubject = subjectId();
+            calibrationDrafts = {};
+            showCalibrationDraft();
+            calibrationFeedback = '';
+            feedback = '';
+        }
+        heightControl?.tick();
+        const height = heightState();
+        const locked = running || calibrationBusy();
+        field('pressureCalibrationPrepare').disabled = locked || !getSystemState().connected || !/^S\d{2}$/.test(subjectId()) || !heightControl;
+        field('pressureCalibrationPose').disabled = locked;
+        field('pressureCalibrationStable').disabled = locked || !height.ready;
+        if (!height.ready) {
+            field('pressureCalibrationStable').checked = false;
+            if (calibrationUsed && !running) confirmed.checked = false;
+        }
+        ['Head', 'Neck'].forEach(channel => {
+            const input = field(`pressureCalibration${channel}`);
+            input.disabled = locked;
+            field(`pressureCalibration${channel}Minus`).disabled = locked || !validHeight(channel, input.value) || Number(input.value) <= (channel === 'Head' ? 7 : 10);
+            field(`pressureCalibration${channel}Plus`).disabled = locked || !validHeight(channel, input.value) || Number(input.value) >= (channel === 'Head' ? 16 : 14);
+            field(`pressureCalibration${channel}Apply`).disabled = locked || !height.ready || !validHeight(channel, input.value);
+        });
+        field('pressureCalibrationCapture').disabled = !canCaptureCalibration(height);
+        const cm = value => Number.isFinite(value) ? value.toFixed(1) : '—';
+        setText('pressureCalibrationCurrent', `裝置估計：Head ${cm(height.head)}／Neck ${cm(height.neck)} cm；目標：Head ${cm(height.targetHead)}／Neck ${cm(height.targetNeck)} cm${height.ready ? '（已回報到位）' : '（尚未確認到位）'}`);
+        setText('pressureCalibrationStatus', calibrationFeedback || height.reason || '請先準備微調；切換姿勢只切換本區待套用值，不會自動移動裝置。');
+        ['pose1', 'pose5'].forEach(pose => {
+            const saved = calibrations.get(subjectId())?.[pose];
+            setText(`pressureCalibration${pose === 'pose1' ? 'Pose1' : 'Pose5'}Saved`, saved
+                ? `受試者：${saved.subject}\n目標高度：Head ${saved.targetHead.toFixed(1)}／Neck ${saved.targetNeck.toFixed(1)} cm\n估計高度：Head ${saved.head.toFixed(1)}／Neck ${saved.neck.toFixed(1)} cm\nMonitor：${saved.sample.monitor_adc} ADC\nNeck：${saved.sample.neck_adc} ADC\nHead：${saved.sample.head_adc} ADC\n壓力接收：${saved.sample.timestamp_iso}\n單筆快照，非平均值；已存紀錄不代表目前高度`
+                : `${subjectId() || '目前受試者'}：尚未保存`);
+        });
+    }
+
+    async function runCalibrationAction(action, readCurrentHeights = false) {
+        if (!heightControl || calibrationBusy() || recorder.getState().status === 'recording' || !/^S\d{2}$/.test(subjectId())) return;
+        resetCalibrationConfirmation();
+        calibrationUsed = true;
+        calibrationPending = true;
+        calibrationFeedback = '';
+        refresh();
+        try {
+            await action();
+            const height = heightState();
+            if (height.ready && readCurrentHeights) {
+                field('pressureCalibrationHead').value = String(height.head);
+                field('pressureCalibrationNeck').value = String(height.neck);
+                saveCalibrationDraft();
+            }
+        } catch (error) { calibrationFeedback = error.message; }
+        finally { calibrationPending = false; refresh(); }
+    }
+
+    field('pressureCalibrationPrepare').addEventListener('click', () => runCalibrationAction(() => heightControl.prepare(), true));
+    field('pressureCalibrationPose').addEventListener('change', () => { showCalibrationDraft(); calibrationFeedback = ''; refresh(); });
+    ['Head', 'Neck'].forEach(channel => {
+        const input = field(`pressureCalibration${channel}`);
+        input.addEventListener('input', () => { saveCalibrationDraft(); refresh(); });
+        [['Minus', -0.5], ['Plus', 0.5]].forEach(([suffix, step]) => {
+            field(`pressureCalibration${channel}${suffix}`).addEventListener('click', () => {
+                if (calibrationBusy() || recorder.getState().status === 'recording' || !validHeight(channel, input.value) || !validHeight(channel, Number(input.value) + step)) return;
+                input.value = String(Number(input.value) + step);
+                saveCalibrationDraft(); refresh();
+            });
+        });
+        field(`pressureCalibration${channel}Apply`).addEventListener('click', () => {
+            if (!validHeight(channel, input.value) || !heightState().ready) return;
+            return runCalibrationAction(() => heightControl.adjust(channel.toUpperCase(), Number(input.value)));
+        });
+    });
+    field('pressureCalibrationStable').addEventListener('change', refresh);
+    field('pressureCalibrationCapture').addEventListener('click', () => {
+        const height = heightState();
+        if (!canCaptureCalibration(height)) return;
+        if (calibrationRecord() && !window.confirm('這會取代此受試者、此姿勢先前的校正快照。請先截圖保存，是否繼續？')) return;
+        if (!canCaptureCalibration(heightState())) return;
+        const records = calibrations.get(subjectId()) || {};
+        records[calibrationPose()] = {
+            subject: subjectId(), head: height.head, neck: height.neck,
+            targetHead: height.targetHead, targetNeck: height.targetNeck, sample: { ...latestSample }
+        };
+        calibrations.set(subjectId(), records);
+        calibrationFeedback = '已保存單筆校正快照；兩姿勢的紀錄會並列顯示，可截圖保存。';
+        refresh();
+    });
 
     function freshStream() {
         return latestSample && recentIntervals.length > 0 &&
@@ -76,7 +218,7 @@ function createPressureCollectionExperiment(root, options) {
         // Chart.js exposes resolved options as Proxies. Never write that Proxy
         // back into its own config; update the initialized title's leaf value.
         chart.options.plugins.title.text = state.metadata
-            ? `條件 ${state.metadata.condition_id}｜${state.metadata.subject_id}／trial ${state.metadata.trial_index}｜${state.metadata.actual_pose}／${state.metadata.test_condition}`
+            ? `條件 ${state.metadata.condition_id}｜${state.metadata.subject_id}｜${state.metadata.actual_pose}／${state.metadata.test_condition}`
             : `條件 ${condition.id}｜${condition.poseText}／${condition.scenario}｜尚未開始`;
         ['monitor_adc', 'neck_adc', 'head_adc'].forEach((key, index) => {
             chart.data.datasets[index].data = state.samples.map(sample => ({ x: sample.elapsed_s, y: sample[key] }));
@@ -93,8 +235,8 @@ function createPressureCollectionExperiment(root, options) {
         if (state.samples.length && !state.exportRequested) return '請先匯出此條件上一輪的 CSV 與線圖，再重測，以免遺失資料。';
         if (!system.connected) return '請先連接 ESP32，並確認持續收到有效的三通道壓力資料。';
         if (!freshStream()) return '請確認持續收到至少兩筆完整壓力訊息，且最後接收間隔未超過門檻。';
-        if (!Number.isSafeInteger(Number(field('pressureTrial').value))) return '試次編號必須是有效的正整數。';
-        if (!form.checkValidity()) return '請填妥受試者、試次、設定高度，並確認本輪姿勢與高度。';
+        if (calibrationRunBlocked()) return '請等待微調到位，並確認本輪 Head／Neck 高度與裝置回報一致；必要時重新準備微調。';
+        if (!form.checkValidity()) return '請填妥受試者、設定高度，並確認本輪姿勢與高度。';
         if (typeof Chart !== 'function') return '圖表元件尚未載入，請確認 Chart.js 可用。';
         return state.exportRequested ? '上一輪已要求下載；重測前仍需確認 CSV 與 PNG 線圖都已保存。' : '設定完成後，由操作者按「開始記錄」，不另加等待秒數。';
     }
@@ -103,7 +245,9 @@ function createPressureCollectionExperiment(root, options) {
         const state = recorder.tick();
         const system = getSystemState();
         const running = state.status === 'recording';
-        settings.disabled = running;
+        refreshCalibration(running);
+        settings.disabled = running || calibrationBusy();
+        field('pressureSubject').disabled = settings.disabled;
         if (priorStatus === 'recording' && !running) confirmed.checked = false;
         priorStatus = state.status;
         setText('pressureBleStatus', system.connected ? '已連線' : '未連線');
@@ -120,17 +264,17 @@ function createPressureCollectionExperiment(root, options) {
         setText('pressureObservedInterval', recentIntervals.length
             ? `最近 ${recentIntervals.at(-1).toFixed(1)}；範圍 ${Math.min(...recentIntervals).toFixed(1)}–${Math.max(...recentIntervals).toFixed(1)}（最近 ${recentIntervals.length} 個間隔）`
             : '等待實際接收間隔；每秒 P 查詢不等於取樣率');
-        setText('pressureGapPolicy', `資料中斷門檻：連續 ${(gapTimeoutMs / 1000).toFixed(1)} 秒未收到有效完整壓力訊息。本設定依每秒 P 查詢節奏訂定，仍需實機驗證；不另增加 BLE 查詢。`);
+        setText('pressureGapPolicy', `資料中斷門檻：連續 ${(gapTimeoutMs / 1000).toFixed(1)} 秒未收到有效完整壓力訊息。壓力仍沿用每秒 P 查詢；獨立校正啟用後會另外讀取高度與狀態，實際接收間隔仍需實機驗證。`);
         setText('pressureControlWarning', system.autoHeightPossible
-            ? '目前為自動模式或 PRED 已啟用／請求啟動，可能改變高度，與固定高度條件不符。請操作者先確認控制狀態；本區不會停止 PRED、切換模式或控制充放氣。'
-            : '目前 Web 未回報自動高度調整啟用；仍請操作者確認高度固定，避免其他控制改變本輪條件。本區不下達高度命令。');
+            ? '目前為自動模式或 PRED 已啟用／請求啟動，可能改變高度。可在本區按「準備微調」停止自動調整，再確認固定高度條件。'
+            : '目前 Web 未回報自動高度調整啟用；請確認高度固定。只有按「準備微調」或「套用」才會送出相應控制指令，收數不會自行調整高度。');
         if (state.runId) {
             const m = state.metadata;
             const suffix = state.status === 'completed'
                 ? '30 秒資料收集計時完成，不代表辨識穩健性已驗證。'
                 : state.status === 'interrupted' ? reasonLabels[state.interruptionReason] || state.interruptionReason
                 : state.status === 'ended_early' ? '已有樣本保留，本輪未完成 30 秒。' : '正在收集原始 ADC。';
-            setText('pressureRunSummary', `本輪紀錄｜${m.subject_id}／trial ${m.trial_index}／條件 ${m.condition_id}／${m.actual_pose}／${m.height_condition}／${m.test_condition}／Head ${m.head_height_cm} cm、Neck ${m.neck_height_cm} cm｜${state.samples.length} 筆。${suffix}`);
+            setText('pressureRunSummary', `本輪紀錄｜${m.subject_id}／條件 ${m.condition_id}／${m.actual_pose}／${m.height_condition}／${m.test_condition}／Head ${m.head_height_cm} cm、Neck ${m.neck_height_cm} cm｜${state.samples.length} 筆。${suffix}`);
         } else {
             setText('pressureRunSummary', `條件 ${selectedConditionId} 尚無本輪收集結果；開始記錄後才會繪製本條件曲線。`);
         }
@@ -144,8 +288,7 @@ function createPressureCollectionExperiment(root, options) {
         lastUiState = {
             status: state.status, statusText: statusLabels[state.status],
             running, hint,
-            startDisabled: running || !system.connected || !freshStream() || !form.checkValidity() ||
-                !Number.isSafeInteger(Number(field('pressureTrial').value)) ||
+            startDisabled: running || calibrationRunBlocked() || !system.connected || !freshStream() || !form.checkValidity() ||
                 (state.samples.length > 0 && !state.exportRequested) || typeof Chart !== 'function',
             finishDisabled: !running, exportDisabled: running || state.samples.length === 0
         };
@@ -167,12 +310,12 @@ function createPressureCollectionExperiment(root, options) {
         try {
             recorder.start({
                 subject_id: field('pressureSubject').value.trim(),
-                trial_index: Number(field('pressureTrial').value), condition_id: condition.id,
+                trial_index: '', condition_id: condition.id,
                 actual_pose: condition.actual_pose, height_condition: condition.height_condition,
                 head_height_cm: Number(field('pressureHeadHeight').value),
                 neck_height_cm: Number(field('pressureNeckHeight').value),
                 test_condition: condition.test_condition, height_source: 'operator',
-                notes: field('pressureNotes').value
+                notes: '' // Retain the existing CSV schema without collecting removed fields.
             });
         } catch (error) { feedback = error.message; }
         refresh();
@@ -190,9 +333,8 @@ function createPressureCollectionExperiment(root, options) {
         try {
             const m = state.metadata;
             const condition = conditions.find(item => item.id === m.condition_id);
-            const trial = String(m.trial_index).padStart(2, '0');
             const runId = state.runId.replace(/[^a-zA-Z0-9_-]/g, '_');
-            const stem = `${m.subject_id}_${condition.filePose}_${condition.fileHeight}_${m.test_condition}_trial${trial}_${runId}`;
+            const stem = `${m.subject_id}_${condition.filePose}_${condition.fileHeight}_${m.test_condition}_${runId}`;
             // Build both files first; never acknowledge a partial/failed preparation.
             const png = createChartImage(state);
             const csv = new Blob([recorder.csv()], { type: 'text/csv;charset=utf-8;' });
@@ -234,7 +376,7 @@ function createPressureCollectionExperiment(root, options) {
         const m = state.metadata;
         const labels = [
             '固定睡姿下自然呼吸與微動之辨識穩健性測試',
-            `${m.subject_id}｜trial ${m.trial_index}｜條件 ${m.condition_id}｜${m.actual_pose}／${m.height_condition}／${m.test_condition}`,
+            `${m.subject_id}｜條件 ${m.condition_id}｜${m.actual_pose}／${m.height_condition}／${m.test_condition}`,
             `Head ${m.head_height_cm} cm｜Neck ${m.neck_height_cm} cm｜${state.samples.length} 筆｜${statusLabels[state.status]}`
         ];
         const lines = [];
@@ -286,7 +428,7 @@ function createPressureCollectionExperiment(root, options) {
 
     function switchCondition() {
         if (conditionSelect.value === selectedConditionId) return true;
-        if (recorder.getState().status === 'recording' || !recorders.has(conditionSelect.value)) {
+        if (recorder.getState().status === 'recording' || calibrationBusy() || !recorders.has(conditionSelect.value)) {
             conditionSelect.value = selectedConditionId;
             return false;
         }
@@ -297,9 +439,10 @@ function createPressureCollectionExperiment(root, options) {
     }
 
     form.addEventListener('submit', event => { event.preventDefault(); start(); });
+    field('pressureSubject').addEventListener('input', refresh);
     form.addEventListener('input', event => {
         if (event.target === conditionSelect && !switchCondition()) return;
-        if (event.target !== confirmed && event.target.id !== 'pressureNotes') confirmed.checked = false;
+        if (event.target !== confirmed) confirmed.checked = false;
         feedback = '';
         updateConditionDescription();
         refresh();
@@ -319,8 +462,9 @@ function createPressureCollectionExperiment(root, options) {
     return {
         start, endEarly, exportCsv, receivePressure, onDisconnected, refresh,
         isRunning: () => recorder.getState().status === 'recording',
+        isBusy: () => recorder.getState().status === 'recording' || calibrationBusy(),
         needsLeaveProtection: () => {
-            return [...recorders.values()].some(saved => {
+            return calibrations.size > 0 || calibrationBusy() || [...recorders.values()].some(saved => {
                 const state = saved.getState();
                 return state.status === 'recording' || (state.samples.length > 0 && !state.exportRequested);
             });

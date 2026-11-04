@@ -1622,6 +1622,38 @@ button.full {
   background: var(--panel);
 }
 
+.pressure-height-stepper {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 4px;
+}
+
+.pressure-calibration-saved {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pressure-calibration-saved section {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  min-width: 0;
+}
+
+.pressure-calibration-saved h4 {
+  margin: 0 0 6px;
+  color: #183560;
+}
+
+.pressure-calibration-saved output {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
 .pressure-experiment .pressure-chart-wrap canvas {
   max-width: 100%;
 }
@@ -1638,6 +1670,10 @@ button.full {
   }
 
   .pressure-experiment .pressure-run-settings {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pressure-calibration-saved {
     grid-template-columns: minmax(0, 1fr);
   }
 

@@ -811,6 +811,7 @@
 			serial_message(`Device ${device.name} is disconnected.`, "red");
 			serial_ready = false;
 			if (experimentHubModule) experimentHubModule.onDisconnected();
+			if (typeof experimentHeightControl !== 'undefined' && experimentHeightControl) experimentHeightControl.onDisconnected();
 		}
 
 		serial_buttonClose.addEventListener('click', async () => {
@@ -836,10 +837,7 @@
 					serial_message(msg, "orange");
 					serial_text.value = "";
 
-					let encoder = new TextEncoder();
-					bleQueue.add(async () => {
-						await rxCharacteristic.writeValue(encoder.encode(msg));
-					});
+					queueBleWrite(msg);
 				} catch (error) {
 					serial_message(error.message, "red");
 				}
@@ -858,6 +856,7 @@
 
 					const data = new Uint8Array(intArray);
 					bleQueue.add(async () => {
+						if (!allowExperimentHeightCommand(new TextDecoder().decode(data))) return;
 						await rxCharacteristic.writeValue(data);
 					});
 				} catch (error) {
@@ -1038,6 +1037,7 @@
 		const monitorClearLog = document.getElementById('monitorClearLog');
 		let captureWizardModule = null;
 		let experimentHubModule = null;
+		let experimentHeightControl = null;
 
 		let workflowState = WORKFLOW.UNCALIBRATED;
 		let anchorDone = { BSHS: false, BLHL: false };
@@ -1234,6 +1234,10 @@
 		}
 
 		function sendModeCommands(nextMode) {
+			if (nextMode === CONTROL_MODE.AUTO && typeof experimentHeightControl !== 'undefined' && experimentHeightControl?.getState().busy) {
+				setModeAck("實驗高度操作尚未完成，無法啟動自動模式", "error");
+				return;
+			}
 			requestedControlMode = nextMode;
 			setModeUi(nextMode);
 			if (!rxCharacteristic || !serial_ready) {
@@ -1420,16 +1424,16 @@
 		}
 
 		function updateHeightMonitorFromValues(source, targetHead, targetNeck, currentHead, currentNeck) {
-			if (Number.isFinite(Number(targetHead))) {
+			if (targetHead != null && targetHead !== '' && Number.isFinite(Number(targetHead))) {
 				monitorState.height.targetHead = Number(targetHead);
 			}
-			if (Number.isFinite(Number(targetNeck))) {
+			if (targetNeck != null && targetNeck !== '' && Number.isFinite(Number(targetNeck))) {
 				monitorState.height.targetNeck = Number(targetNeck);
 			}
-			if (Number.isFinite(Number(currentHead))) {
+			if (currentHead != null && currentHead !== '' && Number.isFinite(Number(currentHead))) {
 				monitorState.height.currentHead = Number(currentHead);
 			}
-			if (Number.isFinite(Number(currentNeck))) {
+			if (currentNeck != null && currentNeck !== '' && Number.isFinite(Number(currentNeck))) {
 				monitorState.height.currentNeck = Number(currentNeck);
 			}
 			updateMonitorDisplay();
@@ -2189,6 +2193,8 @@
 		}
 
 		function requestPredStart() {
+			// A late acknowledgement/retry must not restart AUTO after experiment preparation.
+			if (controlMode !== CONTROL_MODE.AUTO || (typeof experimentHeightControl !== 'undefined' && experimentHeightControl?.getState().busy)) return;
 			if (!classifyStarted || predEnabled || predStartRequested) {
 				return;
 			}
@@ -2215,6 +2221,8 @@
 		}
 
 		function requestClassifyStart() {
+			// A late acknowledgement/retry must not restart AUTO after experiment preparation.
+			if (controlMode !== CONTROL_MODE.AUTO || (typeof experimentHeightControl !== 'undefined' && experimentHeightControl?.getState().busy)) return;
 			if (!anchorDone.BSHS || !anchorDone.BLHL || classifyStarted || classifyStartRequested) {
 				return;
 			}
@@ -2300,15 +2308,16 @@
 				const neckIndex = parts.indexOf(parts[0] === "HEIGHT_SET" ? "NECK" : "NECK_APPLIED");
 				let targetHead = null;
 				let targetNeck = null;
+				const preserveCalibrationInputs = typeof experimentHeightControl !== 'undefined' && experimentHeightControl?.ownsHeightReply();
 				if (headIndex !== -1 && parts[headIndex + 1]) {
 					targetHead = parts[headIndex + 1];
-					[numberInput1, numberInput3].forEach(input => setHeightInputValue(input, parts[headIndex + 1], "HEAD"));
-					['supineHeadInput', 'sideHeadInput'].forEach(id => setHeightInputValue(document.getElementById(id), parts[headIndex + 1], "HEAD"));
+					if (!preserveCalibrationInputs) [numberInput1, numberInput3].forEach(input => setHeightInputValue(input, parts[headIndex + 1], "HEAD"));
+					if (!preserveCalibrationInputs) ['supineHeadInput', 'sideHeadInput'].forEach(id => setHeightInputValue(document.getElementById(id), parts[headIndex + 1], "HEAD"));
 				}
 				if (neckIndex !== -1 && parts[neckIndex + 1]) {
 					targetNeck = parts[neckIndex + 1];
-					[numberInput2, numberInput4].forEach(input => setHeightInputValue(input, parts[neckIndex + 1], "NECK"));
-					['supineNeckInput', 'sideNeckInput'].forEach(id => setHeightInputValue(document.getElementById(id), parts[neckIndex + 1], "NECK"));
+					if (!preserveCalibrationInputs) [numberInput2, numberInput4].forEach(input => setHeightInputValue(input, parts[neckIndex + 1], "NECK"));
+					if (!preserveCalibrationInputs) ['supineNeckInput', 'sideNeckInput'].forEach(id => setHeightInputValue(document.getElementById(id), parts[neckIndex + 1], "NECK"));
 				}
 				updateHeightMonitorFromValues(parts[0], targetHead, targetNeck, null, null);
 				serial_message(`高度限制：頭部 ${HEIGHT_LIMITS.HEAD.min.toFixed(1)}-${HEIGHT_LIMITS.HEAD.max.toFixed(1)} cm，頸部 ${HEIGHT_LIMITS.NECK.min.toFixed(1)}-${HEIGHT_LIMITS.NECK.max.toFixed(1)} cm，步進 ${HEIGHT_STEP.toFixed(1)} cm。`, "blue");
@@ -2542,6 +2551,9 @@
 			let dataPoints = dataString.split(/[\s,]+/).filter(Boolean);
 
 			if (colour === "green" || colour === LOG_SUCCESS_GREEN) {
+				if (completeBleReceipt && serial_ready && typeof experimentHeightControl !== 'undefined' && experimentHeightControl) {
+					experimentHeightControl.receiveLine(dataString.trim(), completeBleReceipt);
+				}
 				debugDataBuffer += `${msg}\n`;
 				if (debugDataBuffer.includes('N2LP=')) {
 					let cleanedData = debugDataBuffer.replace(/\r?\n|\r/g, ' ').replace(/\s+/g, ' ').trim();
@@ -2779,13 +2791,25 @@
 			console.log('Command buffered: ' + command);
 		}
 
-		function queueBleWrite(message) {
+		function allowExperimentHeightCommand(message, owned = false) {
+			if (!experimentHeightControl || experimentHeightControl.allowCommand(message, owned)) return true;
+			serial_message("實驗高度操作尚未完成；此控制指令未送出。", "red");
+			return false;
+		}
+
+		function queueBleWrite(message, options = {}) {
 			if (!rxCharacteristic) {
 				return;
 			}
 			const encoder = new TextEncoder();
 			bleQueue.add(async () => {
-				await rxCharacteristic.writeValue(encoder.encode(message));
+				if (!allowExperimentHeightCommand(message, options.experimentHeight === true)) return;
+				try {
+					await rxCharacteristic.writeValue(encoder.encode(message));
+				} catch (error) {
+					if (experimentHeightControl) experimentHeightControl.onTransportError(error);
+					throw error;
+				}
 			});
 		}
 
@@ -2806,7 +2830,7 @@
 			if (show) {
 				serial_message(logText, "orange");
 			}
-			queueBleWrite(msg);
+			queueBleWrite(msg, options);
 		}
 
 		function sendSilentCommand(cmdStr) {
@@ -2921,6 +2945,18 @@
 				const expanded = experimentAccordionToggle.getAttribute('aria-expanded') === 'true';
 				setAccordionExpanded(experimentAccordionToggle, experimentAccordionBody, experimentAccordionKey, !expanded);
 			});
+			experimentHeightControl = createExperimentHeightControl({
+				isConnected: () => Boolean(serial_ready && bluetoothDevice?.gatt?.connected),
+				isRecording: () => Boolean(experimentHubModule?.isRunning()),
+				sendCommand: command => sendCommand(command, { experimentHeight: true }),
+				sendQuery: command => command === 'DEBUG' ? requestSilentDebugSnapshot() : sendSilentCommand(command),
+				stopAutomatic: () => {
+					resetAutoControlStartState();
+					sendModeCommands(CONTROL_MODE.MANUAL);
+					sendCommand("FEATURE,LEGACY,OFF");
+					sendCommand("FEATURE,STATUS");
+				}
+			});
 			experimentHubModule = createExperimentHub(document.getElementById('experimentHub'), {
 				// Operator-confirmed definitions: numerical pose IDs are not firmware labels.
 				pressureConfig: {
@@ -2937,7 +2973,8 @@
 				getSystemState: () => ({
 					connected: Boolean(serial_ready && bluetoothDevice?.gatt?.connected),
 					autoHeightPossible: controlMode === CONTROL_MODE.AUTO || predEnabled || predStartRequested
-				})
+				}),
+				heightControl: experimentHeightControl
 			});
 			experimentHubModule.init();
 

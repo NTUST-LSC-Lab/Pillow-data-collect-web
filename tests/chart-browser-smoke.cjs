@@ -6,7 +6,7 @@
 //   CHART_JS_PATH=/absolute/path/to/chart.umd.js  (offline, unmodified library)
 //   EXPECTED_CHART_VERSION=4.6.1                 (default: reported failing version)
 // This harness loads the production HTML/template/CSS and Hub/controller/recorder.
-// It replaces app.js with a synthetic, read-only system/sample provider, not a mock Chart.
+// It replaces app.js with synthetic system/sample/control providers, not a mock Chart.
 'use strict';
 
 const assert = require('node:assert/strict');
@@ -44,8 +44,26 @@ const bootstrap = `
     };
     Object.defineProperty(performance, 'now', { configurable: true, value: () => window.__smokeClock });
     window.__smokeSystem = { connected: true, autoHeightPossible: false };
+    window.__smokeHeight = { prepared: false, ready: false, busy: false, reason: '尚未準備',
+        head: null, neck: null, targetHead: null, targetNeck: null, receivedMonotonicMs: null };
+    window.__smokeHeightCalls = [];
+    const heightControl = {
+        async prepare() {
+            window.__smokeHeightCalls.push({ action: 'prepare' });
+            Object.assign(window.__smokeHeight, { prepared: true, ready: true, busy: false, reason: '',
+                head: 7, neck: 10, targetHead: 7, targetNeck: 10, receivedMonotonicMs: window.__smokeClock });
+        },
+        async adjust(channel, height) {
+            window.__smokeHeightCalls.push({ action: 'adjust', channel, height });
+            const key = String(channel).toUpperCase() === 'HEAD' ? 'head' : 'neck';
+            Object.assign(window.__smokeHeight, { [key]: height,
+                [key === 'head' ? 'targetHead' : 'targetNeck']: height,
+                ready: true, busy: false, reason: '', receivedMonotonicMs: window.__smokeClock });
+        },
+        getState: () => ({ ...window.__smokeHeight }), tick() {}
+    };
     window.__smokeHub = createExperimentHub(document.getElementById('experimentHub'), {
-        pressureConfig: ${JSON.stringify(config)}, getSystemState: () => ({ ...window.__smokeSystem })
+        pressureConfig: ${JSON.stringify(config)}, getSystemState: () => ({ ...window.__smokeSystem }), heightControl
     });
     window.__smokeHub.init();
     const toggle = document.getElementById('experimentAccordionToggle');
@@ -108,17 +126,79 @@ async function main() {
         await page.evaluate(() => window.__smokePulse());
         await page.locator('#pressureRunForm').waitFor({ state: 'visible' });
         assert.deepEqual(errors, [], 'Expanding the Hub must not cause Chart resolver errors');
+        assert.equal(await page.locator('#pressureNotes, #pressureTrial, #pressureCalibrationUse').count(), 0,
+            'removed operator controls must not remain in the rendered template');
 
         await page.locator('#pressureSubject').fill('S00');
-        await page.locator('#pressureTrial').fill('1');
         await page.locator('#pressureHeadHeight').fill('8');
         await page.locator('#pressureNeckHeight').fill('11');
-        await page.locator('#pressureNotes').fill('SYNTHETIC_BROWSER_SMOKE: no human or device measurements');
         await page.locator('#pressureSetupConfirmed').check();
         await page.evaluate(() => {
             window.__smokeAdvance(1000, [100, 200, 300]);
             window.__smokeAdvance(2000, [101, 201, 301]);
         });
+        await page.locator('#pressureCalibrationPrepare').click();
+        await page.locator('#pressureCalibrationHead').fill('8');
+        await page.locator('#pressureCalibrationHeadApply').click();
+        await page.locator('#pressureCalibrationNeck').fill('11');
+        await page.locator('#pressureCalibrationNeckApply').click();
+        await page.evaluate(() => window.__smokeAdvance(2000, [111, 222, 333]));
+        await page.locator('#pressureCalibrationStable').check();
+        await page.locator('#pressureCalibrationCapture').click();
+        const pose1Capture = await page.locator('#pressureCalibrationPose1Saved').textContent();
+        assert.match(pose1Capture, /S00/); assert.match(pose1Capture, /111/);
+        await page.locator('#pressureCalibrationPose').selectOption('pose5');
+        await page.locator('#pressureCalibrationHead').fill('12');
+        await page.locator('#pressureCalibrationHeadApply').click();
+        await page.locator('#pressureCalibrationNeck').fill('13');
+        await page.locator('#pressureCalibrationNeckApply').click();
+        await page.evaluate(() => window.__smokeAdvance(2000, [444, 555, 666]));
+        await page.locator('#pressureCalibrationStable').check();
+        await page.locator('#pressureCalibrationCapture').click();
+        assert.equal(await page.locator('#pressureCalibrationPose1Saved').textContent(), pose1Capture);
+        assert.match(await page.locator('#pressureCalibrationPose5Saved').textContent(), /444/);
+        assert.equal(await page.locator('#pressureHeadHeight').inputValue(), '8');
+        assert.equal(await page.locator('#pressureNeckHeight').inputValue(), '11',
+            'preparing, adjusting and capturing either pose must not fill run heights');
+        const heightCalls = await page.evaluate(() => window.__smokeHeightCalls);
+        assert.equal(heightCalls.filter(call => call.action === 'prepare').length, 1);
+        assert.equal(heightCalls.filter(call => call.action === 'adjust').length, 4);
+        assert.equal(await page.locator('#pressureRunStatus').textContent(), '尚未開始');
+        fs.mkdirSync(output, { recursive: true });
+        await page.locator('#pressureCalibrationPose1Saved').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: path.join(output, 'SYNTHETIC_calibration-desktop.png'), fullPage: true });
+        await page.setViewportSize({ width: 320, height: 900 });
+        await page.evaluate(() => window.__smokePulse());
+        const calibrationLayout = await page.locator('#pressureCalibrationPose1Saved').evaluate(node => {
+            const panel = node.closest('.pressure-experiment');
+            return { width: panel.clientWidth, scrollWidth: panel.scrollWidth };
+        });
+        assert.ok(calibrationLayout.scrollWidth <= calibrationLayout.width + 1,
+            `320px calibration panel overflows: ${JSON.stringify(calibrationLayout)}`);
+        await page.locator('#pressureCalibrationPose5Saved').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: path.join(output, 'SYNTHETIC_calibration-320.png') });
+        await page.setViewportSize({ width: 1280, height: 1000 });
+        await page.locator('#pressureCalibrationPose').selectOption('pose1');
+        const callsBeforeManualEntry = await page.evaluate(() => window.__smokeHeightCalls.length);
+        await page.locator('#pressureHeadHeight').fill('9');
+        await page.locator('#pressureNeckHeight').fill('12');
+        await page.locator('#pressureSetupConfirmed').check();
+        assert.equal(await page.locator('#experimentStart').isEnabled(), false,
+            'confirmed run heights must match the device before recording');
+        await page.locator('#pressureHeadHeight').fill('8');
+        await page.locator('#pressureNeckHeight').fill('11');
+        assert.equal(Number(await page.locator('#pressureHeadHeight').inputValue()), 8);
+        assert.equal(Number(await page.locator('#pressureNeckHeight').inputValue()), 11);
+        assert.equal(await page.evaluate(() => window.__smokeHeightCalls.length), callsBeforeManualEntry,
+            'manual run height entry must not send hardware commands');
+        await page.locator('#pressureSetupConfirmed').check();
+        assert.equal(await page.locator('#experimentStart').isEnabled(), false,
+            'pose1 run heights cannot start while the device remains at pose5 heights');
+        await page.locator('#pressureCalibrationHeadApply').click();
+        await page.locator('#pressureCalibrationNeck').fill('11');
+        await page.locator('#pressureCalibrationNeckApply').click();
+        await page.evaluate(() => window.__smokeAdvance(2000, [111, 222, 333]));
+        await page.locator('#pressureSetupConfirmed').check();
         assert.equal(await page.locator('#experimentStart').isEnabled(), true, 'A live valid setup must enable Start');
         await page.locator('#experimentStart').click();
         await page.evaluate(() => {
@@ -133,6 +213,7 @@ async function main() {
                 min: chart.options.scales.x.min, max: chart.options.scales.x.max };
         });
         assert.equal(graph.count, 30); assert.match(graph.title, /條件 01/);
+        assert.doesNotMatch(graph.title, /trial/i);
         assert.equal(graph.min, 0); assert.equal(graph.max, 30);
         assert.deepEqual(errors, [], 'Collection and refresh must remain free of page errors');
 
@@ -144,12 +225,22 @@ async function main() {
         const pngDownload = downloads.find(download => download.suggestedFilename().endsWith('.png'));
         assert.ok(csvDownload && pngDownload);
         assert.equal(csvDownload.suggestedFilename().slice(0, -4), pngDownload.suggestedFilename().slice(0, -4));
+        assert.doesNotMatch(csvDownload.suggestedFilename(), /_trial/);
         fs.mkdirSync(output, { recursive: true });
         const csvPath = path.join(output, `SYNTHETIC_${csvDownload.suggestedFilename()}`);
         const pngPath = path.join(output, `SYNTHETIC_${pngDownload.suggestedFilename()}`);
         await csvDownload.saveAs(csvPath); await pngDownload.saveAs(pngPath);
         const csv = fs.readFileSync(csvPath, 'utf8');
-        assert.equal(csv.trim().split(/\r?\n/).length, 31, 'One header and thirty synthetic sample rows');
+        const csvLines = csv.trim().split(/\r?\n/);
+        assert.equal(csvLines.length, 31, 'One header and thirty synthetic sample rows');
+        // Synthetic values contain no commas/newlines; general CSV escaping is tested in the recorder suite.
+        const csvHeader = csvLines[0].split(',');
+        assert.equal(csvHeader.length, 23);
+        for (const key of ['notes', 'trial_index']) {
+            const index = csvHeader.indexOf(`"${key}"`);
+            assert.ok(index >= 0, `${key} remains a compatibility column`);
+            for (const line of csvLines.slice(1)) assert.equal(line.split(',')[index], '""', `${key} is empty`);
+        }
         assert.match(csv, /"completed"/); assert.match(csv, /"data_timeout_s"/);
         const png = fs.readFileSync(pngPath);
         assert.equal(png.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
@@ -177,7 +268,7 @@ async function main() {
         assert.equal(await page.locator('#pressureRunStatus').textContent(), '提前結束（未完成）');
         assert.deepEqual(errors, [], 'All real-Chart refresh/collapse/condition actions must remain free of page errors');
         await page.screenshot({ path: path.join(output, 'SYNTHETIC_chart-smoke.png') });
-        console.log(`PASS: real Chart.js ${version}; expand/start/30 s collection; CSV+PNG; condition restore; collapse; no page errors.`);
+        console.log(`PASS: real Chart.js ${version}; two independent synthetic calibrations; desktop/320px captures; start/30 s collection; CSV+PNG; condition restore; collapse; no page errors.`);
         console.log(`Synthetic artifacts: ${output}`);
         await context.close();
     } finally { await browser.close(); }
