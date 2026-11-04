@@ -46,6 +46,11 @@ function fixture(useHub = false) {
     let startClock = null;
     const epoch = Date.parse('2030-01-02T03:04:05.000Z');
     const system = { connected: true, autoHeightPossible: false };
+    const userProfile = { age_years: null, body_height_cm: null, body_weight_kg: null };
+    const getUserProfile = () => ({ ...userProfile });
+    const suggestedPose5 = { profileKey: 'synthetic-profile', head: null, neck: null,
+        reason: '請先在上方設定使用者資料，再準備微調。' };
+    const getPose5Suggestion = () => ({ ...suggestedPose5 });
     const heightState = { prepared: false, ready: false, busy: false, reason: '尚未準備',
         head: null, neck: null, targetHead: null, targetNeck: null, receivedMonotonicMs: null };
     const heightCalls = [];
@@ -227,13 +232,13 @@ function fixture(useHub = false) {
         };
         vm.runInContext(source('experiment-hub.js'), context);
         hub = context.createExperimentHub({ querySelector: selector => nodes[selector.slice(1)] }, {
-            pressureConfig: actualConfig, getSystemState, heightControl
+            pressureConfig: actualConfig, getSystemState, getUserProfile, getPose5Suggestion, heightControl
         });
         hub.init();
     } else {
         module = context.createPressureCollectionExperiment(pressureRoot, {
             gapTimeoutMs: 3000, conditions: conditions.map(item => ({ ...item })),
-            getSystemState, heightControl, onChange: state => uiChanges.push({ ...state })
+            getSystemState, getUserProfile, getPose5Suggestion, heightControl, onChange: state => uiChanges.push({ ...state })
         });
     }
     function at(ms) { clock = ms; }
@@ -283,7 +288,7 @@ function fixture(useHub = false) {
         return { ...download, png, ...parseCsv(await download.blob.text()) };
     }
     return {
-        module, hub, actualConfig, pressureRoot, nodes, system, heightState, heightCalls, heightControl,
+        module, hub, actualConfig, pressureRoot, nodes, system, userProfile, suggestedPose5, heightState, heightCalls, heightControl,
         trigger, timers, timeouts, charts, downloads, confirms,
         confirmationAnswers, uiChanges, at, heartbeat, receive, fill, prime, begin, elapsed, exported,
         changeCondition, beforeUnload, setPngFailure: value => { pngFailure = value; },
@@ -435,7 +440,8 @@ test('all four condition metadata and filename segments survive actual Blob CSV 
         assert.equal(row.height_condition, condition.height_condition);
         assert.equal(row.test_condition, condition.test_condition);
         assert.equal(row.subject_id, 'S01'); assert.equal(row.trial_index, '');
-        assert.equal(row.notes, ''); assert.equal(exported.header.length, 23);
+        assert.equal(row.notes, ''); assert.equal(exported.header.length, 26);
+        for (const key of ['age_years', 'body_height_cm', 'body_weight_kg']) assert.equal(row[key], '', 'missing profile stays blank');
         assert.equal(row.head_height_cm, '9.5'); assert.equal(row.neck_height_cm, '11');
         assert.equal(row.height_source, 'operator'); assert.equal(row.pressure_unit, 'ADC');
         assert.equal(row.data_timeout_s, '3'); assert.equal(row.gap_timeout_ms, '3000');
@@ -506,6 +512,7 @@ test('control warning reflects existing system state without automatically sendi
     assert.equal(f.heightCalls.length, 0);
     f.system.autoHeightPossible = false; f.module.refresh();
     assert.match(f.nodes.pressureControlWarning.textContent, /未回報自動高度調整啟用/);
+    assert.match(f.nodes.pressureControlWarning.textContent, /此提醒不會阻止開始記錄/);
     assert.match(f.nodes.pressureGapPolicy.textContent, /3\.0 秒/);
     assert.match(f.nodes.pressureGapPolicy.textContent, /仍需實機驗證/);
 });
@@ -559,6 +566,60 @@ function decodedCanvas(download) {
     assert.match(download.href, /^data:image\/png;base64,/);
     return JSON.parse(Buffer.from(download.href.split(',')[1], 'base64').toString('utf8'));
 }
+
+test('upper-form profile is reflected through the Hub without control commands and changes require run reconfirmation', () => {
+    const f = fixture(true); f.fill(); f.prime();
+    assert.match(f.nodes.pressureUserProfile.textContent, /未填／無效/);
+    Object.assign(f.userProfile, { age_years: 25, body_height_cm: 170.5, body_weight_kg: 65.5 });
+    f.heartbeat();
+    assert.match(f.nodes.pressureUserProfile.textContent, /上方目前輸入值/);
+    assert.match(f.nodes.pressureUserProfile.textContent, /25 歲.*170\.5 cm.*65\.5 kg/);
+    assert.equal(f.nodes.pressureSetupConfirmed.checked, false);
+    assert.equal(f.module.getUiState().startDisabled, true);
+    assert.equal(f.heightCalls.length, 0);
+    assert.equal(f.nodes.pressureHeadHeight.value, '9.5');
+    assert.equal(f.nodes.pressureNeckHeight.value, '11');
+    f.nodes.pressureSetupConfirmed.checked = true; f.module.refresh();
+    assert.equal(f.module.getUiState().startDisabled, false);
+});
+
+test('run CSV, PNG and result summary preserve start-time profile while later conditions use new values', async () => {
+    const f = fixture(true);
+    Object.assign(f.userProfile, { age_years: 25, body_height_cm: 170.5, body_weight_kg: 65.5 });
+    f.begin('01'); f.elapsed(100, [1, 2, 3]);
+    Object.assign(f.userProfile, { age_years: 99, body_height_cm: 180.5, body_weight_kg: 75.5 });
+    f.heartbeat();
+    assert.match(f.nodes.pressureUserProfile.textContent, /本輪開始時資料.*25 歲.*170\.5 cm.*65\.5 kg/);
+    assert.doesNotMatch(f.nodes.pressureRunSummary.textContent, /99 歲/);
+    f.module.endEarly();
+    const first = await f.exported();
+    assert.deepEqual(first.header.slice(-3), ['age_years', 'body_height_cm', 'body_weight_kg']);
+    assert.equal(first.rows[0].age_years, '25');
+    assert.equal(first.rows[0].body_height_cm, '170.5');
+    assert.equal(first.rows[0].body_weight_kg, '65.5');
+    const pngText = decodedCanvas(first.png).calls.filter(call => call.kind === 'fillText').map(call => call.text).join('');
+    assert.match(pngText, /25 歲.*170\.5 cm.*65\.5 kg/);
+    assert.doesNotMatch(pngText, /99 歲/);
+    f.begin('02'); f.elapsed(100, [4, 5, 6]); f.module.endEarly();
+    const second = await f.exported();
+    assert.equal(second.rows[0].age_years, '99');
+    assert.equal(second.rows[0].body_height_cm, '180.5');
+    assert.equal(second.rows[0].body_weight_kg, '75.5');
+    f.changeCondition('01');
+    assert.match(f.nodes.pressureRunSummary.textContent, /25 歲.*170\.5 cm.*65\.5 kg/);
+    assert.equal((await f.exported()).rows[0].age_years, '25');
+});
+
+test('saved calibration captures profile values independently from later upper-form edits', async () => {
+    const f = fixture();
+    Object.assign(f.userProfile, { age_years: 25, body_height_cm: 170.5, body_weight_kg: 65.5 });
+    await readyCalibration(f);
+    await f.trigger('pressureCalibrationCapture');
+    const saved = f.nodes.pressureCalibrationPose1Saved.textContent;
+    assert.match(saved, /25 歲.*170\.5 cm.*65\.5 kg/);
+    f.userProfile.age_years = 99; f.heartbeat();
+    assert.equal(f.nodes.pressureCalibrationPose1Saved.textContent, saved);
+});
 
 test('CSV and PNG share a run stem and immutable snapshot; visible PNG header excludes run UUID', async () => {
     const f = fixture(); f.begin('02'); f.elapsed(250, [12.5, 23.5, 34.5]); f.module.endEarly();
@@ -712,6 +773,118 @@ test('independent calibration preparation delegates once and never starts a reco
     assert.equal(f.downloads.length, 0);
 });
 
+test('pose5 waits for a matching device recommendation and never substitutes 13 cm or current heights', async () => {
+    const f = fixture(); f.fill();
+    f.nodes.pressureCalibrationPose.value = 'pose5';
+    await f.trigger('pressureCalibrationPose', 'change');
+    assert.equal(f.nodes.pressureCalibrationHead.value, '');
+    assert.equal(f.nodes.pressureCalibrationNeck.value, '');
+    assert.match(f.nodes.pressureCalibrationStatus.textContent, /上方設定/);
+    assert.equal(f.heightCalls.length, 0, 'selecting a posture does not operate the device');
+    assert.equal(f.nodes.pressureCalibrationBothApply.disabled, true, 'missing suggestions cannot bypass preparation');
+    await f.trigger('pressureCalibrationPrepare');
+    assert.deepEqual(f.heightCalls, [{ action: 'prepare' }]);
+    assert.equal(f.heightState.head, 7, 'target default does not become an actual device height');
+    assert.equal(f.heightState.neck, 10);
+    assert.equal(f.nodes.pressureCalibrationHead.value, '');
+    assert.equal(f.nodes.pressureCalibrationNeck.value, '');
+    Object.assign(f.suggestedPose5, { head: 11.5, neck: 12.5, reason: '' });
+    f.heartbeat();
+    assert.equal(f.nodes.pressureCalibrationHead.value, '11.5');
+    assert.equal(f.nodes.pressureCalibrationNeck.value, '12.5');
+    assert.deepEqual(f.heightCalls, [{ action: 'prepare' }], 'receiving a suggestion only fills drafts');
+    f.prime(); f.nodes.pressureCalibrationStable.checked = true; f.module.refresh();
+    assert.equal(f.nodes.pressureCalibrationCapture.disabled, true, 'unapplied defaults cannot be saved as arrived');
+    await f.trigger('pressureCalibrationBothApply');
+    assert.deepEqual(f.heightCalls.slice(1), [
+        { action: 'adjust', channel: 'HEAD', height: 11.5 }, { action: 'adjust', channel: 'NECK', height: 12.5 }
+    ]);
+    assert.equal(f.nodes.pressureHeadHeight.value, '9.5', 'run metadata remains operator-entered');
+});
+
+test('pose5 manual drafts survive preparation but new subject or profile replaces old recommendations', async () => {
+    const f = fixture(); await readyCalibration(f);
+    Object.assign(f.suggestedPose5, { head: 11.5, neck: 12.5, reason: '' });
+    f.nodes.pressureCalibrationPose.value = 'pose5';
+    await f.trigger('pressureCalibrationPose', 'change');
+    f.nodes.pressureCalibrationHead.value = '12.5';
+    await f.trigger('pressureCalibrationHead', 'input');
+    f.nodes.pressureCalibrationNeck.value = '13.5';
+    await f.trigger('pressureCalibrationNeck', 'input');
+    const callsBeforeSwitch = f.heightCalls.length;
+    f.nodes.pressureCalibrationPose.value = 'pose1';
+    await f.trigger('pressureCalibrationPose', 'change');
+    assert.equal(f.nodes.pressureCalibrationHead.value, '7');
+    assert.equal(f.nodes.pressureCalibrationNeck.value, '10');
+    f.nodes.pressureCalibrationPose.value = 'pose5';
+    await f.trigger('pressureCalibrationPose', 'change');
+    assert.equal(f.heightCalls.length, callsBeforeSwitch);
+    await f.trigger('pressureCalibrationPrepare');
+    assert.equal(f.nodes.pressureCalibrationHead.value, '12.5');
+    assert.equal(f.nodes.pressureCalibrationNeck.value, '13.5');
+    f.nodes.pressureSubject.value = 'S02';
+    await f.trigger('pressureSubject', 'input');
+    assert.equal(f.nodes.pressureCalibrationHead.value, '11.5');
+    assert.equal(f.nodes.pressureCalibrationNeck.value, '12.5');
+    Object.assign(f.suggestedPose5, { profileKey: 'new-age-weight-or-gender', head: null, neck: null });
+    f.heartbeat();
+    assert.equal(f.nodes.pressureCalibrationHead.value, '');
+    assert.equal(f.nodes.pressureCalibrationNeck.value, '');
+    Object.assign(f.suggestedPose5, { head: 12, neck: 14 });
+    f.heartbeat();
+    assert.equal(f.nodes.pressureCalibrationHead.value, '12');
+    assert.equal(f.nodes.pressureCalibrationNeck.value, '14');
+    assert.equal(f.heightCalls.length, callsBeforeSwitch + 1, 'new recommendations do not send height commands');
+});
+
+test('pose5 suggestion refresh never overwrites manual drafts for the same profile', async () => {
+    const f = fixture(); await readyCalibration(f);
+    Object.assign(f.suggestedPose5, { head: 11, neck: 12 });
+    f.nodes.pressureCalibrationPose.value = 'pose5';
+    await f.trigger('pressureCalibrationPose', 'change');
+    f.nodes.pressureCalibrationHead.value = '11.5';
+    await f.trigger('pressureCalibrationHead', 'input');
+    Object.assign(f.suggestedPose5, { head: null, neck: null, reason: '等待新回報' });
+    f.heartbeat();
+    assert.equal(f.nodes.pressureCalibrationHead.value, '11.5');
+    Object.assign(f.suggestedPose5, { head: 11, neck: 12 });
+    await f.trigger('pressureCalibrationPrepare');
+    assert.equal(f.nodes.pressureCalibrationHead.value, '11.5');
+    assert.equal(f.nodes.pressureCalibrationNeck.value, '12');
+    assert.equal(f.heightCalls.some(call => call.action === 'adjust'), false);
+});
+
+test('known device profile mismatch clears pose5 drafts even when the upper form has not changed', async () => {
+    const f = fixture(); await readyCalibration(f);
+    Object.assign(f.suggestedPose5, { head: 11.5, neck: 12.5 });
+    f.nodes.pressureCalibrationPose.value = 'pose5';
+    await f.trigger('pressureCalibrationPose', 'change');
+    f.nodes.pressureCalibrationHead.value = '12';
+    await f.trigger('pressureCalibrationHead', 'input');
+    Object.assign(f.suggestedPose5, { head: null, neck: null, deviceProfileMismatch: true,
+        reason: '裝置資料不符，請重新設定' });
+    f.heartbeat();
+    assert.equal(f.nodes.pressureCalibrationHead.value, '');
+    assert.equal(f.nodes.pressureCalibrationNeck.value, '');
+    assert.equal(f.nodes.pressureCalibrationBothApply.disabled, true);
+    assert.match(f.nodes.pressureCalibrationStatus.textContent, /裝置資料不符/);
+    await f.trigger('pressureCalibrationBothApply');
+    assert.equal(f.heightCalls.some(call => call.action === 'adjust'), false);
+    f.nodes.pressureCalibrationPose.value = 'pose1';
+    await f.trigger('pressureCalibrationPose', 'change');
+    f.nodes.pressureSetupConfirmed.checked = true;
+    f.nodes.pressureCalibrationStable.checked = true;
+    f.heartbeat();
+    assert.equal(f.nodes.pressureSetupConfirmed.checked, true, 'persistent pose5 mismatch must not keep clearing pose1 confirmation');
+    assert.equal(f.nodes.pressureCalibrationStable.checked, true);
+    f.nodes.pressureCalibrationPose.value = 'pose5';
+    await f.trigger('pressureCalibrationPose', 'change');
+    Object.assign(f.suggestedPose5, { head: 11.5, neck: 12.5, deviceProfileMismatch: false });
+    f.heartbeat();
+    assert.equal(f.nodes.pressureCalibrationHead.value, '11.5');
+    assert.equal(f.nodes.pressureCalibrationNeck.value, '12.5');
+});
+
 test('calibration snapshot requires subject, current pressure after height feedback, stable confirmation and ready control', async () => {
     const f = fixture();
     await readyCalibration(f);
@@ -798,6 +971,48 @@ test('capturing never fills run heights; manually entered heights must match the
     assert.equal(f.module.getUiState().startDisabled, true);
 });
 
+test('mismatched run heights explain the entered and arrived values before confirmation permits recording', async () => {
+    const f = fixture(); await readyCalibration(f);
+    Object.assign(f.heightState, { head: 9, neck: 11, targetHead: 9, targetNeck: 11 });
+    f.nodes.pressureHeadHeight.value = '8'; f.nodes.pressureNeckHeight.value = '11';
+    f.nodes.pressureSetupConfirmed.checked = true; f.module.refresh();
+    assert.equal(f.module.getUiState().startDisabled, true);
+    assert.match(f.module.getUiState().hint, /Head/);
+    assert.match(f.module.getUiState().hint, /8\.0/);
+    assert.match(f.module.getUiState().hint, /9\.0/);
+    assert.equal(f.nodes.pressureHeadHeight.value, '8', 'diagnosis must not silently change operator metadata');
+    assert.equal(f.heightCalls.some(call => call.action === 'adjust'), false);
+    f.nodes.pressureHeadHeight.value = '9';
+    f.nodes.pressureRunForm.dispatch('input', f.nodes.pressureHeadHeight);
+    assert.equal(f.nodes.pressureSetupConfirmed.checked, false);
+    assert.equal(f.module.getUiState().startDisabled, true, 'corrected metadata still requires confirmation');
+    f.nodes.pressureSetupConfirmed.checked = true; f.module.refresh();
+    assert.equal(f.module.getUiState().startDisabled, false);
+    f.setStartClock(); f.module.start();
+    assert.equal(f.module.getUiState().status, 'recording');
+    f.elapsed(100, [11, 22, 33]); f.module.endEarly();
+    const exported = await f.exported();
+    assert.equal(exported.rows[0].head_height_cm, '9');
+    assert.equal(exported.rows[0].neck_height_cm, '11');
+    assert.equal(f.heightCalls.some(call => call.action === 'adjust'), false, 'fixing run metadata must not move the device');
+});
+
+test('run readiness explains a missing run height and propagates unavailable height feedback', async () => {
+    const f = fixture(); await readyCalibration(f);
+    Object.assign(f.heightState, { head: 9, neck: 11, targetHead: 9, targetNeck: 11 });
+    f.nodes.pressureHeadHeight.value = ''; f.nodes.pressureNeckHeight.value = '11';
+    f.nodes.pressureSetupConfirmed.checked = true; f.module.refresh();
+    assert.equal(f.module.getUiState().startDisabled, true);
+    assert.match(f.module.getUiState().hint, /Head/);
+    assert.match(f.module.getUiState().hint, /未填/);
+    f.nodes.pressureHeadHeight.value = '9';
+    f.heightState.ready = false; f.heightState.reason = '裝置狀態已過期，等待更新';
+    f.module.refresh();
+    assert.equal(f.module.getUiState().startDisabled, true);
+    assert.match(f.module.getUiState().hint, /裝置狀態已過期，等待更新/);
+    assert.equal(f.heightCalls.some(call => call.action === 'adjust'), false);
+});
+
 test('calibration height edits cancel confirmations and validated apply delegates the requested channel only', async () => {
     const f = fixture(); await readyCalibration(f);
     f.nodes.pressureSetupConfirmed.checked = true;
@@ -818,12 +1033,84 @@ test('calibration height edits cancel confirmations and validated apply delegate
     }
 });
 
+test('one combined apply snapshots both values and locks the UI until Head then Neck have settled', async () => {
+    const f = fixture(true); await readyCalibration(f);
+    f.nodes.pressureCalibrationHead.value = '8';
+    f.nodes.pressureCalibrationNeck.value = '11';
+    f.nodes.pressureSetupConfirmed.checked = true;
+    const requests = [];
+    const complete = [];
+    const adjust = f.heightControl.adjust;
+    f.heightControl.adjust = (channel, height) => {
+        requests.push({ channel, height });
+        return new Promise(resolve => complete.push(async () => { await adjust(channel, height); resolve(); }));
+    };
+    await f.trigger('pressureCalibrationBothApply');
+    assert.deepEqual(requests, [{ channel: 'HEAD', height: 8 }]);
+    assert.equal(f.module.isBusy(), true);
+    for (const id of ['pressureCalibrationBothApply', 'pressureCalibrationHeadApply', 'pressureCalibrationNeckApply',
+        'pressureCalibrationHead', 'pressureCalibrationNeck', 'pressureCalibrationPose', 'pressureSubject', 'experimentSelect']) {
+        assert.equal(f.nodes[id].disabled, true, `${id} remains locked during combined apply`);
+    }
+    assert.equal(f.nodes.pressureSetupConfirmed.checked, false);
+    assert.equal(f.nodes.pressureCalibrationStable.checked, false);
+    f.nodes.pressureCalibrationNeck.value = '14'; // Programmatic mutation cannot change the captured request.
+    await f.trigger('pressureCalibrationBothApply');
+    assert.equal(requests.length, 1, 'a repeated click cannot queue another operation');
+    await complete[0](); await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(requests, [{ channel: 'HEAD', height: 8 }, { channel: 'NECK', height: 11 }]);
+    assert.equal(f.module.isBusy(), true);
+    assert.equal(f.nodes.pressureCalibrationBothApply.disabled, true, 'Head completion does not unlock the second step');
+    await complete[1](); await new Promise(resolve => setImmediate(resolve)); f.module.refresh();
+    assert.equal(f.module.isBusy(), false);
+    assert.equal(f.heightState.head, 8); assert.equal(f.heightState.neck, 11);
+    assert.equal(f.nodes.pressureCalibrationBothApply.disabled, false);
+    assert.equal(f.nodes.pressureHeadHeight.value, '9.5', 'combined apply does not fill run metadata');
+});
+
+test('combined apply validates both channel values before sending either adjustment', async () => {
+    const f = fixture(); await readyCalibration(f);
+    const count = f.heightCalls.length;
+    for (const [head, neck] of [['', '11'], ['8', ''], ['16.5', '11'], ['8', '14.5'], ['8', '10.25']]) {
+        f.nodes.pressureCalibrationHead.value = head; f.nodes.pressureCalibrationNeck.value = neck;
+        f.module.refresh();
+        assert.equal(f.nodes.pressureCalibrationBothApply.disabled, true);
+        await f.trigger('pressureCalibrationBothApply');
+        assert.equal(f.heightCalls.length, count, `neither channel moves for Head=${head}, Neck=${neck}`);
+    }
+    f.nodes.pressureCalibrationHead.value = '8'; f.nodes.pressureCalibrationNeck.value = '11';
+    f.heightState.ready = false; f.module.refresh();
+    await f.trigger('pressureCalibrationBothApply');
+    assert.equal(f.heightCalls.length, count, 'valid inputs cannot bypass device readiness');
+});
+
+test('failed Head adjustment stops combined apply without sending Neck', async () => {
+    const f = fixture(); await readyCalibration(f);
+    f.nodes.pressureCalibrationHead.value = '8'; f.nodes.pressureCalibrationNeck.value = '11';
+    const requests = [];
+    f.heightControl.adjust = async (channel, height) => {
+        requests.push({ channel, height });
+        f.heightState.ready = false;
+        throw new Error('Synthetic Head acknowledgement timeout');
+    };
+    await f.trigger('pressureCalibrationBothApply');
+    assert.deepEqual(requests, [{ channel: 'HEAD', height: 8 }]);
+    assert.equal(f.module.isBusy(), false);
+    assert.equal(f.nodes.pressureCalibrationBothApply.disabled, true);
+    assert.match(f.nodes.pressureCalibrationStatus.textContent, /Synthetic Head acknowledgement timeout/);
+});
+
 test('recording and height operation locks prevent new calibration or Hub navigation', async () => {
     const f = fixture(true); f.begin();
+    f.heightState.ready = true;
+    f.nodes.pressureCalibrationHead.value = '8'; f.nodes.pressureCalibrationNeck.value = '11';
+    f.module.refresh();
     for (const id of ['pressureCalibrationPrepare', 'pressureCalibrationHeadApply',
-        'pressureCalibrationNeckApply', 'pressureCalibrationCapture']) {
+        'pressureCalibrationNeckApply', 'pressureCalibrationBothApply', 'pressureCalibrationCapture']) {
         assert.equal(f.nodes[id].disabled, true, `${id} must be locked while recording`);
     }
+    await f.trigger('pressureCalibrationBothApply');
+    assert.equal(f.heightCalls.length, 0, 'combined apply cannot run during recording');
     f.module.endEarly();
     f.heightState.busy = true; f.module.refresh();
     assert.equal(f.nodes.experimentSelect.disabled, true);

@@ -48,12 +48,12 @@ function createExperimentHeightControl(options) {
     function blockedReason() {
         if (!connected()) return 'BLE 未連線，請重新準備';
         if (!features || features.receivedMonotonicMs < preparedAtMs || features.pred !== 0 || features.legacy !== 0) return '等待確認自動控制已停止';
-        if (!debug || !io || debug.startedMonotonicMs < requiredReceiptMs || io.receivedMonotonicMs < requiredReceiptMs) return '等待完整 DEBUG 與 I 回報';
+        if (!debug || !io || !debug.preStage?.trim() || debug.startedMonotonicMs < requiredReceiptMs || io.receivedMonotonicMs < requiredReceiptMs) return '等待完整 DEBUG 與 I 回報';
         if (now() - debug.receivedMonotonicMs > freshnessMs || now() - io.receivedMonotonicMs > freshnessMs) return '裝置狀態已過期，等待更新';
         if (io.state === 9) return 'ESP32 處於 MANUAL 模式，請先由既有流程回到一般待機';
         if (io.state !== 5 || io.outputs !== 0) return '等待一般 STANDBY 且所有氣路關閉';
         if (!['IDLE', 'DONE', 'TIMEOUT'].includes(debug.anchorState)) return '校正 anchor 正在採樣，請先完成或取消';
-        if (debug.preStage !== 'IDLE') return '等待 PRED 完全停止';
+        // Firmware caches pre_stage after PRED is disabled; FEATURE STATUS and I above confirm it is off and idle.
         if (!legalHeight('HEAD', debug.head) || !legalHeight('NECK', debug.neck) ||
             !legalHeight('HEAD', debug.targetHead) || !legalHeight('NECK', debug.targetNeck)) return '裝置高度尚未初始化或回報不完整';
         if (!equal(debug.head, debug.targetHead) || !equal(debug.neck, debug.targetNeck)) return '等待裝置估計高度到達目標';
@@ -215,17 +215,23 @@ function createExperimentHeightControl(options) {
                     debug = {
                         head: number(values.currentHeadNumber), neck: number(values.currentNeckNumber),
                         targetHead: number(values.headNumber), targetNeck: number(values.neckNumber),
+                        userGender: number(values.gender), userAge: number(values.age),
+                        userHeight: number(values.height), userWeight: number(values.weight),
+                        pose5HeadCm: number(values.HLF), pose5NeckCm: number(values.N1LF),
                         anchorState: values.anchor_state, preStage: values.pre_stage,
                         startedMonotonicMs: debugBuffer.startedMonotonicMs, receivedMonotonicMs: time
                     };
                     debugBuffer = null;
                     if (settledHeights && (!equal(debug.head, settledHeights.head) || !equal(debug.neck, settledHeights.neck) ||
-                        !equal(debug.head, debug.targetHead) || !equal(debug.neck, debug.targetNeck) || debug.preStage !== 'IDLE' ||
+                        !equal(debug.head, debug.targetHead) || !equal(debug.neck, debug.targetNeck) || !debug.preStage?.trim() ||
                         !['IDLE', 'DONE', 'TIMEOUT'].includes(debug.anchorState))) clearSettled();
                 }
             }
         }
-        if (parts[1] === 'ERR' || (parts[0] === 'MANUAL' && parts[1] === 'IGNORED')) {
+        // Disabled feature gates also reject STOP / GET; this reply alone does not establish readiness.
+        const disabledFeatureReply = parts.length === 3 && ['PRED', 'CLASSIFY'].includes(parts[0]) &&
+            parts[1] === 'ERR' && parts[2] === 'DISABLED';
+        if (!disabledFeatureReply && (parts[1] === 'ERR' || (parts[0] === 'MANUAL' && parts[1] === 'IGNORED'))) {
             if (pending && ['SET', 'FEATURE', 'PRED', 'CLASSIFY', 'MANUAL'].includes(parts[0])) invalidate(`裝置拒絕指令：${line}`);
         }
         evaluate();
@@ -235,9 +241,10 @@ function createExperimentHeightControl(options) {
         if (owned) {
             if (!connected() || pending?.type !== 'adjust' || command.trim() !== pending.command) return false;
             // A delayed queue must not use the state that was fresh when the button was clicked.
-            if (recording() || !debug || !io || now() - debug.receivedMonotonicMs > freshnessMs ||
+            if (recording() || !features || features.pred !== 0 || features.legacy !== 0 ||
+                !debug || !io || !debug.preStage?.trim() || now() - debug.receivedMonotonicMs > freshnessMs ||
                 now() - io.receivedMonotonicMs > freshnessMs || io.state !== 5 || io.outputs !== 0 ||
-                !['IDLE', 'DONE', 'TIMEOUT'].includes(debug.anchorState) || debug.preStage !== 'IDLE') {
+                !['IDLE', 'DONE', 'TIMEOUT'].includes(debug.anchorState)) {
                 invalidate('送出前裝置狀態已改變或過期，高度指令未送出；請重新準備');
                 return false;
             }

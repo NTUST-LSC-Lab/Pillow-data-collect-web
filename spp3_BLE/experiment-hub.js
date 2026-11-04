@@ -141,6 +141,8 @@ function createExperimentHub(root, options = {}) {
                 gapTimeoutMs: pressureConfig.gapTimeoutMs, conditions: pressureConfig.conditions,
                 getSystemState: options.getSystemState,
                 heightControl: options.heightControl,
+                getUserProfile: options.getUserProfile,
+                getPose5Suggestion: options.getPose5Suggestion,
                 onChange: state => { if (currentExperiment === pressureId) updateControls(state); }
             });
         }

@@ -4,9 +4,9 @@
 
 本版以 `spp3_BLE_cls_pre_v3.1` 為基礎，提供可收合的「實驗專區」、Experiment 01 兩姿勢獨立手動高度校正、30 秒壓力資料收集、條件曲線保存與 CSV＋PNG 匯出。保留既有雙欄介面、截圖精靈、BLE queue、IndexedDB、全站 Export Data、校正、分類、PRED 與 Manual 控制。
 
-更新時間：`2026-11-04 16:11:31 CST (+0800)`（Asia/Taipei）
+更新時間：`2026-11-04 18:29:50 CST (+0800)`（Asia/Taipei）
 
-目前驗證狀態：**Node 回歸 79／79 通過；Chrome 156.0.8078.80＋Chart.js 4.6.1 合成資料測試通過，包含桌面與 320 px 版面。ESP32 實機微調、到位、收數與中斷驗收，以及完整鍵盤操作尚未完成。** 這些測試不代表辨識穩健性已獲驗證；歷史 50 項測試紀錄另列於下方歷史更新段落。
+目前驗證狀態：**Node 回歸 111／111 通過；Chrome 156.0.8078.80＋Chart.js 4.6.1 合成資料測試通過，包含桌面與 320 px 版面。ESP32 實機微調、到位、收數與中斷驗收，以及完整鍵盤操作尚未完成。** 這些測試不代表辨識穩健性已獲驗證；歷史 50 項測試紀錄另列於下方歷史更新段落。
 
 ## 對應版本
 
@@ -63,24 +63,46 @@ python3 -m http.server 8080
 
 ## 2026-11-04 Experiment 01 獨立校正
 
-在 Experiment 01 內容最上方顯示姿勢一／姿勢五的 Head、Neck 高度微調與並列校正紀錄，先校正，再往下填寫本輪設定。新流程不讀取舊使用者的身高、體重、年齡或建議高度，不傳送 `USER`、`INIT,NORM,L`、`ANCHOR,START/CLEAR` 或 `MANUAL,ENTER`；原 firmware 與已完成 anchors 不變。
+在 Experiment 01 內容最上方顯示姿勢一／姿勢五的 Head、Neck 高度微調與並列校正紀錄，先校正，再往下填寫本輪設定。姿勢五先帶入 ESP32 依已設定的性別、年齡、身高與體重推估的起始高度，再由操作者微調。實驗區不自動傳送 `USER`、`INIT,NORM,L`、`ANCHOR,START/CLEAR` 或 `MANUAL,ENTER`；原 firmware 與已完成 anchors 不變。
 
-介面已移除備註、試次編號及「將此姿勢已存高度帶入本輪」功能。本輪 Head／Neck 高度由操作者填寫；保存校正快照不會回填本輪欄位。CSV 的 `notes` 與 `trial_index` 保留為空值以維持 23 欄格式，檔名與圖表不再顯示試次，重測以唯一 `run_id` 區分。
+介面已移除備註、試次編號及「將此姿勢已存高度帶入本輪」功能。本輪 Head／Neck 高度由操作者填寫；保存校正快照不會回填本輪欄位。CSV 的 `notes` 與 `trial_index` 保留為空值；原 23 欄順序不變，末尾新增 3 個受試者欄位，共 26 欄，檔名與圖表不再顯示試次，重測以唯一 `run_id` 區分。
+
+上方「使用者資料」目前輸入的年齡、身高與體重會自動顯示在實驗區受試者編號下方。此處讀取的是表單目前輸入值，不代表 ESP32 已確認；不需為帶入資料按上方「設定」，也不會重送 `USER` 或清除 anchors；姿勢五建議高度則另須上方資料已設定到裝置，且收到相符回覆。開始前修改資料會取消本輪確認，請核對受試者編號及資料後重新勾選。
+
+按「開始記錄」時保存三個值，本輪結果摘要、CSV 與線圖 PNG 都使用這份快照。記錄中修改上方欄位不改寫本輪；完成後可看到下一輪使用的新輸入，切回舊條件仍保留舊結果。保存校正快照時，也會記下當下年齡／身高／體重並顯示於各姿勢紀錄，供截圖使用。年齡須為非負整數，身高／體重須為大於零的有限數字並保留小數；空白或無效值顯示「未填／無效」、CSV 留空，不自動填零，也不新增必填限制。
 
 操作順序：
 
 1. 連接 ESP32，等待一般待命狀態，在頂端校正區填受試者編號（例如 `S01`）。此編號也共用於下方本輪設定。
-2. 選「目前校正姿勢」，讓受試者擺好該姿勢；按「準備微調」，停止自動調整並讀取裝置當下高度。此動作切換 Web 控制模式，並不進入 ESP32 的 `MANUAL_CONTROL`。
-3. 設定 Head／Neck 待套用值，或用 ± 每次調整 0.5 cm；按對應通道的「套用」才送 `SET,NORM,EXPERIMENT,S,HEAD|NECK,<高度>`。Head 限 7–16 cm、Neck 限 10–14 cm。一次只調整一個通道，必須等裝置回報到位後再調下一個；不自動重跑啟動充氣，也不會因選擇姿勢而移動。
+2. 選「目前校正姿勢」，讓受試者擺好該姿勢；按「準備微調」，停止自動調整並讀取裝置當下高度。此動作切換 Web 控制模式，並不進入 ESP32 的 `MANUAL_CONTROL`。 姿勢五已移除固定 **13 cm** 預設：請先在上方填妥性別、年齡、身高、體重並按「設定」，再準備微調，取得該使用者的裝置建議值。準備微調不以裝置當下高度覆蓋建議或人工草稿；按「套用」才會移動裝置。相同使用者資料下，手動微調後切換姿勢再切回會保留草稿；變更資料或性別時清除姿勢五舊草稿，等待新的相符建議。姿勢一原有讀取高度行為不變。
+3. 設定 Head／Neck 待套用值，或用 ± 每次調整 0.5 cm；可按單獨通道的「套用」，或按「同步套用 Head／Neck」一次套用兩個設定。Head 限 7–16 cm、Neck 限 10–14 cm。同步套用會先確認兩欄有效並保存本次設定，依序等待 Head 到位後自動套用 Neck，無須再按第二次；不是兩顆氣囊同時充放氣。沿用 `SET,NORM,EXPERIMENT,S,HEAD|NECK,<高度>` 與原到位確認，不重跑啟動充氣，也不因選擇姿勢而移動。
 4. 待受試者自然呼吸且姿勢穩定，勾選確認，按「保存此姿勢校正快照」。必須有到位後的新鮮完整 P 訊息，待套用值也必須與裝置高度一致。
 5. 對另一姿勢重複步驟 2–4。兩組紀錄並列顯示受試者、目標高度、裝置估計高度、三顆氣囊 ADC 與壓力接收時間；需要保留時，由操作者手動截圖。
-6. 選擇對應的實驗條件，手動填寫本輪 Head／Neck 設定高度。若目前裝置位於另一姿勢高度，需先逐通道套用正確高度並確認穩定，再勾選本輪確認、開始記錄。
+6. 選擇對應的實驗條件，手動填寫本輪 Head／Neck 設定高度。若目前裝置位於另一姿勢高度，需先單獨或同步套用正確高度並確認穩定，再勾選本輪確認、開始記錄。
+
+姿勢五讀取同一份完整 DEBUG 的最終 `HLF`（Head）／`N1LF`（Neck），不使用 `HLF_raw`／`N1LF_raw` 或舊式混合快取，也不在 JavaScript 重寫人體公式。裝置依性別與年齡組別估算體寬，再推估側躺高度；final 值已包含 0.5 cm 步進、安全範圍及初始 Head 不高於 Neck 的策略。Web 核對目前表單與裝置 profile、連線及 3.5 秒回覆新鮮度；缺漏、不符或過期時不產生新預設值，也不退回固定 13 cm。
+
+若新鮮完整回覆確認裝置已換成另一組使用者資料，即使上方表單未變，也會清除舊姿勢五草稿並取消確認。暫時過期、斷線或準備時尚未收到完整資料不會清除同一使用者的手動值；是否允許套用仍由既有連線、到位及新鮮度檢查決定。
+
+裝置 `USER` 以整數處理身高／體重；例如輸入 170.5 cm、65.5 kg，裝置以 170 cm、65 kg 推估，實驗 CSV 仍保留原小數。建議高度橋接只接受一般十進位數字，避免科學記號在 Web 與 firmware 解析不同。上方既有「設定」會送 USER、停止 PRED，且使用者資料變更時會清除舊 anchors；新的實驗帶入功能本身不重送 USER、不自動套用高度，也不更動 firmware。
+
+同步套用全程鎖定重複操作、姿勢／受試者切換及開始記錄。Head 階段若失敗、逾時或斷線，就不送 Neck；已完成的調整不自動復原，需由操作者確認裝置現況。兩個高度都到位後，才可確認穩定並保存快照。
 
 校正快照是**按下保存時最新的一筆完整 P 訊息，不是平均值或模型訓練校正**。「保存此姿勢校正快照」只把資料暫存於本頁記憶體並顯示在畫面，**不會產生或下載圖片**；請使用操作者的截圖工具手動保存畫面。高度是 firmware 依充放氣時間估計，並非高度感測器實測。
 
-快照按受試者編號及姿勢分開暫存，換人不會沿用另一人的快照，切回同一編號可查看其已存紀錄；重存前會要求確認替換。離開／重新整理會遺失記憶體資料，沒有自動存檔或跨重新整理恢復。校正快照不併入 23 欄 CSV，也不會出現在每輪壓力曲線 PNG 中。
+快照按受試者編號及姿勢分開暫存，換人不會沿用另一人的快照，切回同一編號可查看其已存紀錄；重存前會要求確認替換。離開／重新整理會遺失記憶體資料，沒有自動存檔或跨重新整理恢復。校正時的壓力／高度快照不併入每輪 CSV，也不會出現在每輪壓力曲線 PNG 中；每輪受試者資料另取開始記錄時的值。
 
 `HEIGHT_SET` 僅視為目標 ACK；到位須確認本次命令後完整 DEBUG 的 target/current 及一般待命、氣路關閉的 I 回報。微調等待中禁止重複調整及切換實驗；斷線、逾時、裝置仍在動作、舊 anchor 正在採樣或回報過期時不允許保存。已啟用本區校正的收數流程還會檢查本輪高度與裝置回報一致。
+
+若已校正卻不能開始，請看「開始記錄」上方的具體原因。本輪高度是獨立的人工記錄欄位：例如裝置已到位 Head 9 cm／Neck 11 cm，但本輪 Head 仍填 8 cm，會顯示不符通道及兩個數值；請將本輪記錄改為目前高度並重新勾選確認，不需為修正記錄再次調整枕頭。空白欄位顯示「未填」，高度未就緒則顯示裝置狀態原因。
+
+「Web 未回報自動高度調整啟用」是控制提醒，本身不阻擋開始；未啟用時以一般提示顯示，自動模式或 PRED 啟用時保留警示。BLE、有效壓力訊息、高度一致、表單確認及未匯出保護仍依原條件檢查，未自動回填本輪高度或改動硬體控制。
+
+### 準備微調的停用回覆修正（2026-11-04）
+
+ESP32 在 PRED／POSE 功能已停用時，連 `PRED,STOP`／`CLASSIFY,STOP` 或 GET 都可能回 `ERR,DISABLED`。本版不再把精確的 `PRED,ERR,DISABLED`、`CLASSIFY,ERR,DISABLED` 當成高度操作失敗；其他錯誤仍中止操作。停用回覆本身不代表已準備完成，仍須取得本次準備後的 `FEATURE,STATUS`，確認 PRED／LEGACY 關閉，以及新鮮完整 DEBUG／I、一般待命、氣路全關、無 anchor 採樣及 current＝target。
+
+此 firmware 停用 PRED 後，DEBUG 的 `pre_stage` 可能保留停用前的快取值。仍要求該欄位存在且非空，並保留於診斷資料；其快取值不再單獨阻擋已確認關閉且待命的微調。SET 送出前再檢查功能旗標及裝置狀態；送出後仍須 ACK 與新 DEBUG／I 才確認到位，保留高度上下限、單通道操作、斷線與逾時保護。本次沒有更動 firmware 或協定。
 
 程式驗證使用合成資料，不會連接 BLE 或操控硬體。桌面與 320 px 截圖位於 `tests/.artifacts/chart-browser/SYNTHETIC_calibration-desktop.png`、`SYNTHETIC_calibration-320.png`，只供本機驗證，不提交。
 
@@ -106,7 +128,7 @@ Experiment 01：**固定睡姿下自然呼吸與微動之辨識穩健性測試**
 1. 用支援 Web Bluetooth 的瀏覽器開啟 `spp3_BLE/`，連接 ESP32。確認持續收到有效三通道資料；實驗顯示最新接收時間、ADC 與觀察間隔。開始前須已收到至少兩筆完整訊息且資料未過期，這不是自動判定受試者穩定。
 2. 展開「實驗專區」，選擇 Experiment 01，在校正區填受試者代號（例如 S01，不填姓名）。不需填試次編號，每輪自動產生唯一 `run_id`。
 3. 選一個條件，依畫面安排睡姿與對應高度，人工確認並填入 Head／Neck 本輪設定高度。Head 為 7–16 cm，Neck 為 10–14 cm，步進 0.5 cm。這些數值是操作者紀錄，不是自動量測，也不下達控制命令。
-4. 檢查控制狀態提醒。既有自動模式／PRED 可能改變高度；可使用上方新增的獨立校正流程，明確按「準備微調」停止自動控制，再逐通道套用高度。單純開始收數不會送高度命令、重送 USER 或清除 anchors。
+4. 檢查控制狀態提醒。既有自動模式／PRED 可能改變高度；可使用上方新增的獨立校正流程，明確按「準備微調」停止自動控制，再單獨或同步套用高度。單純開始收數不會送高度命令、重送 USER 或清除 anchors。
 5. 自行等待受試者穩定，勾選本輪設定確認，再按「開始記錄」。不另加等待秒數或自動判穩門檻。本輪設定與實驗切換在記錄期間鎖定；仍可收合 Hub，收集不會停止。
 6. 30 秒到時自動結束。若按「提前結束」，保留已有樣本並標示未完成。檢查本輪曲線、樣本數、狀態及條件快照。
 7. 按「匯出 CSV＋線圖」，確認同名前綴的 CSV 與 PNG 都已保存，再選下一條件。同一條件未要求匯出的樣本會阻擋重測；重測前仍會詢問是否已保存兩個檔案。瀏覽器若詢問多檔下載，需允許此網站；程式只能確認已要求下載，不能證明檔案已保存。
@@ -126,7 +148,7 @@ Experiment 01：**固定睡姿下自然呼吸與微動之辨識穩健性測試**
 
 ### 每輪 CSV
 
-共 **23 欄**，沿用下列主要欄位與補充欄位順序輸出；已移除的試次與備註欄位留空，不更動全站 Export Data 格式。
+共 **26 欄**，原 23 欄順序不變，最後新增 `age_years`、`body_height_cm`、`body_weight_kg`。已移除的試次與備註欄位留空，不更動全站 Export Data 格式；下游若固定要求 23 欄，需相應更新。
 
 主要欄位（含保留欄位）：`run_id, subject_id, trial_index, condition_id, actual_pose, height_condition, head_height_cm, neck_height_cm, test_condition, sample_index, timestamp_iso, elapsed_s, monitor_adc, neck_adc, head_adc, run_status`。
 
@@ -157,27 +179,30 @@ Experiment 01：**固定睡姿下自然呼吸與微動之辨識穩健性測試**
 | `interruption_reason` | 程式記錄的中斷原因；無中斷則留空。 |
 | `time_source` | `browser_complete_pressure_message_received`。 |
 | `pressure_unit` | `ADC`。 |
+| `age_years` | 本輪開始時上方表單的年齡，歲；空白／無效時留空。 |
+| `body_height_cm` | 本輪開始時上方表單的身高，cm；保留小數，空白／無效時留空，與枕高欄位分開。 |
+| `body_weight_kg` | 本輪開始時上方表單的體重，kg；保留小數，空白／無效時留空。 |
 
 CSV 使用 UTF-8 BOM、CRLF，每個欄位均正確引用並將引號加倍。檔名例如 `S01_pose1_height1_still_<唯一run_id>.csv`，其他三條件使用對應姿勢、高度及情境；每輪以新 UUID 避免重測混淆。
 
-同次操作也下載 `S01_pose1_height1_still_<唯一run_id>.png`。PNG 僅包含所選條件該輪的三通道壓力曲線、白色背景與本輪快照標題（受試者、條件、姿勢、高度、情境、筆數及狀態）；圖上不顯示 UUID。兩份內容先產生成功再要求下載，影像產生失敗時保留資料及未匯出保護。匯出需先展開並顯示該條件的曲線，避免輸出隱藏或上一條件的畫面。右欄既有圖表不受影響。
+同次操作也下載 `S01_pose1_height1_still_<唯一run_id>.png`。PNG 僅包含所選條件該輪的三通道壓力曲線、白色背景與本輪快照標題（受試者、年齡／身高／體重、條件、姿勢、枕高、情境、筆數及狀態）；圖上不顯示 UUID。兩份內容先產生成功再要求下載，影像產生失敗時保留資料及未匯出保護。匯出需先展開並顯示該條件的曲線，避免輸出隱藏或上一條件的畫面。右欄既有圖表不受影響。
 
 四個條件的結果都只在本頁記憶體，**沒有持久化**，也未改動 IndexedDB schema 或全站 Export Data。任一條件仍在記錄或尚未要求匯出時有離頁警告；選擇離開／重新整理仍會遺失資料。要求下載不代表瀏覽器已保存，操作者務必自行確認 CSV 與 PNG。真實受試者資料與匯出不得提交版本控制。
 
 ### 驗證紀錄與重跑方式
 
-以下為 `2026-11-04`（Asia/Taipei）的驗證結果；使用合成資料，不操作實體 BLE 裝置。
+以下表格為 `2026-11-04`（Asia/Taipei）的自動化驗證結果；使用合成資料，不操作實體 BLE 裝置。另一次實機按鈕測試的部分結果列於表格及重跑說明之後。
 
 | 驗證項目 | 實際結果 | 範圍 |
 | --- | --- | --- |
-| Node 回歸 | **79／79 通過，退出碼 0** | Recorder 16、BLE parser bridge 8、Hub 6、UI／controller 25、Chart options 3、height control 20、height bridge 1。 |
-| 獨立校正 | 合成協定與 UI 測試通過 | 兩姿勢／受試者資料隔離、單筆 ADC 快照、待套用值、到位回報、freshness、高度界線、斷線／逾時、queue、延遲 retry 與記錄中鎖定。 |
+| Node 回歸 | **111／111 通過，退出碼 0** | Recorder 18、BLE parser bridge 8、Hub 10、UI／controller 37、Chart options 3、height control 28、height bridge 7。 |
+| 獨立校正 | 合成協定與 UI 測試通過 | 姿勢五使用者匹配的裝置建議、固定預設移除與草稿保留、同步套用順序／全程鎖定／雙欄驗證／首步失敗中止、兩姿勢／受試者資料隔離、單筆 ADC 快照、待套用值、到位回報、freshness、高度界線、斷線／逾時、queue、延遲 retry 與記錄中鎖定。 |
 | 正式 app 橋接 | 合成整合測試通過 | 直接串接正式初始化、height adapter、指令 queue、20-byte 分段 BLE 通知與 parser；確認停止序列、SET ownership、完整 DEBUG／I／FEATURE STATUS 與 P 樣本傳遞。 |
-| 記錄與 CSV | 合成資料測試通過 | 30 秒窗口、提前結束、3 秒中斷、四條件快照、CSV 引用、重測保護、固定 23 欄及空白 `notes`／`trial_index`。 |
+| 記錄與 CSV | 合成資料測試通過 | 30 秒窗口、提前結束、3 秒中斷、四條件快照、CSV 引用、重測保護、26 欄、受試者資料快照及空白 `notes`／`trial_index`。 |
 | Chart options | 本機 **Chart.js 4.4.1** 的 3 項測試通過 | 真正 constructor／options resolver 與模擬 Canvas API；負向測試可重現舊的 Proxy 循環指定錯誤。 |
-| 真實 Chrome／Chart.js | **Chrome 156.0.8078.80／Chart.js 4.6.1：PASS** | 真實 HTML／CSS、Hub／實驗模組；使用合成 S00 資料、可控時鐘與假的 system／height provider，無 `pageerror`。 |
+| 真實 Chrome／Chart.js | **Chrome 156.0.8078.80／Chart.js 4.6.1：PASS** | 真實 HTML／CSS、Hub／實驗模組；使用正式 height control、合成 S00／system／firmware 回覆及可控時鐘；驗證受試者資料即時預覽／開始快照／CSV 與 PNG 文字、姿勢五裝置建議、資料／性別變更後清除與更新、單獨／同步套用 Head／Neck，無 `pageerror`。 |
 | 瀏覽器操作與版面 | **桌面 1280×1000、320 px 寬度通過** | 兩姿勢校正資料並列、三個移除控制項不存在、手動高度與到位一致性、30 秒收集、曲線切換／恢復、收合後持續收集、提前結束。 |
-| 實際下載產物 | **30 筆、23 欄 CSV＋有效 PNG**，同檔名前綴 | `notes`／`trial_index` 皆空，檔名及圖表無 trial；PNG 是該輪三通道曲線，不是校正區截圖。 |
+| 實際下載產物 | **30 筆、26 欄 CSV＋有效 PNG**，同檔名前綴 | `notes`／`trial_index` 皆空，檔名及圖表無 trial；PNG 是該輪三通道曲線，不是校正區截圖。 |
 
 在專案根目錄重跑 Node 測試：
 
@@ -212,6 +237,15 @@ PASS: real Chart.js 4.6.1; two independent synthetic calibrations; desktop/320px
 
 測試產物位於 `tests/.artifacts/chart-browser/`，檔名標記 `SYNTHETIC` 並使用合成受試者 `S00`，不是人體／裝置量測。測試時鐘固定以 `2030-01-01` 為基準，因此合成 CSV 內的時間戳不代表實際執行日期。產物留在本機供檢查，不提交到 GitHub。
 
+### 實機按鈕測試（2026-11-04，部分完成）
+
+在 Edge 已連接 ESP32 的頁面進行操作；這次檢查按鈕與裝置回報流程，未驗證人體實驗結果。
+
+- Head／Neck 的四個 `+`／`−` 按鈕可修改待套用值，並已還原測試前的目標值；此步未觀察到裝置高度改變。
+- 「準備微調」曾逾時，重試後顯示就緒。
+- 單獨套用與當時高度相同的 Head 目標後，最後可讀取的畫面停在「等待高度指令確認」。隨後電腦操作工具讀取 Edge 連續逾時，無法確認後續 ACK、到位或最終錯誤狀態；目前沒有足夠證據判定根因。
+- 本次未完成單獨 Neck、同步套用、校正快照、開始／結束記錄與匯出的實機驗收。不得將上方合成測試通過視為這些實機項目已通過。
+
 ### 尚未驗證與使用限制
 
 - 瀏覽器 smoke 以合成 bootstrap 取代正式 `app.js` 的啟動流程，並控制 `Date`、`performance.now()` 與 UI refresh。它驗證 **30 秒計時邏輯**，未等待實際 30 秒。另有 Node height bridge 測試串接正式 app 函式，但仍使用假的 BLE；兩者都不能取代完整 BLE app、背景分頁計時或硬體控制的實機驗收。
@@ -223,9 +257,66 @@ PASS: real Chart.js 4.6.1; two independent synthetic calibrations; desktop/320px
 - CSV＋PNG 綁定匯出；PNG 產生失敗時 CSV 也不會下載，但資料會保留。瀏覽器可能阻擋第二個下載，務必確認兩個檔案都已保存。
 - 各條件只暫存最後一輪，沒有跨重新整理的持久化。資料收集完成不表示已完成離線分類或辨識穩健性驗證。
 
-### 本次變更範圍（2026-11-04，12 檔）
+### 本次累計提交範圍（2026-11-04，13 檔）
 
-目標分支為 `spp3_BLE_v4`。此輪範圍共 **12 個原始碼／文件檔案**：
+以遠端 `spp3_BLE_v4` 的 `fdc39c26044a949ffdae465aaa2e560e90132b10` 為基底，本次累計提交停用回覆處理、同步套用、受試者資料帶入、姿勢五建議高度及開始記錄提示的變更：
+
+| 類型 | 檔案 |
+| --- | --- |
+| 文件（1） | `README.md` |
+| Web runtime（6） | `spp3_BLE/app.js`、`spp3_BLE/experiment-height-control.js`、`spp3_BLE/experiment-hub.js`、`spp3_BLE/index.html`、`spp3_BLE/pressure-experiment.js`、`spp3_BLE/pressure-recorder.js` |
+| 測試（6） | `tests/chart-browser-smoke.cjs`、`tests/experiment-height-bridge.test.cjs`、`tests/experiment-height-control.test.cjs`、`tests/experiment-hub.test.cjs`、`tests/pressure-recorder.test.cjs`、`tests/pressure-ui.test.cjs` |
+
+僅提交上述原始碼與文件；排除實驗資料、截圖、BLE log、`tests/.artifacts/`、`AGENTS.md`、本機依賴與機密。不修改 firmware、其他版本、default branch 或 Git 歷史；提交不代表實機驗收完成或網站已部署。
+
+以下依功能保留各次修改範圍，檔案可能重複，不能相加作為本次提交檔數。
+
+### 開始記錄提示修正（2026-11-04，5 檔）
+
+- `spp3_BLE/pressure-experiment.js`：提示及開始按鈕共用高度阻擋原因，列出不符數值、未填或裝置未就緒；將未啟用自動調整的提醒改為一般提示。
+- `spp3_BLE/index.html`：說明本輪高度須與裝置目前高度一致，修改後重新確認。
+- `tests/pressure-ui.test.cjs`：重現高度不符，驗證修正後可收數、CSV 高度及不下達調整指令。
+- `tests/chart-browser-smoke.cjs`：驗證真實瀏覽器的錯誤提示、重新確認、控制提示樣式及無高度操作。
+- `README.md`：記錄原因、操作及驗證。未改 firmware、高度控制 adapter、CSV schema 或 CSS。
+
+### 姿勢五建議高度範圍（2026-11-04，11 檔）
+
+- `spp3_BLE/app.js`、`spp3_BLE/experiment-hub.js`：只讀、驗證並轉交目前使用者對應的裝置建議。
+- `spp3_BLE/experiment-height-control.js`：完整 DEBUG 另保存六個 profile／建議欄位，原高度控制檢查不變。
+- `spp3_BLE/pressure-experiment.js`、`spp3_BLE/index.html`：移除 13 cm 預設、帶入建議、保留手動草稿及顯示等待提示。
+- `tests/experiment-hub.test.cjs`、`tests/experiment-height-control.test.cjs`、`tests/experiment-height-bridge.test.cjs`：缺漏／不符／過期、整數解析、合法高度與正式初始化的驗證。
+- `tests/pressure-ui.test.cjs`、`tests/chart-browser-smoke.cjs`：草稿、資料／性別更新、不自動移動、真實頁面與後續收數／匯出驗證。
+- `README.md`：來源、流程及限制。未改 firmware、CSV schema、CSS 或實際實驗資料。
+
+### 受試者資料帶入範圍（2026-11-04，11 檔）
+
+- `spp3_BLE/app.js`、`spp3_BLE/experiment-hub.js`：只讀上方數值並傳入實驗，不觸發裝置控制。
+- `spp3_BLE/index.html`：加入資料顯示及確認文字。
+- `spp3_BLE/pressure-experiment.js`：即時預覽、開始／校正快照、結果摘要及 PNG。
+- `spp3_BLE/pressure-recorder.js`：CSV 尾端新增三欄，原欄位順序保留。
+- `tests/experiment-hub.test.cjs`、`tests/experiment-height-bridge.test.cjs`：getter／Hub 驗證及初始化 fixture 接線。
+- `tests/pressure-ui.test.cjs`、`tests/pressure-recorder.test.cjs`、`tests/chart-browser-smoke.cjs`：快照隔離、CSV 空值／小數、實際 PNG 文字與版面驗證。
+- `README.md`：操作與 26 欄 CSV 定義、測試結果。未更動 firmware、高度控制 adapter 或 CSS。
+
+### 同步套用功能範圍（2026-11-04，5 檔）
+
+- `spp3_BLE/index.html`：新增同步套用按鈕，沿用既有按鈕與響應式版面。
+- `spp3_BLE/pressure-experiment.js`：雙欄驗證、凍結本次設定、依序套用與全程鎖定；保留原單通道按鈕。
+- `tests/pressure-ui.test.cjs`：同步套用順序、鎖定與錯誤情境測試。
+- `tests/chart-browser-smoke.cjs`：真實瀏覽器驗證同步套用、校正快照及後續收集／匯出。
+- `README.md`：更新操作方式與驗證紀錄。高度 adapter、firmware、協定及 CSS 均不因新增按鈕而改動。
+
+### 停用回覆修正範圍（2026-11-04，5 檔）
+
+- `spp3_BLE/experiment-height-control.js`：修正停用回覆與快取 PRED 階段造成的誤鎖定，仍以完整安全回報及 SET 確認判斷可操作／到位。
+- `tests/experiment-height-control.test.cjs`：補上停用回覆、快取階段、晚到回覆、DEBUG 缺欄位／空白、欠缺安全證據與其他錯誤的回歸。
+- `tests/experiment-height-bridge.test.cjs`：串接正式 app／BLE queue／parser，驗證上述回覆後可完成 Head／Neck 微調。
+- `tests/chart-browser-smoke.cjs`：改用正式 height control 與合成 firmware，重現錯誤並驗證按鈕、校正、收數與匯出。
+- `README.md`：記錄原因、修正範圍、87 項測試及實機驗證限制。
+
+### 獨立校正功能的前次提交範圍（2026-11-04，12 檔）
+
+目標分支為 `spp3_BLE_v4`。前次功能提交範圍共 **12 個原始碼／文件檔案**：
 
 | 類型 | 檔案 |
 | --- | --- |
@@ -233,7 +324,7 @@ PASS: real Chart.js 4.6.1; two independent synthetic calibrations; desktop/320px
 | Web runtime（6） | `spp3_BLE/index.html`、`spp3_BLE/styles.css`、`spp3_BLE/app.js`、`spp3_BLE/experiment-hub.js`、`spp3_BLE/pressure-experiment.js`、`spp3_BLE/experiment-height-control.js` |
 | 測試（5） | `tests/chart-browser-smoke.cjs`、`tests/experiment-hub.test.cjs`、`tests/pressure-ui.test.cjs`、`tests/experiment-height-control.test.cjs`、`tests/experiment-height-bridge.test.cjs` |
 
-未變更 `pressure-recorder.js`、firmware、舊版 Web 或原始受試者資料。發布僅使用這份檔案範圍，排除 `.DS_Store`、`tests/.artifacts/`、實驗 CSV／PNG、BLE log、個資、憑證與本機依賴；不使用 force push，也不變更 default branch。Git 分支、版本差異與發布結果應以實際 checkout／遠端紀錄核對；提交不等同完成 ESP32 實機驗收或網站部署。
+該次提交未變更 `pressure-recorder.js`、firmware、舊版 Web 或原始受試者資料。該次發布僅使用這份檔案範圍，排除 `.DS_Store`、`tests/.artifacts/`、實驗 CSV／PNG、BLE log、個資、憑證與本機依賴；不使用 force push，也不變更 default branch。Git 分支、版本差異與發布結果應以實際 checkout／遠端紀錄核對；提交不等同完成 ESP32 實機驗收或網站部署。
 
 ## 歷史更新紀錄
 
@@ -252,7 +343,7 @@ PASS: real Chart.js 4.6.1; two independent synthetic calibrations; desktop/320px
 | 初始化修正 | 修正 Hub Dropdown 的區域變數遮蔽初始化 options，確保實驗模組取得 `getSystemState` 並正確更新開始按鈕。 |
 | Chart.js 修正 | 避免將已解析的 `chart.options.plugins` Proxy 指定回自身；在普通設定物件初始化 title，更新時只改 title.text，修正 `Maximum call stack size exceeded`。 |
 | 左欄排列 | 原六張 Card 調整為七張；實驗與訊息紀錄使用對應 grid area，避免新增 Card 後訊息紀錄的排列／高度失效。 |
-| 回歸驗證 | 新增記錄器、BLE parser bridge、Hub、UI／匯出、真實 Chart options resolver 與 Chrome smoke 測試；當日結果為 50／50，與上方本次 79／79 分開記錄。 |
+| 回歸驗證 | 新增記錄器、BLE parser bridge、Hub、UI／匯出、真實 Chart options resolver 與 Chrome smoke 測試；當日結果為 50／50，與上方本次 111／111 分開記錄。 |
 
 ### 2026-11-03 驗證紀錄（歷史）
 

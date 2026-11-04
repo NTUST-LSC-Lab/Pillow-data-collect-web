@@ -11,6 +11,10 @@ const vm = require('node:vm');
 
 const source = name => fs.readFileSync(path.join(__dirname, '../spp3_BLE', name), 'utf8');
 const appSource = source('app.js');
+const profileGetterStart = appSource.indexOf('function getExperimentUserProfile(');
+const profileGetterEnd = appSource.indexOf('function setSyncTimeAck(', profileGetterStart);
+assert.ok(profileGetterStart >= 0 && profileGetterEnd > profileGetterStart);
+const profileGetterSource = appSource.slice(profileGetterStart, profileGetterEnd);
 const configLiteral = appSource.match(/pressureConfig:\s*(\{[\s\S]*?\}),\s*getSystemState:\s*\(\)\s*=>/);
 assert.ok(configLiteral, 'extract the actual app configuration rather than duplicate its labels');
 const pressureConfig = vm.runInNewContext(`(${configLiteral[1]})`);
@@ -42,7 +46,7 @@ function fixture(savedSelection = null) {
     }
     for (const id of ['experimentPrev', 'experimentNext', 'experimentCounter', 'experimentTitle',
         'experimentSelect', 'experimentStatus', 'experimentView', 'experimentHint', 'experimentStart',
-        'experimentFinish', 'experimentExport']) nodes[id] = new Element(id);
+        'experimentFinish', 'experimentExport', 'age', 'height', 'weight']) nodes[id] = new Element(id);
     const template = {
         content: { firstElementChild: { cloneNode(deep) {
             assert.equal(deep, true); viewClones++;
@@ -76,7 +80,11 @@ function fixture(savedSelection = null) {
         pressureInstances.push({ view, options, module, samples, chart, calls });
         return module;
     };
+    const effects = [];
     const context = vm.createContext({
+        sendCommand: (...args) => effects.push(['sendCommand', ...args]),
+        sendSilentCommand: (...args) => effects.push(['sendSilentCommand', ...args]),
+        queueBleWrite: (...args) => effects.push(['queueBleWrite', ...args]),
         document: { createElement: () => new Element(), getElementById: id => id === 'pressureExperimentTemplate' ? template : nodes[id] },
         localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
         window: { addEventListener(type, callback) {
@@ -85,9 +93,10 @@ function fixture(savedSelection = null) {
         } },
         createPressureCollectionExperiment
     });
-    vm.runInContext(source('experiment-hub.js'), context);
+    vm.runInContext(profileGetterSource + '\n' + source('experiment-hub.js'), context);
     const hub = context.createExperimentHub({ querySelector: selector => nodes[selector.slice(1)] }, {
-        pressureConfig, getSystemState: () => ({ ...system })
+        pressureConfig, getSystemState: () => ({ ...system }), getUserProfile: context.getExperimentUserProfile,
+        getPose5Suggestion: context.getExperimentPose5Suggestion
     });
     hub.init();
     function choose(id) { nodes.experimentSelect.value = id; nodes.experimentSelect.dispatch('change'); }
@@ -96,7 +105,9 @@ function fixture(savedSelection = null) {
         for (const callback of windowListeners.get('beforeunload') || []) callback(event);
         return event;
     }
-    return { hub, nodes, pressureInstances, windowListeners, storage, system, choose, beforeUnload, viewClones: () => viewClones };
+    return { hub, nodes, pressureInstances, windowListeners, storage, system, choose, beforeUnload, effects,
+        getUserProfile: context.getExperimentUserProfile, getPose5Suggestion: context.getExperimentPose5Suggestion,
+        viewClones: () => viewClones };
 }
 
 test('actual app config selects Experiment 01 and keeps confirmed numerical posture metadata', () => {
@@ -201,4 +212,58 @@ test('production accordion helper only changes display/ARIA/storage, without sto
     assert.match(helper[0], /classList\.toggle\('is-collapsed'/);
     assert.match(helper[0], /aria-expanded/);
     assert.match(appSource, /setAccordionExpanded\(experimentAccordionToggle, experimentAccordionBody, experimentAccordionKey, !expanded\)/);
+});
+
+
+test('production profile getter reads the current draft through Hub without BLE or gender dependencies', () => {
+    const f = fixture();
+    const getProfile = f.pressureInstances[0].options.getUserProfile;
+    assert.equal(getProfile, f.getUserProfile, 'Hub forwards the getter rather than caching one profile');
+    assert.match(appSource, /getUserProfile:\s*getExperimentUserProfile/);
+    f.nodes.age.value = ' 25 ';
+    f.nodes.height.value = '170.5';
+    f.nodes.weight.value = '65.25';
+    const first = getProfile();
+    assert.deepEqual({ ...first }, { age_years: 25, body_height_cm: 170.5, body_weight_kg: 65.25 });
+    f.nodes.age.value = '26'; f.nodes.weight.value = '66.5';
+    assert.deepEqual({ ...getProfile() }, { age_years: 26, body_height_cm: 170.5, body_weight_kg: 66.5 });
+    assert.equal(first.age_years, 25, 'a previously returned snapshot remains unchanged');
+    first.body_height_cm = 1;
+    assert.equal(getProfile().body_height_cm, 170.5, 'returned objects cannot overwrite the input draft');
+    assert.deepEqual(f.effects, []);
+    assert.equal(f.nodes.gender, undefined, 'no gender control is needed');
+});
+
+test('Hub forwards the live production pose5 suggestion getter without reading or caching it', () => {
+    const f = fixture();
+    assert.equal(typeof f.getPose5Suggestion, 'function');
+    assert.equal(f.pressureInstances[0].options.getPose5Suggestion, f.getPose5Suggestion);
+    assert.match(appSource, /getPose5Suggestion:\s*getExperimentPose5Suggestion/);
+    assert.deepEqual(f.effects, []);
+});
+
+test('production profile getter reports blank, missing and nonfinite values as null, never zero', () => {
+    const f = fixture();
+    const getProfile = f.pressureInstances[0].options.getUserProfile;
+    for (const value of ['', '   ', 'NaN', 'Infinity', '-Infinity', '1e999', 'invalid']) {
+        for (const id of ['age', 'height', 'weight']) f.nodes[id].value = value;
+        assert.deepEqual({ ...getProfile() }, { age_years: null, body_height_cm: null, body_weight_kg: null }, value);
+    }
+    delete f.nodes.age; delete f.nodes.height; delete f.nodes.weight;
+    assert.deepEqual({ ...getProfile() }, { age_years: null, body_height_cm: null, body_weight_kg: null });
+    assert.deepEqual(f.effects, []);
+});
+
+test('profile validation accepts zero age, positive decimal measurements and has no arbitrary upper bounds', () => {
+    const f = fixture();
+    const getProfile = f.pressureInstances[0].options.getUserProfile;
+    f.nodes.age.value = '0'; f.nodes.height.value = '0.5'; f.nodes.weight.value = '0.25';
+    assert.deepEqual({ ...getProfile() }, { age_years: 0, body_height_cm: 0.5, body_weight_kg: 0.25 });
+    f.nodes.age.value = '25.5'; f.nodes.height.value = '0'; f.nodes.weight.value = '-1';
+    assert.deepEqual({ ...getProfile() }, { age_years: null, body_height_cm: null, body_weight_kg: null });
+    f.nodes.age.value = '-1'; f.nodes.height.value = '-1'; f.nodes.weight.value = '0';
+    assert.deepEqual({ ...getProfile() }, { age_years: null, body_height_cm: null, body_weight_kg: null });
+    f.nodes.age.value = '1000'; f.nodes.height.value = '10000.5'; f.nodes.weight.value = '10000.25';
+    assert.deepEqual({ ...getProfile() }, { age_years: 1000, body_height_cm: 10000.5, body_weight_kg: 10000.25 });
+    assert.deepEqual(f.effects, []);
 });

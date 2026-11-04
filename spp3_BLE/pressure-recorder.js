@@ -140,7 +140,8 @@ function createPressureRecorder(options = {}) {
             'height_condition', 'head_height_cm', 'neck_height_cm', 'test_condition',
             'sample_index', 'timestamp_iso', 'elapsed_s', 'monitor_adc', 'neck_adc',
             'head_adc', 'run_status', 'notes', 'height_source', 'data_timeout_s', 'gap_timeout_ms',
-            'interruption_reason', 'time_source', 'pressure_unit'
+            'interruption_reason', 'time_source', 'pressure_unit',
+            'age_years', 'body_height_cm', 'body_weight_kg'
         ];
         const quote = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
         const rows = run.samples.map(sample => ({

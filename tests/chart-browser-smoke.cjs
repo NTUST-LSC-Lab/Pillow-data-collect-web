@@ -5,8 +5,8 @@
 //   CHROME_EXECUTABLE_PATH=/absolute/path/to/chrome
 //   CHART_JS_PATH=/absolute/path/to/chart.umd.js  (offline, unmodified library)
 //   EXPECTED_CHART_VERSION=4.6.1                 (default: reported failing version)
-// This harness loads the production HTML/template/CSS and Hub/controller/recorder.
-// It replaces app.js with synthetic system/sample/control providers, not a mock Chart.
+// This harness loads production HTML/CSS, Hub/controller/recorder and height control.
+// It replaces app.js with synthetic system/sample/firmware providers, not a mock Chart.
 'use strict';
 
 const assert = require('node:assert/strict');
@@ -21,6 +21,11 @@ const app = read('spp3_BLE/app.js');
 const matchedConfig = app.match(/pressureConfig:\s*(\{[\s\S]*?\}),\s*getSystemState:\s*\(\)\s*=>/);
 assert.ok(matchedConfig, 'Production pressureConfig must be present');
 const config = vm.runInNewContext(`(${matchedConfig[1]})`);
+const profileStart = app.indexOf('function getExperimentUserProfile(');
+const profileEnd = app.indexOf('function setSyncTimeAck(', profileStart);
+assert.ok(profileStart >= 0 && profileEnd > profileStart, 'Production profile getter seam must exist');
+const profileGetters = app.slice(profileStart, profileEnd);
+assert.ok(profileGetters.includes('function getExperimentPose5Suggestion('), 'Production pose5 suggestion getter must exist');
 
 function resolvePlaywright() {
     if (process.env.PLAYWRIGHT_MODULE_PATH) return require(process.env.PLAYWRIGHT_MODULE_PATH);
@@ -43,27 +48,76 @@ const bootstrap = `
         return realSetInterval(callback, delay, ...args);
     };
     Object.defineProperty(performance, 'now', { configurable: true, value: () => window.__smokeClock });
-    window.__smokeSystem = { connected: true, autoHeightPossible: false };
-    window.__smokeHeight = { prepared: false, ready: false, busy: false, reason: '尚未準備',
-        head: null, neck: null, targetHead: null, targetNeck: null, receivedMonotonicMs: null };
-    window.__smokeHeightCalls = [];
-    const heightControl = {
-        async prepare() {
-            window.__smokeHeightCalls.push({ action: 'prepare' });
-            Object.assign(window.__smokeHeight, { prepared: true, ready: true, busy: false, reason: '',
-                head: 7, neck: 10, targetHead: 7, targetNeck: 10, receivedMonotonicMs: window.__smokeClock });
-        },
-        async adjust(channel, height) {
-            window.__smokeHeightCalls.push({ action: 'adjust', channel, height });
-            const key = String(channel).toUpperCase() === 'HEAD' ? 'head' : 'neck';
-            Object.assign(window.__smokeHeight, { [key]: height,
-                [key === 'head' ? 'targetHead' : 'targetNeck']: height,
-                ready: true, busy: false, reason: '', receivedMonotonicMs: window.__smokeClock });
-        },
-        getState: () => ({ ...window.__smokeHeight }), tick() {}
+    const serial_ready = true;
+    const bluetoothDevice = { gatt: { connected: true } };
+    const HEIGHT_LIMITS = { HEAD: { min: 7, max: 16 }, NECK: { min: 10, max: 14 } };
+    const HEIGHT_STEP = 0.5;
+    ${profileGetters}
+    window.__smokePngText = [];
+    window.__smokeCapturePng = false;
+    const nativeFillText = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText = function (text, ...args) {
+        if (window.__smokeCapturePng && !this.canvas.id) window.__smokePngText.push(String(text));
+        return nativeFillText.call(this, text, ...args);
     };
+    window.__smokeSystem = { connected: true, autoHeightPossible: false };
+    window.__smokeDevice = { head: 7, neck: 10 };
+    // Synthetic final firmware suggestions; these numbers do not validate an anthropometric formula.
+    window.__smokeConfiguredUser = { gender: 1, age: 25, height: 170, weight: 65, HLF: 12, N1LF: 12.5 };
+    window.__smokeHeightCalls = [];
+    window.__smokeCommands = [];
+    window.__smokeDisabledReplies = [];
+    const receive = line => heightControl.receiveLine(line, {
+        receivedMonotonicMs: window.__smokeClock, timestamp_iso: new Date().toISOString()
+    });
+    function debugReply() {
+        const device = window.__smokeDevice;
+        const user = window.__smokeConfiguredUser;
+        ['gender=' + user.gender, 'age=' + user.age, 'height=' + user.height, 'weight=' + user.weight,
+            'HLF=' + user.HLF.toFixed(1), 'N1LF=' + user.N1LF.toFixed(1),
+            'headNumber=' + device.head.toFixed(1), 'neckNumber=' + device.neck.toFixed(1),
+            'currentHeadNumber=' + device.head.toFixed(1), 'currentNeckNumber=' + device.neck.toFixed(1),
+            'N2LP=100', 'anchor_state=IDLE', 'pre_stage=WAIT_STABLE', 'pre_stable_label=UNKNOWN'].forEach(receive);
+    }
+    function syntheticFirmware(command, owned = false) {
+        if (!heightControl.allowCommand(command, owned)) return;
+        window.__smokeCommands.push(command);
+        if (command === 'PRED,STOP' || command === 'CLASSIFY,STOP') {
+            const reply = command.split(',')[0] + ',ERR,DISABLED';
+            receive(reply);
+            window.__smokeDisabledReplies.push({ reply, ready: heightControl.getState().ready });
+        } else if (command === 'FEATURE,STATUS') receive('FEATURE,STATUS,LEGACY,0,POSE,0,PRED,0');
+        else if (command === 'FEATURE,PRED,OFF' || command === 'FEATURE,LEGACY,OFF') return;
+        else if (command === 'DEBUG') debugReply();
+        else if (command === 'I') receive('I:0 5 0 0 0 0 0');
+        else if (command.startsWith('SET,NORM,EXPERIMENT,S,')) {
+            const parts = command.split(',');
+            const channel = parts[4], height = Number(parts[5]);
+            window.__smokeHeightCalls.push({ action: 'adjust', channel, height });
+            window.__smokeDevice[channel === 'HEAD' ? 'head' : 'neck'] = height;
+            receive('HEIGHT_SET,SET_NORM,HEAD,' + window.__smokeDevice.head.toFixed(1) +
+                ',NECK,' + window.__smokeDevice.neck.toFixed(1));
+            debugReply();
+            receive('I:0 5 0 0 0 0 0');
+        } else throw new Error('Unexpected synthetic command: ' + command);
+    }
+    const heightControl = createExperimentHeightControl({
+        isConnected: () => window.__smokeSystem.connected,
+        isRecording: () => Boolean(window.__smokeHub?.isRunning()),
+        sendCommand: command => syntheticFirmware(command, true),
+        sendQuery: command => syntheticFirmware(command),
+        stopAutomatic: () => {
+            window.__smokeHeightCalls.push({ action: 'prepare' });
+            ['PRED,STOP', 'CLASSIFY,STOP', 'FEATURE,PRED,OFF', 'FEATURE,STATUS',
+                'FEATURE,LEGACY,OFF', 'FEATURE,STATUS'].forEach(command => syntheticFirmware(command));
+        }
+    });
+    const experimentHeightControl = heightControl;
+    window.__smokeHeightControl = heightControl;
+    window.__smokeDebug = debugReply;
     window.__smokeHub = createExperimentHub(document.getElementById('experimentHub'), {
-        pressureConfig: ${JSON.stringify(config)}, getSystemState: () => ({ ...window.__smokeSystem }), heightControl
+        pressureConfig: ${JSON.stringify(config)}, getSystemState: () => ({ ...window.__smokeSystem }), heightControl,
+        getUserProfile: getExperimentUserProfile, getPose5Suggestion: getExperimentPose5Suggestion
     });
     window.__smokeHub.init();
     const toggle = document.getElementById('experimentAccordionToggle');
@@ -83,6 +137,12 @@ const bootstrap = `
         window.__smokePulse();
     };
 `;
+
+function assertProfile(text, age) {
+    assert.match(text, new RegExp(`年齡[^0-9]*${age}(?:[^0-9]|$)`));
+    assert.match(text, /身高[^0-9]*170\.5/);
+    assert.match(text, /體重[^0-9]*65\.5/);
+}
 
 async function main() {
     const { chromium } = resolvePlaywright();
@@ -129,6 +189,17 @@ async function main() {
         assert.equal(await page.locator('#pressureNotes, #pressureTrial, #pressureCalibrationUse').count(), 0,
             'removed operator controls must not remain in the rendered template');
 
+        await page.locator('#male').check();
+        await page.locator('#age').fill('25');
+        await page.locator('#height').fill('170.5');
+        await page.locator('#weight').fill('65.5');
+        await page.evaluate(() => window.__smokePulse());
+        assertProfile(await page.locator('#pressureUserProfile').textContent(), 25);
+        await page.locator('#age').fill('26');
+        await page.evaluate(() => window.__smokePulse());
+        assertProfile(await page.locator('#pressureUserProfile').textContent(), 26);
+        await page.locator('#age').fill('25');
+        await page.evaluate(() => window.__smokePulse());
         await page.locator('#pressureSubject').fill('S00');
         await page.locator('#pressureHeadHeight').fill('8');
         await page.locator('#pressureNeckHeight').fill('11');
@@ -138,35 +209,113 @@ async function main() {
             window.__smokeAdvance(2000, [101, 201, 301]);
         });
         await page.locator('#pressureCalibrationPrepare').click();
+        const prepared = await page.evaluate(() => window.__smokeHeightControl.getState());
+        assert.equal(prepared.ready, true, prepared.reason);
+        assert.equal(prepared.debugReceipt.preStage, 'WAIT_STABLE', 'disabled firmware can retain a cached PRED stage');
+        assert.deepEqual(await page.evaluate(() => window.__smokeDisabledReplies), [
+            { reply: 'PRED,ERR,DISABLED', ready: false }, { reply: 'CLASSIFY,ERR,DISABLED', ready: false }
+        ], 'DISABLED replies alone cannot make the real height adapter ready');
+        assert.equal(await page.locator('#pressureCalibrationHeadApply').isEnabled(), true);
+        assert.equal(await page.locator('#pressureCalibrationNeckApply').isEnabled(), true);
         await page.locator('#pressureCalibrationHead').fill('8');
-        await page.locator('#pressureCalibrationHeadApply').click();
         await page.locator('#pressureCalibrationNeck').fill('11');
-        await page.locator('#pressureCalibrationNeckApply').click();
+        await page.locator('#pressureCalibrationBothApply').click();
+        assert.deepEqual(await page.evaluate(() => window.__smokeHeightCalls.filter(call => call.action === 'adjust')), [
+            { action: 'adjust', channel: 'HEAD', height: 8 }, { action: 'adjust', channel: 'NECK', height: 11 }
+        ], 'one combined click settles Head then Neck through the production height adapter');
         await page.evaluate(() => window.__smokeAdvance(2000, [111, 222, 333]));
         await page.locator('#pressureCalibrationStable').check();
         await page.locator('#pressureCalibrationCapture').click();
         const pose1Capture = await page.locator('#pressureCalibrationPose1Saved').textContent();
         assert.match(pose1Capture, /S00/); assert.match(pose1Capture, /111/);
+        assertProfile(pose1Capture, 25);
+        const commandsBeforePose5 = await page.evaluate(() => window.__smokeCommands.length);
         await page.locator('#pressureCalibrationPose').selectOption('pose5');
+        assert.equal(await page.locator('#pressureCalibrationHead').inputValue(), '12');
+        assert.equal(await page.locator('#pressureCalibrationNeck').inputValue(), '12.5');
+        assert.equal(await page.evaluate(() => window.__smokeCommands.length), commandsBeforePose5,
+            'selecting pose5 only fills its draft; it must not send control commands');
+        await page.locator('#pressureCalibrationPrepare').click();
+        await page.evaluate(() => window.__smokeAdvance(window.__smokeClock + 1000, [111, 222, 333]));
+        assert.equal(await page.evaluate(() => window.__smokeHeightControl.getState().ready), true);
+        assert.deepEqual(await page.evaluate(() => window.__smokeDevice), { head: 8, neck: 11 });
+        assert.equal(await page.locator('#pressureCalibrationHead').inputValue(), '12');
+        assert.equal(await page.locator('#pressureCalibrationNeck').inputValue(), '12.5',
+            'preparation must retain matching device suggestions instead of using current heights');
+        assert.equal(await page.evaluate(() => window.__smokeCommands.filter(command => command.startsWith('SET,')).length), 2,
+            'preparation does not apply the suggested height');
+        fs.mkdirSync(output, { recursive: true });
+        await page.locator('#pressureCalibrationBothApply').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: path.join(output, 'SYNTHETIC_pose5-recommendation-desktop.png') });
+        await page.setViewportSize({ width: 320, height: 900 });
+        await page.evaluate(() => window.__smokePulse());
+        await page.locator('#pressureCalibrationBothApply').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: path.join(output, 'SYNTHETIC_pose5-recommendation-320.png') });
+        await page.setViewportSize({ width: 1280, height: 1000 });
         await page.locator('#pressureCalibrationHead').fill('12');
         await page.locator('#pressureCalibrationHeadApply').click();
         await page.locator('#pressureCalibrationNeck').fill('13');
         await page.locator('#pressureCalibrationNeckApply').click();
-        await page.evaluate(() => window.__smokeAdvance(2000, [444, 555, 666]));
+        await page.evaluate(() => window.__smokeAdvance(window.__smokeClock, [444, 555, 666]));
         await page.locator('#pressureCalibrationStable').check();
         await page.locator('#pressureCalibrationCapture').click();
         assert.equal(await page.locator('#pressureCalibrationPose1Saved').textContent(), pose1Capture);
         assert.match(await page.locator('#pressureCalibrationPose5Saved').textContent(), /444/);
+        const commandsBeforeDraftRestore = await page.evaluate(() => window.__smokeCommands.length);
+        await page.locator('#pressureCalibrationPose').selectOption('pose1');
+        await page.locator('#pressureCalibrationPose').selectOption('pose5');
+        assert.equal(await page.locator('#pressureCalibrationHead').inputValue(), '12');
+        assert.equal(await page.locator('#pressureCalibrationNeck').inputValue(), '13',
+            'returning to pose5 preserves the operator draft instead of restoring suggestions');
+        assert.equal(await page.evaluate(() => window.__smokeCommands.length), commandsBeforeDraftRestore);
+        const controlsBeforeProfileChanges = await page.evaluate(() => window.__smokeHeightCalls.length);
+        await page.locator('#age').fill('26');
+        await page.evaluate(() => window.__smokePulse());
+        assert.equal(await page.locator('#pressureCalibrationHead').inputValue(), '');
+        assert.equal(await page.locator('#pressureCalibrationNeck').inputValue(), '', 'profile edits clear the prior pose5 draft');
+        await page.evaluate(() => {
+            Object.assign(window.__smokeConfiguredUser, { age: 26, HLF: 11.5, N1LF: 12 });
+            window.__smokePulse();
+        });
+        assert.equal(await page.locator('#pressureCalibrationHead').inputValue(), '', 'a simulated device change without fresh DEBUG is insufficient');
+        await page.evaluate(() => { window.__smokeClock += 1; window.__smokeDebug(); window.__smokePulse(); });
+        assert.equal(await page.locator('#pressureCalibrationHead').inputValue(), '11.5');
+        assert.equal(await page.locator('#pressureCalibrationNeck').inputValue(), '12');
+        await page.locator('#female').check();
+        await page.evaluate(() => window.__smokePulse());
+        assert.equal(await page.locator('#pressureCalibrationHead').inputValue(), '');
+        assert.equal(await page.locator('#pressureCalibrationNeck').inputValue(), '', 'gender edits also invalidate the prior suggestion');
+        await page.evaluate(() => {
+            Object.assign(window.__smokeConfiguredUser, { gender: 0, HLF: 10, N1LF: 11.5 });
+            window.__smokeClock += 1; window.__smokeDebug(); window.__smokePulse();
+        });
+        assert.equal(await page.locator('#pressureCalibrationHead').inputValue(), '10');
+        assert.equal(await page.locator('#pressureCalibrationNeck').inputValue(), '11.5');
+        await page.locator('#age').fill('25');
+        await page.locator('#male').check();
+        await page.evaluate(() => window.__smokePulse());
+        assert.equal(await page.locator('#pressureCalibrationHead').inputValue(), '');
+        await page.evaluate(() => {
+            Object.assign(window.__smokeConfiguredUser, { gender: 1, age: 25, HLF: 12, N1LF: 12.5 });
+            window.__smokeClock += 1; window.__smokeDebug(); window.__smokePulse();
+        });
+        assert.equal(await page.locator('#pressureCalibrationHead').inputValue(), '12');
+        assert.equal(await page.locator('#pressureCalibrationNeck').inputValue(), '12.5');
+        await page.locator('#pressureCalibrationNeck').fill('13');
+        assert.equal(await page.evaluate(() => window.__smokeHeightCalls.length), controlsBeforeProfileChanges,
+            'reading or refreshing suggestions must not send USER or height controls');
         assert.equal(await page.locator('#pressureHeadHeight').inputValue(), '8');
         assert.equal(await page.locator('#pressureNeckHeight').inputValue(), '11',
             'preparing, adjusting and capturing either pose must not fill run heights');
         const heightCalls = await page.evaluate(() => window.__smokeHeightCalls);
-        assert.equal(heightCalls.filter(call => call.action === 'prepare').length, 1);
+        assert.equal(heightCalls.filter(call => call.action === 'prepare').length, 2);
         assert.equal(heightCalls.filter(call => call.action === 'adjust').length, 4);
         assert.equal(await page.locator('#pressureRunStatus').textContent(), '尚未開始');
         fs.mkdirSync(output, { recursive: true });
         await page.locator('#pressureCalibrationPose1Saved').scrollIntoViewIfNeeded();
         await page.screenshot({ path: path.join(output, 'SYNTHETIC_calibration-desktop.png'), fullPage: true });
+        await page.locator('#pressureUserProfile').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: path.join(output, 'SYNTHETIC_profile-desktop.png') });
         await page.setViewportSize({ width: 320, height: 900 });
         await page.evaluate(() => window.__smokePulse());
         const calibrationLayout = await page.locator('#pressureCalibrationPose1Saved').evaluate(node => {
@@ -177,6 +326,10 @@ async function main() {
             `320px calibration panel overflows: ${JSON.stringify(calibrationLayout)}`);
         await page.locator('#pressureCalibrationPose5Saved').scrollIntoViewIfNeeded();
         await page.screenshot({ path: path.join(output, 'SYNTHETIC_calibration-320.png') });
+        await page.locator('#pressureCalibrationBothApply').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: path.join(output, 'SYNTHETIC_height-both-320.png') });
+        await page.locator('#pressureUserProfile').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: path.join(output, 'SYNTHETIC_profile-320.png') });
         await page.setViewportSize({ width: 1280, height: 1000 });
         await page.locator('#pressureCalibrationPose').selectOption('pose1');
         const callsBeforeManualEntry = await page.evaluate(() => window.__smokeHeightCalls.length);
@@ -194,16 +347,46 @@ async function main() {
         await page.locator('#pressureSetupConfirmed').check();
         assert.equal(await page.locator('#experimentStart').isEnabled(), false,
             'pose1 run heights cannot start while the device remains at pose5 heights');
+        await page.locator('#pressureCalibrationHead').fill('9');
         await page.locator('#pressureCalibrationHeadApply').click();
         await page.locator('#pressureCalibrationNeck').fill('11');
         await page.locator('#pressureCalibrationNeckApply').click();
-        await page.evaluate(() => window.__smokeAdvance(2000, [111, 222, 333]));
+        await page.evaluate(() => window.__smokeAdvance(window.__smokeClock, [111, 222, 333]));
+        assert.match(await page.locator('#pressureControlWarning').textContent(), /此提醒不會阻止開始記錄/);
+        assert.match(await page.locator('#pressureControlWarning').getAttribute('class'), /pressure-field-hint/);
+        assert.doesNotMatch(await page.locator('#pressureControlWarning').getAttribute('class'), /pressure-warning/);
+        await page.evaluate(() => { window.__smokeSystem.autoHeightPossible = true; window.__smokePulse(); });
+        assert.match(await page.locator('#pressureControlWarning').getAttribute('class'), /pressure-warning/);
+        await page.evaluate(() => { window.__smokeSystem.autoHeightPossible = false; window.__smokePulse(); });
+        const callsBeforeHeightCorrection = await page.evaluate(() => window.__smokeHeightCalls.length);
+        await page.locator('#pressureSetupConfirmed').check();
+        assert.equal(await page.locator('#experimentStart').isEnabled(), false,
+            'ready Head 9 / Neck 11 cannot start with recorded Head 8 / Neck 11');
+        const mismatchHint = await page.locator('#experimentHint').textContent();
+        assert.match(mismatchHint, /Head/);
+        assert.match(mismatchHint, /8\.0/);
+        assert.match(mismatchHint, /9\.0/);
+        await page.locator('#experimentHint').scrollIntoViewIfNeeded();
+        await page.screenshot({ path: path.join(output, 'SYNTHETIC_start-height-mismatch.png') });
+        await page.locator('#pressureHeadHeight').fill('9');
+        assert.equal(await page.locator('#pressureSetupConfirmed').isChecked(), false,
+            'correcting the recorded height requires fresh operator confirmation');
+        assert.equal(await page.locator('#experimentStart').isEnabled(), false);
         await page.locator('#pressureSetupConfirmed').check();
         assert.equal(await page.locator('#experimentStart').isEnabled(), true, 'A live valid setup must enable Start');
         await page.locator('#experimentStart').click();
+        assert.equal(await page.evaluate(() => window.__smokeHeightCalls.length), callsBeforeHeightCorrection,
+            'correcting run metadata and starting collection must not issue height commands');
+        await page.locator('#age').fill('99');
+        await page.evaluate(() => window.__smokePulse());
+        assertProfile(await page.locator('#pressureUserProfile').textContent(), 25);
+        assertProfile(await page.locator('#pressureRunSummary').textContent(), 25);
+        assert.equal(await page.locator('#pressureCalibrationPose1Saved').textContent(), pose1Capture,
+            'later profile edits cannot rewrite a saved calibration snapshot');
         await page.evaluate(() => {
-            for (let i = 0; i < 30; i++) window.__smokeAdvance(2400 + i * 1000, [1000 + i, 2000 + i, 3000 + i]);
-            window.__smokeAdvance(32000);
+            const startedAt = window.__smokeClock;
+            for (let i = 0; i < 30; i++) window.__smokeAdvance(startedAt + 400 + i * 1000, [1000 + i, 2000 + i, 3000 + i]);
+            window.__smokeAdvance(startedAt + 30000);
         });
         assert.equal(await page.locator('#pressureRunStatus').textContent(), '計時完成');
         assert.equal(await page.locator('#pressureSampleCount').textContent(), '30');
@@ -217,7 +400,11 @@ async function main() {
         assert.equal(graph.min, 0); assert.equal(graph.max, 30);
         assert.deepEqual(errors, [], 'Collection and refresh must remain free of page errors');
 
+        await page.evaluate(() => { window.__smokePngText = []; window.__smokeCapturePng = true; });
         await page.locator('#experimentExport').click();
+        const pngText = await page.evaluate(() => { window.__smokeCapturePng = false; return window.__smokePngText.join(' '); });
+        assertProfile(pngText, 25);
+        assert.doesNotMatch(pngText, /年齡[^0-9]*99(?:[^0-9]|$)/);
         const deadline = Date.now() + 10000;
         while (downloads.length < 2 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
         assert.equal(downloads.length, 2, 'CSV and PNG must both trigger actual browser download events');
@@ -235,7 +422,12 @@ async function main() {
         assert.equal(csvLines.length, 31, 'One header and thirty synthetic sample rows');
         // Synthetic values contain no commas/newlines; general CSV escaping is tested in the recorder suite.
         const csvHeader = csvLines[0].split(',');
-        assert.equal(csvHeader.length, 23);
+        assert.equal(csvHeader.length, 26);
+        assert.deepEqual(csvHeader.slice(-3), ['"age_years"', '"body_height_cm"', '"body_weight_kg"']);
+        for (const [key, value] of [['age_years', '25'], ['body_height_cm', '170.5'], ['body_weight_kg', '65.5']]) {
+            const index = csvHeader.indexOf(`"${key}"`);
+            for (const line of csvLines.slice(1)) assert.equal(line.split(',')[index], `"${value}"`, `${key} retains the run snapshot`);
+        }
         for (const key of ['notes', 'trial_index']) {
             const index = csvHeader.indexOf(`"${key}"`);
             assert.ok(index >= 0, `${key} remains a compatibility column`);
@@ -248,18 +440,23 @@ async function main() {
 
         await page.locator('#pressureCondition').selectOption('02');
         assert.equal(await page.locator('#pressureSampleCount').textContent(), '0');
+        assertProfile(await page.locator('#pressureUserProfile').textContent(), 99);
         const blank = await page.evaluate(() => Chart.getChart(document.getElementById('pressureRunChart')).data.datasets[0].data.length);
         assert.equal(blank, 0);
         await page.locator('#pressureCondition').selectOption('01');
         assert.equal(await page.locator('#pressureSampleCount').textContent(), '30');
+        assertProfile(await page.locator('#pressureUserProfile').textContent(), 99);
+        assertProfile(await page.locator('#pressureRunSummary').textContent(), 25);
         const restored = await page.evaluate(() => Chart.getChart(document.getElementById('pressureRunChart')).data.datasets[0].data.length);
         assert.equal(restored, 30, 'Switching back restores the actual rendered condition curve');
 
         await page.locator('#pressureCondition').selectOption('02');
         await page.locator('#pressureSetupConfirmed').check();
         await page.locator('#experimentStart').click();
+        assertProfile(await page.locator('#pressureUserProfile').textContent(), 99);
+        assertProfile(await page.locator('#pressureRunSummary').textContent(), 99);
         await page.locator('#experimentAccordionToggle').click();
-        await page.evaluate(() => window.__smokeAdvance(32200, [7, 8, 9]));
+        await page.evaluate(() => window.__smokeAdvance(window.__smokeClock + 200, [7, 8, 9]));
         assert.equal(await page.locator('#pressureSampleCount').textContent(), '1', 'Collapsed view continues collecting');
         assert.equal(await page.locator('#pressureRunStatus').textContent(), '記錄中');
         await page.locator('#experimentAccordionToggle').click();

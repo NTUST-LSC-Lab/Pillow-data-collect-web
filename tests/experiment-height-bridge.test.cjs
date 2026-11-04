@@ -28,12 +28,17 @@ function fixture() {
     const timers = new Map();
     let timerId = 0;
     const oldInputIds = ['supineHeadInput', 'sideHeadInput', 'supineNeckInput', 'sideNeckInput'];
+    const profileInputs = { age: { value: '25' }, height: { value: '170' }, weight: { value: '65' } };
+    let gender = { value: 'female' };
     const chart = count => ({ data: { labels: [], datasets: Array.from({ length: count }, () => ({ data: [] })) } });
     const context = vm.createContext({
         TextEncoder, performance: { now: () => ms }, console: { log() {}, error() {} },
         setTimeout: callback => { timers.set(++timerId, callback); return timerId; },
         clearTimeout: id => timers.delete(id),
-        document: { querySelector: () => null, getElementById: id => oldInputIds.includes(id) ? id : null },
+        document: {
+            querySelector: selector => selector === 'input[name="gender"]:checked' ? gender : null,
+            getElementById: id => profileInputs[id] || (oldInputIds.includes(id) ? id : null)
+        },
         serial_status: { insertAdjacentHTML() {}, innerHTML: '', scrollTop: 0, scrollHeight: 0 },
         serial_ready: true, bluetoothDevice: { gatt: { connected: true } },
         rxCharacteristic: { writeValue: async bytes => { written.push(Buffer.from(bytes).toString()); } },
@@ -67,6 +72,7 @@ function fixture() {
     const sections = [
         ['function handleNotifications(', 'var chart_data_count ='],
         ['function sendModeCommands(', 'function safeSetText('],
+        ['function getExperimentUserProfile(', 'function setSyncTimeAck('],
         ['function requestSilentDebugSnapshot(', 'function setWorkflowState('],
         ['function resetAutoControlStartState(', 'function requestPredStart('],
         ['function parseProtocolMessage(', 'function serial_message('],
@@ -81,16 +87,129 @@ function fixture() {
             context.handleNotifications({ target: { value: new DataView(chunk.buffer) } });
         }
     }
-    function debug(head = '7.0', neck = '10.0') {
-        notify(`gender=0\nheadNumber=${head}\nneckNumber=${neck}\ncurrentHeadNumber=${head}\ncurrentNeckNumber=${neck}\nN2LP=100\nanchor_state=IDLE\npre_stage=IDLE\npre_stable_label=UNKNOWN\n`);
+    function debug(head = '7.0', neck = '10.0', preStage = 'IDLE') {
+        notify(`gender=0\nheadNumber=${head}\nneckNumber=${neck}\ncurrentHeadNumber=${head}\ncurrentNeckNumber=${neck}\nN2LP=100\nanchor_state=IDLE\npre_stage=${preStage}\npre_stable_label=UNKNOWN\n`);
     }
     return {
         context, control: context.experimentHeightControl, written, inputWrites, monitorUpdates, samples,
-        hubOptions, hubInitialized, notify, debug,
+        hubOptions, hubInitialized, notify, debug, profileInputs,
+        setGender: value => { gender = value === null ? null : { value }; },
         advance: amount => { ms += amount; }, setRecording: value => { recording = value; },
         flush: async () => { while (queued.length) await queued.shift()(); }
     };
 }
+
+function suggestionDebug(f, values = {}) {
+    const fields = { gender: '0', age: '25', height: '170', weight: '65',
+        HLF_raw: '11.3', HLF: '11.5', N1LF_raw: '12.1', N1LF: '12.0',
+        headNumber: '7.0', neckNumber: '10.0', currentHeadNumber: '7.0', currentNeckNumber: '10.0',
+        N2LP: '100', anchor_state: 'IDLE', pre_stage: 'IDLE', ...values, pre_stable_label: 'UNKNOWN' };
+    f.notify(Object.entries(fields).filter(([, value]) => value !== undefined).map(([key, value]) => `${key}=${value}\n`).join(''));
+}
+
+test('pose5 getter uses the matched complete final recommendation without BLE writes or profile mutation', async () => {
+    const f = fixture();
+    const getSuggestion = f.hubOptions.getPose5Suggestion;
+    assert.equal(typeof getSuggestion, 'function');
+    assert.equal(getSuggestion, f.context.getExperimentPose5Suggestion);
+    assert.equal(getSuggestion().head, null, 'no fabricated default before a complete device reply');
+    assert.equal(getSuggestion().deviceProfileMismatch, false, 'missing data is not evidence that the device user changed');
+    suggestionDebug(f);
+    const suggestion = getSuggestion();
+    assert.equal(suggestion.head, 11.5, 'use final HLF, not raw recommendation or current height');
+    assert.equal(suggestion.neck, 12);
+    assert.equal(suggestion.deviceProfileMismatch, false);
+    assert.equal(f.control.getState().ready, false, 'recommendation is not proof that the height is applied');
+    f.profileInputs.height.value = '170.75'; f.profileInputs.weight.value = '65.25';
+    const decimal = getSuggestion();
+    assert.equal(decimal.head, 11.5, 'ordinary decimal inputs match the integer values actually used by firmware');
+    assert.notEqual(decimal.profileKey, suggestion.profileKey);
+    assert.deepEqual({ ...f.hubOptions.getUserProfile() }, { age_years: 25, body_height_cm: 170.75, body_weight_kg: 65.25 });
+    assert.match(decimal.reason, /整數/);
+    await f.flush();
+    assert.deepEqual(f.written, [], 'getter must not send USER, INIT, DEBUG or any height command');
+    assert.deepEqual(f.inputWrites, [], 'old calibration inputs remain untouched');
+});
+
+test('pose5 suggestion rejects missing, stale, future and disconnected readbacks including firmware defaults', () => {
+    for (const variant of ['missing', 'blank', 'default', 'stale', 'future', 'disconnected', 'not-ready']) {
+        const f = fixture();
+        suggestionDebug(f, variant === 'missing' ? { weight: undefined } : variant === 'blank' ? { age: '' } :
+            variant === 'default' ? { age: '0', height: '0', weight: '0', HLF: '13.0', N1LF: '14.0' } : {});
+        if (variant === 'stale') f.advance(3501);
+        if (variant === 'future') f.advance(-1);
+        if (variant === 'disconnected') f.context.bluetoothDevice.gatt.connected = false;
+        if (variant === 'not-ready') f.context.serial_ready = false;
+        const result = f.hubOptions.getPose5Suggestion();
+        assert.equal(result.head, null, variant); assert.equal(result.neck, null, variant);
+        assert.equal(result.deviceProfileMismatch, variant === 'default', variant);
+        assert.match(result.reason, /設定|準備|連線/, variant);
+    }
+    const f = fixture(); suggestionDebug(f);
+    f.control.onDisconnected();
+    assert.equal(f.hubOptions.getPose5Suggestion().head, null, 'reconnection cannot reuse a previous connection snapshot');
+    assert.equal(f.hubOptions.getPose5Suggestion().deviceProfileMismatch, false);
+});
+
+test('pose5 suggestion matches gender and all applied integers, with a key for every valid or invalid draft', () => {
+    for (const [field, value] of [['age', '26'], ['height', '171'], ['weight', '66']]) {
+        const f = fixture(); suggestionDebug(f);
+        const before = f.hubOptions.getPose5Suggestion();
+        f.profileInputs[field].value = value;
+        const after = f.hubOptions.getPose5Suggestion();
+        assert.notEqual(after.profileKey, before.profileKey, field);
+        assert.equal(after.head, null, field);
+        assert.equal(after.deviceProfileMismatch, true, field);
+    }
+    const f = fixture(); suggestionDebug(f);
+    const initialKey = f.hubOptions.getPose5Suggestion().profileKey;
+    f.setGender('male');
+    assert.notEqual(f.hubOptions.getPose5Suggestion().profileKey, initialKey);
+    assert.equal(f.hubOptions.getPose5Suggestion().head, null);
+    assert.equal(f.hubOptions.getPose5Suggestion().deviceProfileMismatch, true);
+    suggestionDebug(f, { gender: '1' });
+    assert.equal(f.hubOptions.getPose5Suggestion().head, 11.5);
+    f.setGender(null);
+    assert.equal(f.hubOptions.getPose5Suggestion().head, null);
+    assert.equal(f.hubOptions.getPose5Suggestion().deviceProfileMismatch, false);
+    f.profileInputs.weight.value = '';
+    const blankKey = f.hubOptions.getPose5Suggestion().profileKey;
+    f.profileInputs.weight.value = 'invalid';
+    assert.notEqual(f.hubOptions.getPose5Suggestion().profileKey, blankKey);
+});
+
+test('same-form pose5 mismatch flag requires a fresh identifiable device profile, not a partial or expired one', () => {
+    const f = fixture(); suggestionDebug(f);
+    const initialKey = f.hubOptions.getPose5Suggestion().profileKey;
+    for (const values of [{ gender: '1' }, { age: '26' }, { height: '171' }, { weight: '66' },
+        { height: '0' }, { weight: '0' }]) {
+        suggestionDebug(f, values);
+        const result = f.hubOptions.getPose5Suggestion();
+        assert.equal(result.profileKey, initialKey);
+        assert.equal(result.deviceProfileMismatch, true, JSON.stringify(values));
+        assert.equal(result.head, null);
+    }
+    for (const values of [{ gender: '1', age: undefined }, { gender: '1', weight: '' }, { gender: '2' }]) {
+        suggestionDebug(f, values);
+        assert.equal(f.hubOptions.getPose5Suggestion().deviceProfileMismatch, false, JSON.stringify(values));
+    }
+    suggestionDebug(f, { gender: '1' }); f.advance(3501);
+    assert.equal(f.hubOptions.getPose5Suggestion().deviceProfileMismatch, false, 'expired mismatch cannot clear an operator draft');
+});
+
+test('pose5 suggestion rejects nondecimal syntax, invalid integer range and non-half-centimeter heights', () => {
+    for (const [field, value] of [['height', '1.70e2'], ['weight', '6.5E1'], ['age', '2.5e1'],
+        ['height', '0xAA'], ['weight', 'Infinity'], ['age', '25.5'], ['age', '-1'],
+        ['height', '0.5'], ['weight', '0'], ['height', '2147483648'], ['weight', '2147483648'], ['age', '2147483648']]) {
+        const f = fixture(); suggestionDebug(f); f.profileInputs[field].value = value;
+        assert.equal(f.hubOptions.getPose5Suggestion().head, null, `${field}=${value}`);
+    }
+    for (const values of [{ HLF: '6.5' }, { HLF: '16.5' }, { N1LF: '9.5' }, { N1LF: '14.5' },
+        { HLF: '11.2' }, { N1LF: '12.1' }, { HLF: '' }, { N1LF: undefined }, { gender: '2' }]) {
+        const f = fixture(); suggestionDebug(f, values);
+        assert.equal(f.hubOptions.getPose5Suggestion().head, null, JSON.stringify(values));
+    }
+});
 
 test('production initialization, BLE queue and complete replies prepare and settle an owned height change', async () => {
     const f = fixture();
@@ -152,4 +271,41 @@ test('production initialization, BLE queue and complete replies prepare and sett
     f.notify('HEIGHT_SET,SET_NORM,HEAD,8.0,NECK,10.5\n');
     assert.equal(f.inputWrites.length, 8, 'an unrelated reply retains the old calibration input behavior');
     assert.equal(f.control.getState().ready, false);
+});
+
+test('disabled stop replies and cached PRED stage still require complete safe readback before preparation and single-channel SET', async () => {
+    const f = fixture();
+    const preparing = f.control.prepare();
+    await f.flush();
+    assert.deepEqual(f.written.slice(0, 3), ['PRED,STOP\n', 'CLASSIFY,STOP\n', 'FEATURE,PRED,OFF\n']);
+    f.advance(1);
+    f.notify('PRED,ERR,DISABLED\nCLASSIFY,ERR,DISABLED\n');
+    assert.equal(f.control.getState().ready, false, 'disabled replies alone do not prove safe readiness');
+    f.notify('FEATURE,STATUS,LEGACY,0,POSE,0,PRED,0\n');
+    f.debug('7.0', '10.0', 'WAIT_STABLE');
+    assert.equal(f.control.getState().ready, false, 'complete DEBUG also needs fresh idle I');
+    f.notify('I:0 5 0 0 0 0 0\n');
+    assert.equal((await preparing).ready, true);
+    assert.equal(f.control.getState().debugReceipt.preStage, 'WAIT_STABLE', 'cached stage is retained as diagnostic data');
+
+    for (const [channel, value, head, neck] of [['HEAD', 7.5, '7.5', '10.0'], ['NECK', 10.5, '7.5', '10.5']]) {
+        const adjusting = f.control.adjust(channel, value);
+        await f.flush();
+        assert.equal(f.written.at(-1), `SET,NORM,EXPERIMENT,S,${channel},${value.toFixed(1)}\n`);
+        f.advance(1);
+        f.notify(`HEIGHT_SET,SET_NORM,HEAD,${head},NECK,${neck}\n`);
+        assert.equal(f.control.getState().ready, false, 'ACK is not an arrival report');
+        f.debug(head, neck, 'WAIT_STABLE');
+        assert.equal(f.control.getState().busy, true);
+        f.notify('I:0 5 0 0 0 0 0\n');
+        assert.equal((await adjusting).ready, true);
+        assert.equal(f.control.getState().head, Number(head));
+        assert.equal(f.control.getState().neck, Number(neck));
+    }
+    assert.equal(f.written.filter(command => command.startsWith('SET,')).length, 2);
+    assert.equal(f.inputWrites.length, 0, 'both experiment-owned acknowledgements protect old calibration inputs');
+    f.advance(1000);
+    f.debug('7.5', '10.5', 'WAIT_STABLE');
+    f.notify('I:0 5 0 0 0 0 0\n');
+    assert.equal(f.control.getState().ready, true, 'continued cached stage replies do not invalidate safe settled heights');
 });

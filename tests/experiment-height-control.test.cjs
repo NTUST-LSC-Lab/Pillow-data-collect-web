@@ -26,7 +26,9 @@ function fixture() {
             gender: '0', headNumber: '7.0', neckNumber: '10.0', currentHeadNumber: '7.0', currentNeckNumber: '10.0',
             anchor_state: 'IDLE', pre_stage: 'IDLE', ...values, pre_stable_label: 'UNKNOWN'
         };
-        for (const [key, value] of Object.entries(fields)) receive(`${key}=${value}`);
+        for (const [key, value] of Object.entries(fields)) {
+            if (value !== undefined) receive(`${key}=${value}`);
+        }
     }
     function idle() { receive('I:0 5 0 0 0 0 0'); }
     function features() { receive('FEATURE,STATUS,LEGACY,0,POSE,1,PRED,0'); }
@@ -67,6 +69,125 @@ test('missing/null heights cannot become zero or inherit an earlier complete sna
     assert.equal(f.control.getState().ready, false);
     f.advance(15001); f.control.tick();
     await rejected;
+});
+
+test('complete DEBUG retains pose5 recommendation and applied profile without mixing earlier fields', () => {
+    const f = fixture();
+    f.debug({ age: '25', height: '170', weight: '65', HLF: '11.5', N1LF: '12.0' });
+    const first = f.control.getState().debugReceipt;
+    assert.deepEqual([first.userGender, first.userAge, first.userHeight, first.userWeight,
+        first.pose5HeadCm, first.pose5NeckCm], [0, 25, 170, 65, 11.5, 12]);
+    f.advance(1);
+    f.receive('gender=1'); f.receive('age=26'); f.receive('height=180');
+    assert.equal(f.control.getState().debugReceipt.userAge, 25, 'partial reply cannot publish a mixed snapshot');
+    f.receive('pre_stable_label=UNKNOWN');
+    const incomplete = f.control.getState().debugReceipt;
+    assert.equal(incomplete.userAge, 26);
+    for (const key of ['userWeight', 'pose5HeadCm', 'pose5NeckCm']) assert.ok(Number.isNaN(incomplete[key]), key);
+    f.debug({ age: '', height: '1e2', weight: 'Infinity', HLF: '', N1LF: '13extra' });
+    const invalid = f.control.getState().debugReceipt;
+    for (const key of ['userAge', 'userHeight', 'userWeight', 'pose5HeadCm', 'pose5NeckCm']) assert.ok(Number.isNaN(invalid[key]), key);
+    assert.deepEqual(f.sent, [], 'observing DEBUG is read-only');
+    f.control.onDisconnected();
+    assert.equal(f.control.getState().debugReceipt, null);
+});
+
+test('disabled PRED stop reply does not abort preparation before verified off and idle reports', async () => {
+    const f = fixture();
+    const outcome = f.control.prepare().then(value => ({ value }), error => ({ error: error.message }));
+    f.receive('PRED,ERR,DISABLED');
+    assert.equal(f.control.getState().ready, false, 'DISABLED alone cannot establish height readiness');
+    f.features(); f.debug(); f.idle();
+    const result = await outcome;
+    assert.equal(result.error, undefined);
+    assert.equal(result.value.ready, true);
+});
+
+test('verified feature-off and idle readback allow a cached PRED stage without resetting settled time', async () => {
+    const f = fixture();
+    const pending = f.control.prepare();
+    f.features(); f.debug({ pre_stage: 'WAIT_STABLE' }); f.idle();
+    assert.equal(f.control.getState().ready, true);
+    await pending;
+    const settled = f.control.getState().settledMonotonicMs;
+    f.advance(1000); f.debug({ pre_stage: 'WAIT_STABLE' }); f.idle();
+    assert.equal(f.control.getState().settledMonotonicMs, settled);
+});
+
+test('missing or empty PRED stage remains an incomplete DEBUG even when the feature is off', async () => {
+    for (const pre_stage of [undefined, '', '   ']) {
+        const f = fixture();
+        const outcome = f.control.prepare().catch(error => error);
+        f.features(); f.debug({ pre_stage }); f.idle();
+        assert.equal(f.control.getState().ready, false);
+        f.advance(15001); f.control.tick();
+        assert.match((await outcome).message, /逾時/);
+    }
+});
+
+test('incomplete DEBUG after clicking apply also blocks the delayed owned queue write', async () => {
+    const f = fixture(); await f.prepare();
+    const pending = f.control.adjust('HEAD', 7.5);
+    const rejected = assert.rejects(pending, /送出前/);
+    f.debug({ pre_stage: undefined });
+    assert.equal(f.control.allowCommand(f.sent.at(-1), true), false);
+    await rejected;
+    assert.equal(f.control.getState().ready, false);
+});
+
+test('DISABLED replies cannot substitute for confirmed off, complete heights or safe IO', async () => {
+    for (const blocked of ['missing-feature', 'pred-on', 'legacy-on', 'moving', 'outputs-on', 'target-mismatch', 'anchor-active']) {
+        const f = fixture();
+        const outcome = f.control.prepare().catch(error => error);
+        f.receive('PRED,ERR,DISABLED'); f.receive('CLASSIFY,ERR,DISABLED');
+        if (blocked !== 'missing-feature') {
+            f.receive(`FEATURE,STATUS,LEGACY,${blocked === 'legacy-on' ? 1 : 0},POSE,1,PRED,${blocked === 'pred-on' ? 1 : 0}`);
+        }
+        f.debug({ pre_stage: 'WAIT_STABLE', headNumber: blocked === 'target-mismatch' ? '8.0' : '7.0',
+            anchor_state: blocked === 'anchor-active' ? 'COLLECTING' : 'IDLE' });
+        f.receive(`I:0 ${blocked === 'moving' ? 4 : 5} ${blocked === 'outputs-on' ? 1 : 0} 0 0 0 0`);
+        assert.equal(f.control.getState().ready, false, blocked);
+        assert.equal(f.control.getState().busy, true, 'must keep waiting for authoritative reports');
+        f.advance(15001); f.control.tick();
+        assert.match((await outcome).message, /逾時/, blocked);
+    }
+});
+
+test('late disabled replies preserve HEAD and NECK adjustments but still require ACK and fresh arrival', async () => {
+    const f = fixture(); await f.prepare();
+    let head = 7;
+    let neck = 10;
+    for (const [channel, height] of [['HEAD', 7.5], ['NECK', 10.5]]) {
+        f.debug({ headNumber: String(head), currentHeadNumber: String(head), neckNumber: String(neck), currentNeckNumber: String(neck), pre_stage: 'WAIT_STABLE' });
+        const pending = f.control.adjust(channel, height);
+        const outcome = pending.then(value => ({ value }), error => ({ error }));
+        assert.equal(f.control.allowCommand(f.sent.at(-1), true), true);
+        f.receive('PRED,ERR,DISABLED'); f.receive('CLASSIFY,ERR,DISABLED');
+        assert.equal(f.control.getState().busy, true);
+        assert.equal(f.control.getState().ready, false);
+        if (channel === 'HEAD') head = height; else neck = height;
+        f.advance(1);
+        f.receive(`HEIGHT_SET,SET_NORM,HEAD,${head},NECK,${neck}`);
+        assert.equal(f.control.getState().ready, false);
+        f.advance(6000);
+        f.debug({ headNumber: String(head), currentHeadNumber: String(head), neckNumber: String(neck), currentNeckNumber: String(neck), pre_stage: 'WAIT_STABLE' });
+        f.idle();
+        const result = await outcome;
+        assert.equal(result.error, undefined);
+        assert.equal(result.value.ready, true);
+    }
+});
+
+test('other errors and malformed disabled replies still reject a pending operation', async () => {
+    for (const reply of ['SET,ERR,DISABLED', 'FEATURE,ERR,DISABLED', 'PRED,ERR,NOT_READY',
+        'CLASSIFY,ERR,BAD_COMMAND', 'PRED,ERR,DISABLED,EXTRA', 'CLASSIFY,ERR,DISABLED,EXTRA', 'MANUAL,IGNORED']) {
+        const f = fixture();
+        const pending = f.control.prepare();
+        const rejected = assert.rejects(pending, /裝置拒絕指令/);
+        f.receive(reply);
+        await rejected;
+        assert.equal(f.control.getState().ready, false, reply);
+    }
 });
 
 test('one channel SET waits for acknowledgement and new DEBUG plus I to arrive', async () => {
@@ -130,8 +251,8 @@ test('recording, anchor capture, nonidle outputs, manual state and enabled PRED 
     }
 });
 
-test('DEBUG with active anchor, target mismatch or non-idle PRED cannot prepare', async () => {
-    for (const values of [{ anchor_state: 'WAIT_SETTLE' }, { headNumber: '8.0' }, { pre_stage: 'WAIT_STABLE' }]) {
+test('DEBUG with active anchor or target mismatch cannot prepare', async () => {
+    for (const values of [{ anchor_state: 'WAIT_SETTLE' }, { headNumber: '8.0' }]) {
         const f = fixture();
         const pending = f.control.prepare();
         const rejected = assert.rejects(pending, /斷線/);

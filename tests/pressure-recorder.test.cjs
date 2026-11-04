@@ -187,6 +187,42 @@ test('CSV parses back exact real sample rows, channel order, escaping and final 
     assert.equal(read(rows[1], 'time_source'), 'browser_complete_pressure_message_received');
 });
 
+test('CSV appends the start-time participant profile after the unchanged original 23 columns', () => {
+    const t = setup();
+    Object.assign(t.metadata, { age_years: 24, body_height_cm: 172.5, body_weight_kg: 63.25 });
+    t.recorder.start(t.metadata);
+    Object.assign(t.metadata, { age_years: 30, body_height_cm: 180, body_weight_kg: 70 });
+    t.sample(100); t.recorder.endEarly();
+    const [headers, row] = parseCsv(t.recorder.csv());
+    assert.deepEqual(headers.slice(0, 23), [
+        'run_id', 'subject_id', 'trial_index', 'condition_id', 'actual_pose',
+        'height_condition', 'head_height_cm', 'neck_height_cm', 'test_condition',
+        'sample_index', 'timestamp_iso', 'elapsed_s', 'monitor_adc', 'neck_adc',
+        'head_adc', 'run_status', 'notes', 'height_source', 'data_timeout_s', 'gap_timeout_ms',
+        'interruption_reason', 'time_source', 'pressure_unit'
+    ]);
+    assert.deepEqual(headers.slice(23), ['age_years', 'body_height_cm', 'body_weight_kg']);
+    assert.equal(headers.length, 26);
+    assert.equal(row.length, 26);
+    assert.deepEqual(row.slice(23), ['24', '172.5', '63.25']);
+});
+
+test('CSV leaves missing or empty profile values blank without replacing them with zero', () => {
+    for (const [profile, expected] of [
+        [{}, ['', '', '']],
+        [{ age_years: null, body_height_cm: null, body_weight_kg: null }, ['', '', '']],
+        [{ age_years: '', body_height_cm: '', body_weight_kg: '' }, ['', '', '']],
+        [{ age_years: 0, body_height_cm: null }, ['0', '', '']]
+    ]) {
+        const t = setup();
+        Object.assign(t.metadata, profile);
+        t.recorder.start(t.metadata); t.sample(100); t.recorder.endEarly();
+        const [headers, row] = parseCsv(t.recorder.csv());
+        assert.equal(headers.length, 26);
+        assert.deepEqual(row.slice(23), expected);
+    }
+});
+
 test('absolute timestamps may move backwards while elapsed_s remains monotonic', () => {
     const t = setup(); t.recorder.start(t.metadata);
     t.sample(500, [1, 2, 3], '2026-11-03T12:00:00Z');

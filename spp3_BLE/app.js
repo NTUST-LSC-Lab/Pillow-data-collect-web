@@ -1165,6 +1165,72 @@
 			}
 		}
 
+		// Read the current form draft only; this does not send USER or confirm ESP32 state.
+		function getExperimentUserProfile() {
+			function readNumber(id) {
+				const raw = document.getElementById(id)?.value?.trim() ?? '';
+				if (!raw) return null;
+				const value = Number(raw);
+				return Number.isFinite(value) ? value : null;
+			}
+			const age = readNumber('age');
+			const height = readNumber('height');
+			const weight = readNumber('weight');
+			return {
+				age_years: Number.isInteger(age) && age >= 0 ? age : null,
+				body_height_cm: height > 0 ? height : null,
+				body_weight_kg: weight > 0 ? weight : null
+			};
+		}
+
+		// Read firmware's applied-user recommendation only; never send USER or apply a height here.
+		function getExperimentPose5Suggestion() {
+			const genderValue = document.querySelector('input[name="gender"]:checked')?.value ?? null;
+			const raw = ['age', 'height', 'weight'].map(id => document.getElementById(id)?.value?.trim() ?? '');
+			const profileKey = JSON.stringify([genderValue, ...raw]);
+			const unavailable = (reason, deviceProfileMismatch = false) => ({ profileKey, head: null, neck: null, reason, deviceProfileMismatch });
+			const gender = genderValue === 'female' ? 0 : genderValue === 'male' ? 1 : null;
+			// String.toInt() on ESP32 truncates ordinary decimals but reads "1e2" as 1, not 100.
+			const decimal = /^(?:\d+(?:\.\d*)?|\.\d+)$/;
+			const values = raw.map(value => decimal.test(value) ? Number(value) : NaN);
+			const [age, height, weight] = values;
+			const applied = values.map(Math.trunc);
+			const validInteger = value => Number.isInteger(value) && value >= 0 && value <= 2147483647;
+			if (gender === null || !Number.isInteger(age) || !applied.every(validInteger) ||
+				applied[1] <= 0 || applied[2] <= 0) {
+				return unavailable('請先在上方設定有效的性別、年齡、身高與體重（使用一般十進位數字），再準備微調');
+			}
+			if (!serial_ready || !bluetoothDevice?.gatt?.connected) {
+				return unavailable('請先連線 BLE、在上方設定使用者資料，再準備微調');
+			}
+			const debug = experimentHeightControl?.getState().debugReceipt;
+			const time = performance.now();
+			if (!debug || !Number.isFinite(debug.startedMonotonicMs) || !Number.isFinite(debug.receivedMonotonicMs) ||
+				debug.startedMonotonicMs > debug.receivedMonotonicMs || time < debug.receivedMonotonicMs ||
+				time - debug.receivedMonotonicMs > 3500) {
+				return unavailable('請先在上方設定使用者資料，再按準備微調取得最新完整裝置回覆');
+			}
+			const deviceProfile = [debug.userAge, debug.userHeight, debug.userWeight];
+			const identifiableDeviceProfile = [0, 1].includes(debug.userGender) && deviceProfile.every(validInteger);
+			const deviceProfileMismatch = identifiableDeviceProfile && (debug.userHeight <= 0 || debug.userWeight <= 0 ||
+				debug.userGender !== gender || deviceProfile.some((value, index) => value !== applied[index]));
+			if (!identifiableDeviceProfile || deviceProfileMismatch) {
+				return unavailable('上方資料與裝置已套用資料不符或回覆不完整，請先按上方設定，再準備微調', deviceProfileMismatch);
+			}
+			const legalHeight = (value, channel) => Number.isFinite(value) &&
+				value >= HEIGHT_LIMITS[channel].min && value <= HEIGHT_LIMITS[channel].max &&
+				Math.abs(value / HEIGHT_STEP - Math.round(value / HEIGHT_STEP)) < 1e-8;
+			if (!legalHeight(debug.pose5HeadCm, 'HEAD') || !legalHeight(debug.pose5NeckCm, 'NECK')) {
+				return unavailable('裝置未回覆有效的姿勢五建議高度，請先在上方設定資料，再準備微調');
+			}
+			return {
+				profileKey, head: debug.pose5HeadCm, neck: debug.pose5NeckCm, deviceProfileMismatch: false,
+				reason: Number.isInteger(height) && Number.isInteger(weight)
+					? '已依裝置套用的使用者資料推估姿勢五起始高度'
+					: `裝置以整數身高 ${applied[1]} cm、體重 ${applied[2]} kg 推估；實驗資料仍保留原小數`
+			};
+		}
+
 		function setSyncTimeAck(message, status = "") {
 			if (!syncTimeAck) {
 				return;
@@ -2974,7 +3040,9 @@
 					connected: Boolean(serial_ready && bluetoothDevice?.gatt?.connected),
 					autoHeightPossible: controlMode === CONTROL_MODE.AUTO || predEnabled || predStartRequested
 				}),
-				heightControl: experimentHeightControl
+				heightControl: experimentHeightControl,
+				getUserProfile: getExperimentUserProfile,
+				getPose5Suggestion: getExperimentPose5Suggestion
 			});
 			experimentHubModule.init();
 

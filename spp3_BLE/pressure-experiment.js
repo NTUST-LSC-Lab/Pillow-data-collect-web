@@ -37,6 +37,8 @@ function createPressureCollectionExperiment(root, options) {
     let calibrationFeedback = '';
     let calibrationPending = false;
     let calibrationUsed = false;
+    let previousUserProfile = null;
+    let pose5SuggestionKey = null;
 
     const subjectId = () => field('pressureSubject').value.trim();
     const calibrationPose = () => field('pressureCalibrationPose').value;
@@ -46,6 +48,27 @@ function createPressureCollectionExperiment(root, options) {
     const validHeight = (channel, value) => value !== '' && Number.isFinite(Number(value)) &&
         Number(value) >= (channel === 'Head' ? 7 : 10) && Number(value) <= (channel === 'Head' ? 16 : 14) &&
         Number.isInteger(Number(value) * 2);
+
+    function readUserProfile() {
+        const profile = options.getUserProfile?.() || {};
+        return {
+            age_years: profile.age_years ?? null,
+            body_height_cm: profile.body_height_cm ?? null,
+            body_weight_kg: profile.body_weight_kg ?? null
+        };
+    }
+
+    function profileText(profile) {
+        const value = (number, unit) => Number.isFinite(number) ? `${number} ${unit}` : '未填／無效';
+        return `年齡：${value(profile?.age_years, '歲')}｜身高：${value(profile?.body_height_cm, 'cm')}｜體重：${value(profile?.body_weight_kg, 'kg')}`;
+    }
+
+    function pose5Suggestion() {
+        return options.getPose5Suggestion?.() || {
+            profileKey: '', head: null, neck: null,
+            reason: '請先在上方設定使用者資料，再按「準備微調」讀取姿勢五建議高度。'
+        };
+    }
 
     function resetCalibrationConfirmation() {
         confirmed.checked = false;
@@ -61,7 +84,13 @@ function createPressureCollectionExperiment(root, options) {
     }
 
     function showCalibrationDraft() {
-        const draft = calibrationDrafts[calibrationPose()];
+        let draft = calibrationDrafts[calibrationPose()];
+        if (!draft && calibrationPose() === 'pose5') {
+            const suggestion = pose5Suggestion();
+            if (validHeight('Head', suggestion.head) && validHeight('Neck', suggestion.neck)) {
+                draft = calibrationDrafts.pose5 = { head: String(suggestion.head), neck: String(suggestion.neck) };
+            }
+        }
         field('pressureCalibrationHead').value = draft?.head ?? '';
         field('pressureCalibrationNeck').value = draft?.neck ?? '';
         resetCalibrationConfirmation();
@@ -77,11 +106,23 @@ function createPressureCollectionExperiment(root, options) {
             field('pressureCalibrationStable').checked;
     }
 
-    function calibrationRunBlocked() {
+    function calibrationRunIssue() {
         const height = heightState();
-        return calibrationBusy() || (calibrationUsed && (!height.ready ||
-            Number(field('pressureHeadHeight').value) !== height.head ||
-            Number(field('pressureNeckHeight').value) !== height.neck));
+        if (calibrationBusy()) return '正在準備或調整高度，請等待裝置回報到位後再開始記錄。';
+        if (!calibrationUsed) return '';
+        if (!height.ready) return `高度尚未就緒：${height.reason || '請確認裝置已到位，必要時重新準備微調。'}`;
+        const mismatches = ['Head', 'Neck'].flatMap(channel => {
+            const raw = field(`pressure${channel}Height`).value.trim();
+            const value = Number(raw);
+            const current = height[channel.toLowerCase()];
+            if (raw && value === current) return [];
+            const entered = !raw ? '未填' : Number.isFinite(value) ? `${value.toFixed(1)} cm` : '無效值';
+            const actual = Number.isFinite(current) ? `${current.toFixed(1)} cm` : '未取得';
+            return [`${channel} 本輪設定 ${entered}，裝置目前 ${actual}`];
+        });
+        return mismatches.length
+            ? `本輪高度與裝置回報不一致：${mismatches.join('；')}。請核對並修改「本輪設定」的高度，再重新勾選本輪確認；修改記錄欄位不會調整枕頭。`
+            : '';
     }
 
     function refreshCalibration(running) {
@@ -95,6 +136,16 @@ function createPressureCollectionExperiment(root, options) {
         heightControl?.tick();
         const height = heightState();
         const locked = running || calibrationBusy();
+        const suggestion = pose5Suggestion();
+        if (!locked && (suggestion.profileKey !== pose5SuggestionKey ||
+            (suggestion.deviceProfileMismatch && calibrationDrafts.pose5))) {
+            pose5SuggestionKey = suggestion.profileKey;
+            delete calibrationDrafts.pose5;
+            if (calibrationPose() === 'pose5') showCalibrationDraft();
+            resetCalibrationConfirmation();
+        }
+        if (!locked && calibrationPose() === 'pose5' && !calibrationDrafts.pose5 &&
+            validHeight('Head', suggestion.head) && validHeight('Neck', suggestion.neck)) showCalibrationDraft();
         field('pressureCalibrationPrepare').disabled = locked || !getSystemState().connected || !/^S\d{2}$/.test(subjectId()) || !heightControl;
         field('pressureCalibrationPose').disabled = locked;
         field('pressureCalibrationStable').disabled = locked || !height.ready;
@@ -109,14 +160,17 @@ function createPressureCollectionExperiment(root, options) {
             field(`pressureCalibration${channel}Plus`).disabled = locked || !validHeight(channel, input.value) || Number(input.value) >= (channel === 'Head' ? 16 : 14);
             field(`pressureCalibration${channel}Apply`).disabled = locked || !height.ready || !validHeight(channel, input.value);
         });
+        field('pressureCalibrationBothApply').disabled = locked || !height.ready ||
+            !validHeight('Head', field('pressureCalibrationHead').value) || !validHeight('Neck', field('pressureCalibrationNeck').value);
         field('pressureCalibrationCapture').disabled = !canCaptureCalibration(height);
         const cm = value => Number.isFinite(value) ? value.toFixed(1) : '—';
         setText('pressureCalibrationCurrent', `裝置估計：Head ${cm(height.head)}／Neck ${cm(height.neck)} cm；目標：Head ${cm(height.targetHead)}／Neck ${cm(height.targetNeck)} cm${height.ready ? '（已回報到位）' : '（尚未確認到位）'}`);
-        setText('pressureCalibrationStatus', calibrationFeedback || height.reason || '請先準備微調；切換姿勢只切換本區待套用值，不會自動移動裝置。');
+        const suggestionHint = !locked && calibrationPose() === 'pose5' && !calibrationDrafts.pose5 ? suggestion.reason : '';
+        setText('pressureCalibrationStatus', calibrationFeedback || suggestionHint || height.reason || '請先準備微調；切換姿勢只切換本區待套用值，不會自動移動裝置。');
         ['pose1', 'pose5'].forEach(pose => {
             const saved = calibrations.get(subjectId())?.[pose];
             setText(`pressureCalibration${pose === 'pose1' ? 'Pose1' : 'Pose5'}Saved`, saved
-                ? `受試者：${saved.subject}\n目標高度：Head ${saved.targetHead.toFixed(1)}／Neck ${saved.targetNeck.toFixed(1)} cm\n估計高度：Head ${saved.head.toFixed(1)}／Neck ${saved.neck.toFixed(1)} cm\nMonitor：${saved.sample.monitor_adc} ADC\nNeck：${saved.sample.neck_adc} ADC\nHead：${saved.sample.head_adc} ADC\n壓力接收：${saved.sample.timestamp_iso}\n單筆快照，非平均值；已存紀錄不代表目前高度`
+                ? `受試者：${saved.subject}\n${profileText(saved.profile)}\n目標高度：Head ${saved.targetHead.toFixed(1)}／Neck ${saved.targetNeck.toFixed(1)} cm\n估計高度：Head ${saved.head.toFixed(1)}／Neck ${saved.neck.toFixed(1)} cm\nMonitor：${saved.sample.monitor_adc} ADC\nNeck：${saved.sample.neck_adc} ADC\nHead：${saved.sample.head_adc} ADC\n壓力接收：${saved.sample.timestamp_iso}\n單筆快照，非平均值；已存紀錄不代表目前高度`
                 : `${subjectId() || '目前受試者'}：尚未保存`);
         });
     }
@@ -131,7 +185,8 @@ function createPressureCollectionExperiment(root, options) {
         try {
             await action();
             const height = heightState();
-            if (height.ready && readCurrentHeights) {
+            // Pose5 starts from the device's user-specific recommendation, then keeps operator edits.
+            if (height.ready && readCurrentHeights && calibrationPose() !== 'pose5') {
                 field('pressureCalibrationHead').value = String(height.head);
                 field('pressureCalibrationNeck').value = String(height.neck);
                 saveCalibrationDraft();
@@ -157,6 +212,15 @@ function createPressureCollectionExperiment(root, options) {
             return runCalibrationAction(() => heightControl.adjust(channel.toUpperCase(), Number(input.value)));
         });
     });
+    field('pressureCalibrationBothApply').addEventListener('click', () => {
+        const head = field('pressureCalibrationHead').value;
+        const neck = field('pressureCalibrationNeck').value;
+        if (!validHeight('Head', head) || !validHeight('Neck', neck) || !heightState().ready) return;
+        return runCalibrationAction(async () => {
+            await heightControl.adjust('HEAD', Number(head));
+            await heightControl.adjust('NECK', Number(neck));
+        });
+    });
     field('pressureCalibrationStable').addEventListener('change', refresh);
     field('pressureCalibrationCapture').addEventListener('click', () => {
         const height = heightState();
@@ -166,7 +230,8 @@ function createPressureCollectionExperiment(root, options) {
         const records = calibrations.get(subjectId()) || {};
         records[calibrationPose()] = {
             subject: subjectId(), head: height.head, neck: height.neck,
-            targetHead: height.targetHead, targetNeck: height.targetNeck, sample: { ...latestSample }
+            targetHead: height.targetHead, targetNeck: height.targetNeck, sample: { ...latestSample },
+            profile: readUserProfile()
         };
         calibrations.set(subjectId(), records);
         calibrationFeedback = '已保存單筆校正快照；兩姿勢的紀錄會並列顯示，可截圖保存。';
@@ -230,12 +295,12 @@ function createPressureCollectionExperiment(root, options) {
         return true;
     }
 
-    function eligibilityHint(state, system) {
+    function eligibilityHint(state, system, calibrationIssue) {
         if (state.status === 'recording') return '本輪設定已鎖定；收合介面不會停止記錄。';
         if (state.samples.length && !state.exportRequested) return '請先匯出此條件上一輪的 CSV 與線圖，再重測，以免遺失資料。';
         if (!system.connected) return '請先連接 ESP32，並確認持續收到有效的三通道壓力資料。';
         if (!freshStream()) return '請確認持續收到至少兩筆完整壓力訊息，且最後接收間隔未超過門檻。';
-        if (calibrationRunBlocked()) return '請等待微調到位，並確認本輪 Head／Neck 高度與裝置回報一致；必要時重新準備微調。';
+        if (calibrationIssue) return calibrationIssue;
         if (!form.checkValidity()) return '請填妥受試者、設定高度，並確認本輪姿勢與高度。';
         if (typeof Chart !== 'function') return '圖表元件尚未載入，請確認 Chart.js 可用。';
         return state.exportRequested ? '上一輪已要求下載；重測前仍需確認 CSV 與 PNG 線圖都已保存。' : '設定完成後，由操作者按「開始記錄」，不另加等待秒數。';
@@ -245,6 +310,10 @@ function createPressureCollectionExperiment(root, options) {
         const state = recorder.tick();
         const system = getSystemState();
         const running = state.status === 'recording';
+        const profile = readUserProfile();
+        if (!running && previousUserProfile && Object.keys(profile).some(key => profile[key] !== previousUserProfile[key])) confirmed.checked = false;
+        previousUserProfile = profile;
+        setText('pressureUserProfile', `${running ? '本輪開始時資料' : '上方目前輸入值（開始記錄時帶入）'}｜${profileText(running ? state.metadata : profile)}`);
         refreshCalibration(running);
         settings.disabled = running || calibrationBusy();
         field('pressureSubject').disabled = settings.disabled;
@@ -267,14 +336,15 @@ function createPressureCollectionExperiment(root, options) {
         setText('pressureGapPolicy', `資料中斷門檻：連續 ${(gapTimeoutMs / 1000).toFixed(1)} 秒未收到有效完整壓力訊息。壓力仍沿用每秒 P 查詢；獨立校正啟用後會另外讀取高度與狀態，實際接收間隔仍需實機驗證。`);
         setText('pressureControlWarning', system.autoHeightPossible
             ? '目前為自動模式或 PRED 已啟用／請求啟動，可能改變高度。可在本區按「準備微調」停止自動調整，再確認固定高度條件。'
-            : '目前 Web 未回報自動高度調整啟用；請確認高度固定。只有按「準備微調」或「套用」才會送出相應控制指令，收數不會自行調整高度。');
+            : '控制提醒：目前 Web 未回報自動高度調整啟用，請由操作者確認高度固定；收數不會自行調整高度。此提醒不會阻止開始記錄，若按鈕無法使用，請查看按鈕上方的原因。');
+        field('pressureControlWarning').className = system.autoHeightPossible ? 'pressure-warning' : 'pressure-field-hint';
         if (state.runId) {
             const m = state.metadata;
             const suffix = state.status === 'completed'
                 ? '30 秒資料收集計時完成，不代表辨識穩健性已驗證。'
                 : state.status === 'interrupted' ? reasonLabels[state.interruptionReason] || state.interruptionReason
                 : state.status === 'ended_early' ? '已有樣本保留，本輪未完成 30 秒。' : '正在收集原始 ADC。';
-            setText('pressureRunSummary', `本輪紀錄｜${m.subject_id}／條件 ${m.condition_id}／${m.actual_pose}／${m.height_condition}／${m.test_condition}／Head ${m.head_height_cm} cm、Neck ${m.neck_height_cm} cm｜${state.samples.length} 筆。${suffix}`);
+            setText('pressureRunSummary', `本輪紀錄｜${m.subject_id}／條件 ${m.condition_id}／${m.actual_pose}／${m.height_condition}／${m.test_condition}／Head ${m.head_height_cm} cm、Neck ${m.neck_height_cm} cm｜${profileText(m)}｜${state.samples.length} 筆。${suffix}`);
         } else {
             setText('pressureRunSummary', `條件 ${selectedConditionId} 尚無本輪收集結果；開始記錄後才會繪製本條件曲線。`);
         }
@@ -284,11 +354,12 @@ function createPressureCollectionExperiment(root, options) {
             return condition.id !== selectedConditionId && saved.samples.length > 0 && !saved.exportRequested;
         }).map(condition => condition.id);
         const pendingHint = pending.length ? ` 條件 ${pending.join('、')} 尚有未匯出的結果，已暫存於本頁，可切回匯出。` : '';
-        const hint = (feedback || eligibilityHint(state, system)) + pendingHint;
+        const calibrationIssue = calibrationRunIssue();
+        const hint = (feedback || eligibilityHint(state, system, calibrationIssue)) + pendingHint;
         lastUiState = {
             status: state.status, statusText: statusLabels[state.status],
             running, hint,
-            startDisabled: running || calibrationRunBlocked() || !system.connected || !freshStream() || !form.checkValidity() ||
+            startDisabled: running || Boolean(calibrationIssue) || !system.connected || !freshStream() || !form.checkValidity() ||
                 (state.samples.length > 0 && !state.exportRequested) || typeof Chart !== 'function',
             finishDisabled: !running, exportDisabled: running || state.samples.length === 0
         };
@@ -310,6 +381,7 @@ function createPressureCollectionExperiment(root, options) {
         try {
             recorder.start({
                 subject_id: field('pressureSubject').value.trim(),
+                ...readUserProfile(),
                 trial_index: '', condition_id: condition.id,
                 actual_pose: condition.actual_pose, height_condition: condition.height_condition,
                 head_height_cm: Number(field('pressureHeadHeight').value),
@@ -377,6 +449,7 @@ function createPressureCollectionExperiment(root, options) {
         const labels = [
             '固定睡姿下自然呼吸與微動之辨識穩健性測試',
             `${m.subject_id}｜條件 ${m.condition_id}｜${m.actual_pose}／${m.height_condition}／${m.test_condition}`,
+            profileText(m),
             `Head ${m.head_height_cm} cm｜Neck ${m.neck_height_cm} cm｜${state.samples.length} 筆｜${statusLabels[state.status]}`
         ];
         const lines = [];
