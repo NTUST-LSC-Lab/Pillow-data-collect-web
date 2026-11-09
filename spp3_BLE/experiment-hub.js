@@ -3,13 +3,10 @@ function createExperimentHub(root, options = {}) {
     const selectionStorageKey = 'experimentHub.v4.currentExperiment';
     const pressureConfig = options.pressureConfig;
     const pressureId = pressureConfig?.experimentId;
-    const comfortConfig = options.comfortConfig;
-    const comfortId = comfortConfig?.experimentId;
+    const comfortId = options.comfortConfig?.experimentId;
     const experimentRegistry = Array.from({ length: 9 }, (_, index) => {
         const id = String(index + 1).padStart(2, '0');
-        const title = id === pressureId ? pressureConfig.title :
-            id === comfortId ? comfortConfig.title : `Experiment ${id}`;
-        return { id, title };
+        return { id, title: id === pressureId ? pressureConfig.title : id === comfortId ? options.comfortConfig.title : `Experiment ${id}` };
     });
     const experimentStates = new Map(experimentRegistry.map(experiment => [
         experiment.id, { status: '尚未開始' }
@@ -27,9 +24,9 @@ function createExperimentHub(root, options = {}) {
     }
 
     function updateControls(uiState) {
-        const selectedModule = currentExperiment === pressureId ? pressureExperiment :
-            currentExperiment === comfortId ? comfortExperiment : null;
-        const state = selectedModule ? uiState || selectedModule.getUiState() : null;
+        const selected = currentExperiment === pressureId && pressureExperiment;
+        const comfortSelected = currentExperiment === comfortId && comfortExperiment;
+        const state = selected ? uiState || pressureExperiment.getUiState() : comfortSelected ? comfortExperiment.getUiState() : null;
         const running = pressureExperiment?.isBusy() || comfortExperiment?.isBusy() || false;
         const index = experimentRegistry.findIndex(experiment => experiment.id === currentExperiment);
         nodes.prev.disabled = running || index === 0;
@@ -37,14 +34,15 @@ function createExperimentHub(root, options = {}) {
         nodes.select.disabled = running;
         setText(nodes.status, state?.statusText || '尚未開始');
         nodes.status.className = `pill ${state?.status === 'completed' || state?.running ? 'pill-ok' : state?.status === 'interrupted' || state?.status === 'ended_early' ? 'pill-error' : 'pill-pending'}`;
-        setText(nodes.start, currentExperiment === pressureId ? '開始記錄' :
-            currentExperiment === comfortId ? '建立 8 輪流程' : '開始實驗');
-        setText(nodes.finish, selectedModule ? '提前結束' : '結束實驗');
+        setText(nodes.start, selected ? '開始記錄' : '開始實驗');
+        setText(nodes.finish, selected ? '提前結束' : '結束實驗');
         nodes.start.disabled = !state || state.startDisabled;
         nodes.finish.disabled = !state || state.finishDisabled;
-        nodes.export.hidden = !selectedModule;
+        nodes.start.hidden = Boolean(comfortSelected);
+        nodes.finish.hidden = Boolean(comfortSelected);
+        nodes.export.hidden = !selected;
         nodes.export.disabled = !state || state.exportDisabled;
-        setText(nodes.export, currentExperiment === comfortId ? '匯出 CSV＋SVG' : '匯出 CSV＋線圖');
+        setText(nodes.export, '匯出 CSV＋線圖');
         setText(nodes.hint, state?.hint || '實驗流程尚未設定，暫時無法開始或結束實驗。');
     }
 
@@ -157,26 +155,22 @@ function createExperimentHub(root, options = {}) {
                 onChange: state => { if (currentExperiment === pressureId) updateControls(state); }
             });
         }
-        if (comfortConfig && experimentRegistry.some(experiment => experiment.id === comfortId)) {
-            const template = document.getElementById('comfortExperimentTemplate');
-            comfortView = template.content.firstElementChild.cloneNode(true);
-            comfortExperiment = createComfortEvaluationExperiment(comfortView, {
-                getSystemState: options.getSystemState,
-                sendCommand: options.sendCommand,
-                onChange: state => { if (currentExperiment === comfortId) updateControls(state); }
+        if (comfortId && typeof createComfortExperiment === 'function') {
+            comfortView = document.getElementById('comfortExperimentTemplate').content.firstElementChild.cloneNode(true);
+            comfortExperiment = createComfortExperiment(comfortView, {
+                heightControl: options.heightControl, getSystemState: options.getSystemState,
+                getUserProfile: options.getComfortProfile, getPose5Suggestion: options.getPose5Suggestion,
+                onChange: () => { if (currentExperiment === comfortId) updateControls(); }
             });
         }
         nodes.start.addEventListener('click', () => {
             if (currentExperiment === pressureId) pressureExperiment?.start();
-            if (currentExperiment === comfortId) comfortExperiment?.start();
         });
         nodes.finish.addEventListener('click', () => {
             if (currentExperiment === pressureId) pressureExperiment?.endEarly();
-            if (currentExperiment === comfortId) comfortExperiment?.endEarly();
         });
         nodes.export.addEventListener('click', () => {
             if (currentExperiment === pressureId) pressureExperiment?.exportCsv();
-            if (currentExperiment === comfortId) comfortExperiment?.exportCsv();
         });
         window.addEventListener('beforeunload', event => {
             if (pressureExperiment?.needsLeaveProtection() || comfortExperiment?.needsLeaveProtection()) {
@@ -191,12 +185,12 @@ function createExperimentHub(root, options = {}) {
 
     return {
         init,
-        isRunning: () => pressureExperiment?.isRunning() || comfortExperiment?.isRunning() || false,
+        isRunning: () => pressureExperiment?.isRunning() || false,
+        isComfortHolding: () => comfortExperiment?.isHolding() || false,
         receivePressure: sample => {
             pressureExperiment?.receivePressure(sample);
             comfortExperiment?.receivePressure(sample);
         },
-        receiveProtocolLine: (line, receipt) => comfortExperiment?.receiveProtocolLine(line, receipt),
         onDisconnected: () => {
             pressureExperiment?.onDisconnected();
             comfortExperiment?.onDisconnected();

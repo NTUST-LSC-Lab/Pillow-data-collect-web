@@ -1,393 +1,491 @@
-// Experiment 02: compare R/M/A pressure targets with I height control.
-// BLE transport stays in app.js; this module owns only its panel and round state.
-function createComfortEvaluationExperiment(root, options = {}) {
-    const POSES = [
-        { id: 'pose1', label: '睡姿一' },
-        { id: 'pose5', label: '睡姿五' }
-    ];
-    const METHODS = [
-        { id: 'R', label: 'R｜論文下降比例', mode: 'ADC' },
-        { id: 'M', label: 'M｜30 人資料下降比例', mode: 'ADC' },
-        { id: 'A', label: 'A｜R、M 平均比例', mode: 'ADC' },
-        { id: 'I', label: 'I｜原系統高度法', mode: 'HEIGHT' }
-    ];
-    const ADC_LIMITS = { head: [1850000, 2550000], neck: [2000000, 2550000] };
-    const nodes = {};
-    let initialized = false;
-    let status = 'idle';
-    let rounds = [];
-    let roundIndex = 0;
-    let latestPressure = null;
-    let pressureSequence = 0;
-    let awaitingRoundId = '';
-    let donePressureSequence = -1;
-    let lastMessage = '請先填入正式比例與兩種姿勢的校正資料。';
+// Experiment 02 uses the existing timed startup commands. Pressure is checked after the pump stops.
+// ADC/time fits: time_2_adc_260507; R: thesis fig. 4-10; M: 30 paired calibrations (2026-08-26).
+const COMFORT_MONITOR_MS = 14500;
+const COMFORT_CHANNELS = {
+    monitor: { label: 'Monitor', slope: 0.000007976305, offset: -12.414949423913 },
+    head: { label: 'Head', slope: 0.0000038296, offset: -7.1811602848, adcPerMs: 2.837681, adcAtZeroMs: 1820918, minMs: 30000, maxMs: 136132, minCm: 7, maxCm: 16, cmPerSecond: 0.0848 },
+    neck: { label: 'Neck', slope: 0.0000045060, offset: -8.7398532587, adcPerMs: 5.820554, adcAtZeroMs: 1878787, minMs: 10000, maxMs: 50000, minCm: 10, maxCm: 14, cmPerSecond: 0.1 }
+};
+const COMFORT_METHODS = { R: '論文補償', M: '30 人平均補償', A: '論文與 30 人比例平均', I: '校正控制高度' };
+const COMFORT_POSES = {
+    '1': { label: '姿勢一', R: { head: 0.0033, neck: 0.1052 }, M: { head: 0.031330964618742496, neck: 0.09390857201420701 } },
+    '5': { label: '姿勢五', R: { head: 0.0034, neck: 0.0589 }, M: { head: 0.04907373891777954, neck: 0.08733870877877077 } }
+};
 
-    function bindNodes() {
-        [
-            'comfortSubject', 'comfortPose1HeadAdc', 'comfortPose1NeckAdc',
-            'comfortPose1HeadCm', 'comfortPose1NeckCm', 'comfortPose5HeadAdc',
-            'comfortPose5NeckAdc', 'comfortPose5HeadCm', 'comfortPose5NeckCm',
-            'comfortPose1RHeadRatio', 'comfortPose1RNeckRatio',
-            'comfortPose1MHeadRatio', 'comfortPose1MNeckRatio',
-            'comfortPose5RHeadRatio', 'comfortPose5RNeckRatio',
-            'comfortPose5MHeadRatio', 'comfortPose5MNeckRatio',
-            'comfortCapturePose1', 'comfortCapturePose5', 'comfortProgress',
-            'comfortCurrentRound', 'comfortTarget', 'comfortFirmwareState',
-            'comfortScore', 'comfortRunRound', 'comfortCaptureUnload',
-            'comfortMessage', 'comfortResults'
-        ].forEach(id => { nodes[id] = root.querySelector(`#${id}`); });
-    }
-
-    function numberValue(id) {
-        const value = Number(nodes[id]?.value);
-        return Number.isFinite(value) ? value : NaN;
-    }
-
-    function valueFor(poseId, suffix) {
-        const prefix = poseId === 'pose1' ? 'comfortPose1' : 'comfortPose5';
-        return numberValue(`${prefix}${suffix}`);
-    }
-
-    function ratioFor(poseId, method, channel) {
-        const prefix = poseId === 'pose1' ? 'comfortPose1' : 'comfortPose5';
-        const suffix = `${method}${channel === 'head' ? 'Head' : 'Neck'}Ratio`;
-        const direct = numberValue(`${prefix}${suffix}`);
-        if (method !== 'A') return direct;
-        const r = ratioFor(poseId, 'R', channel);
-        const m = ratioFor(poseId, 'M', channel);
-        return (r + m) / 2;
-    }
-
-    function currentRound() {
-        return rounds[roundIndex] || null;
-    }
-
-    function makeRoundId(index, poseId, method) {
-        return `E02-${String(index + 1).padStart(2, '0')}-${poseId.toUpperCase()}-${method}`;
-    }
-
-    function validateSetup() {
-        const subject = nodes.comfortSubject?.value.trim() || '';
-        if (!/^[A-Za-z0-9_-]{1,24}$/.test(subject)) return '受試者編號限 1–24 位英數、底線或連字號。';
-        for (const pose of POSES) {
-            const headAdc = valueFor(pose.id, 'HeadAdc');
-            const neckAdc = valueFor(pose.id, 'NeckAdc');
-            const headCm = valueFor(pose.id, 'HeadCm');
-            const neckCm = valueFor(pose.id, 'NeckCm');
-            if (!Number.isFinite(headAdc) || !Number.isFinite(neckAdc)) return `${pose.label} 尚未填入占用時 ADC。`;
-            if (headAdc < ADC_LIMITS.head[0] || headAdc > ADC_LIMITS.head[1] ||
-                neckAdc < ADC_LIMITS.neck[0] || neckAdc > ADC_LIMITS.neck[1]) {
-                return `${pose.label} ADC 超出韌體安全範圍。`;
-            }
-            if (headCm < 7 || headCm > 16 || neckCm < 10 || neckCm > 14 ||
-                Math.abs(headCm * 2 - Math.round(headCm * 2)) > 0.001 ||
-                Math.abs(neckCm * 2 - Math.round(neckCm * 2)) > 0.001) {
-                return `${pose.label} 高度須在 Head 7–16、Neck 10–14 cm，且以 0.5 cm 遞增。`;
-            }
-            for (const method of ['R', 'M']) {
-                for (const channel of ['head', 'neck']) {
-                    const ratio = ratioFor(pose.id, method, channel);
-                    if (!Number.isFinite(ratio) || ratio < 0 || ratio >= 1) {
-                        return `${pose.label} ${method} 的 ${channel} 下降比例須介於 0（含）到 1（不含）。`;
-                    }
-                }
-            }
+function comfortPlan(pose, method, anchor) {
+    const times = { monitorMs: COMFORT_MONITOR_MS };
+    const targets = {};
+    const issues = [];
+    for (const channel of ['head', 'neck']) {
+        const spec = COMFORT_CHANNELS[channel];
+        let ms;
+        if (method === 'I') {
+            ms = spec.minMs + (anchor[channel] - spec.minCm) * 1000 / spec.cmPerSecond;
+        } else {
+            const { R, M } = COMFORT_POSES[pose];
+            const ratio = method === 'A' ? (R[channel] + M[channel]) / 2 : COMFORT_POSES[pose][method][channel];
+            const adc = anchor.pressure[channel + '_adc'] * (1 - ratio);
+            targets[channel] = { ratio, adc };
+            ms = (adc - spec.adcAtZeroMs) / spec.adcPerMs;
         }
-        return '';
+        times[channel + 'Ms'] = Math.round(ms);
+        if (!Number.isFinite(ms) || times[channel + 'Ms'] < spec.minMs || times[channel + 'Ms'] > spec.maxMs) {
+            issues.push(`${spec.label} 換算 ${(ms / 1000).toFixed(3)} 秒，超出裝置範圍 ${spec.minMs / 1000}–${spec.maxMs / 1000} 秒`);
+        }
     }
+    return { times, targets, issues };
+}
 
-    function buildRounds() {
-        const subject = nodes.comfortSubject.value.trim();
-        const built = [];
-        POSES.forEach(pose => METHODS.forEach(method => {
-            const round = {
-                subject, pose: pose.id, poseLabel: pose.label, method: method.id,
-                methodLabel: method.label, mode: method.mode, status: 'pending', score: '',
-                occupiedHeadAdc: valueFor(pose.id, 'HeadAdc'),
-                occupiedNeckAdc: valueFor(pose.id, 'NeckAdc'),
-                targetHeadCm: valueFor(pose.id, 'HeadCm'),
-                targetNeckCm: valueFor(pose.id, 'NeckCm')
-            };
-            if (method.mode === 'ADC') {
-                round.headRatio = ratioFor(pose.id, method.id, 'head');
-                round.neckRatio = ratioFor(pose.id, method.id, 'neck');
-                round.targetHeadAdc = Math.round(round.occupiedHeadAdc * (1 - round.headRatio));
-                round.targetNeckAdc = Math.round(round.occupiedNeckAdc * (1 - round.neckRatio));
-            }
-            round.id = makeRoundId(built.length, pose.id, method.id);
-            built.push(round);
-        }));
-        return built;
+function comfortPressure(channel, adc) {
+    if (!Number.isFinite(adc)) return '—';
+    const spec = COMFORT_CHANNELS[channel];
+    return `${Math.round(adc).toLocaleString('en-US')} ADC / ${(spec.slope * adc + spec.offset).toFixed(4)} kPa`;
+}
+
+function comfortProfileText(profile) {
+    if (!profile) return '請先在上方「使用者資料」填寫性別、年齡、身高與體重。';
+    return `性別 ${profile.gender === 'female' ? '女' : '男'}　年齡 ${profile.age_years} 歲　身高 ${profile.body_height_cm} cm　體重 ${profile.body_weight_kg} kg`;
+}
+
+function comfortAnchorText(anchor) {
+    return anchor ? [
+        `控制高度：Head ${anchor.head.toFixed(1)} cm / Neck ${anchor.neck.toFixed(1)} cm`,
+        ...Object.keys(COMFORT_CHANNELS).map(ch => `${COMFORT_CHANNELS[ch].label}：${comfortPressure(ch, anchor.pressure[ch + '_adc'])}`)
+    ] : ['尚未校正'];
+}
+
+function comfortReport(trial) {
+    const { anchor, plan, method, empty, loaded } = trial;
+    const percent = ratio => `${(ratio * 100).toFixed(2)}%`;
+    const difference = (channel, reading) => {
+        const adc = reading - anchor.pressure[channel + '_adc'];
+        return `${adc >= 0 ? '+' : '−'}${Math.abs(adc).toLocaleString('en-US')} ADC / ${adc >= 0 ? '+' : '−'}${(Math.abs(adc) * COMFORT_CHANNELS[channel].slope).toFixed(4)} kPa`;
+    };
+    const emptyRows = ['head', 'neck'].map(channel => {
+        const actual = empty?.[channel + '_adc'];
+        const target = plan.targets[channel];
+        const ratio = Number.isFinite(actual) ? (anchor.pressure[channel + '_adc'] - actual) / anchor.pressure[channel + '_adc'] : null;
+        const diff = ratio === null || !target ? null : (ratio - target.ratio) * 100;
+        return [
+            COMFORT_CHANNELS[channel].label, target ? percent(target.ratio) : '—',
+            target ? comfortPressure(channel, target.adc) : `${anchor[channel].toFixed(1)} cm`,
+            comfortPressure(channel, actual), ratio === null ? '—' : percent(ratio),
+            diff === null ? '—' : `${diff >= 0 ? '多降' : '少降'} ${Math.abs(diff).toFixed(2)} 個百分點`
+        ];
+    });
+    const loadedRows = Object.keys(COMFORT_CHANNELS).map(channel => [
+        COMFORT_CHANNELS[channel].label, comfortPressure(channel, anchor.pressure[channel + '_adc']),
+        comfortPressure(channel, loaded?.[channel + '_adc']),
+        loaded ? difference(channel, loaded[channel + '_adc']) : '—'
+    ]);
+    const seconds = ms => (ms / 1000).toFixed(3);
+    return {
+        title: `${trial.subject}｜${COMFORT_POSES[trial.pose].label}｜${method} · ${COMFORT_METHODS[method]}`,
+        details: [
+            `校正控制高度：Head ${anchor.head.toFixed(1)} cm / Neck ${anchor.neck.toFixed(1)} cm`,
+            `充氣設定：Monitor 14.5 s / Head ${seconds(plan.times.headMs)} s / Neck ${seconds(plan.times.neckMs)} s`,
+            `空枕快照：${empty?.timestamp_iso || '待記錄'}　Monitor：${comfortPressure('monitor', empty?.monitor_adc)}`,
+            `躺回快照：${loaded?.timestamp_iso || '待記錄'}`,
+            `滿意度：${trial.score === undefined ? '待填' : trial.score + '／10'}`,
+            '操作者確認穩定後擷取單筆。百分比以 ADC 計算。'
+        ],
+        sections: [
+            { title: '躺回前｜空枕設定與實測', headers: ['氣囊', '設定下降', '空枕目標', '空枕實測', '實際下降', '實際 − 設定'], rows: emptyRows, widths: [95, 105, 280, 280, 110, 230] },
+            { title: '躺回後｜與同姿勢有人校正基準比較', headers: ['氣囊', '10 分校正基準', '本次躺回後', '躺回後 − 校正基準'], rows: loadedRows, widths: [125, 290, 290, 395] }
+        ]
+    };
+}
+
+function buildComfortImage(report) {
+    const svgNamespace = 'http://www.w3.org/2000/svg';
+    const width = 1150;
+    const height = 110 + report.details.length * 29 + report.sections.reduce((n, section) => n + 76 + section.rows.length * 40, 0);
+    const image = document.createElementNS(svgNamespace, 'svg');
+    image.setAttribute('width', width);
+    image.setAttribute('height', height);
+    image.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    image.setAttribute('font-family', '-apple-system, "PingFang TC", sans-serif');
+    const append = (tag, attributes) => {
+        const element = document.createElementNS(svgNamespace, tag);
+        for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
+        image.append(element);
+        return element;
+    };
+    append('rect', { width, height, fill: '#fff' });
+    const write = (text, x, y, size, bold = false) => {
+        append('text', { x, y, fill: '#183560', 'font-size': size, 'font-weight': bold ? 700 : 400 }).textContent = text;
+    };
+    write(report.title, 24, 42, 26, true);
+    let y = 75;
+    for (const detail of report.details) {
+        write(detail, 24, y, 18);
+        y += 29;
     }
-
-    function validateTargets(built) {
-        const invalid = built.find(round => round.mode === 'ADC' &&
-            (round.targetHeadAdc < ADC_LIMITS.head[0] || round.targetHeadAdc > ADC_LIMITS.head[1] ||
-             round.targetNeckAdc < ADC_LIMITS.neck[0] || round.targetNeckAdc > ADC_LIMITS.neck[1]));
-        return invalid ? `${invalid.poseLabel} ${invalid.method} 算出的 ADC 目標超出韌體安全範圍，請確認校正值與下降比例。` : '';
-    }
-
-    function setMessage(message) {
-        lastMessage = message;
-        if (nodes.comfortMessage) nodes.comfortMessage.textContent = message;
-    }
-
-    function renderResults() {
-        if (!nodes.comfortResults) return;
-        nodes.comfortResults.replaceChildren(...rounds.map(round => {
-            const row = document.createElement('tr');
-            const values = [round.poseLabel, round.method, round.status,
-                round.score === '' ? '-' : round.score,
-                round.emptyHeadAdc ?? '-', round.emptyNeckAdc ?? '-'];
-            values.forEach(value => {
-                const cell = document.createElement('td');
-                cell.textContent = String(value);
-                row.appendChild(cell);
+    for (const section of report.sections) {
+        y += 12;
+        write(section.title, 24, y + 21, 21, true);
+        y += 34;
+        [section.headers, ...section.rows].forEach((row, index) => {
+            const fill = index === 0 ? '#eaf2fc' : index % 2 === 0 ? '#f6f8fb' : '#ffffff';
+            append('rect', { x: 24, y, width: 1100, height: 40, fill });
+            let x = 32;
+            row.forEach((cell, col) => {
+                write(String(cell), x, y + 26, 17, index === 0);
+                x += section.widths[col];
             });
-            return row;
-        }));
+            y += 40;
+        });
+    }
+    const svg = new XMLSerializer().serializeToString(image);
+    return new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+}
+
+async function saveComfortImage(folder, name, report) {
+    const permission = { mode: 'readwrite' };
+    if (await folder.queryPermission(permission) !== 'granted' &&
+        await folder.requestPermission(permission) !== 'granted') {
+        throw new Error('未取得寫入權限，請重新選擇儲存資料夾。');
+    }
+    let file;
+    try {
+        file = await folder.getFileHandle(name);
+    } catch (error) {
+        if (error.name !== 'NotFoundError') throw error;
+    }
+    if (file && !window.confirm(`資料夾內已有同名檔案，是否覆蓋？\n${name}`)) return false;
+    const image = buildComfortImage(report);
+    file ??= await folder.getFileHandle(name, { create: true });
+    const writable = await file.createWritable();
+    try {
+        await writable.write(image);
+        await writable.close();
+    } catch (error) {
+        await writable.abort().catch(() => {});
+        throw error;
+    }
+    return true;
+}
+
+function createComfortExperiment(root, options) {
+    const node = id => root.querySelector('#comfort' + id);
+    const buttons = name => [...root.querySelectorAll(`[data-comfort-${name}]`)];
+    const height = options.heightControl;
+    const records = new Map();
+    const dialog = node('Calibration');
+    const canPickFolder = typeof window.showDirectoryPicker === 'function';
+    let folder = null;
+    let pose = '1', calibration = null, trial = null, latest = null, busy = false;
+    let status = '', calStatus = '', rendered = '';
+    const selection = () => records.get(node('Subject').value);
+    const connected = () => Boolean(options.getSystemState().connected);
+    const active = () => Boolean(trial && !trial.saved && trial.stage !== 'blocked');
+    const isHolding = () => dialog.open || active();
+    const isBusy = () => busy || isHolding();
+    const stableReading = (after, state) => connected() && state.ready && latest &&
+        performance.now() - latest.receivedMonotonicMs < 3000 && latest.receivedMonotonicMs > after &&
+        latest.receivedMonotonicMs >= state.settledMonotonicMs &&
+        Object.keys(COMFORT_CHANNELS).every(ch => Number.isFinite(latest[ch + '_adc']) && latest[ch + '_adc'] > 0);
+
+    function profile() {
+        const p = options.getUserProfile();
+        return p && ['female', 'male'].includes(p.gender) && Number.isInteger(p.age_years) &&
+            p.age_years > 0 && p.body_height_cm > 0 && p.body_weight_kg > 0 ? p : null;
+    }
+    const sameProfile = () => !selection() || JSON.stringify(profile()) === JSON.stringify(selection().profile);
+    const bothAnchors = () => Boolean(selection()?.anchors['1'] && selection()?.anchors['5']);
+    const numeric = (input, channel) => {
+        const n = input.valueAsNumber, spec = COMFORT_CHANNELS[channel];
+        return n >= spec.minCm && n <= spec.maxCm && Number.isInteger(n * 2) ? n : null;
+    };
+    const head = node('CalHead'), neck = node('CalNeck');
+    const targetHeights = () => [numeric(head, 'head'), numeric(neck, 'neck')];
+    function renderTrial() {
+        if (!trial) { node('Trial').hidden = true; rendered = ''; return; }
+        const report = comfortReport(trial);
+        const signature = JSON.stringify(report);
+        if (signature === rendered) return;
+        rendered = signature;
+        node('ScoreLabel').textContent = `${COMFORT_POSES[trial.pose].label} · ${trial.method} 的滿意度（0–10 分）`;
+        const elements = [];
+        const text = (tag, value) => {
+            const el = document.createElement(tag); el.textContent = value; return el;
+        };
+        elements.push(text('h4', report.title));
+        for (const line of report.details) elements.push(text('p', line));
+        for (const section of report.sections) {
+            const wrap = document.createElement('div');
+            wrap.className = 'comfort-trial-table';
+            const table = document.createElement('table');
+            const header = table.createTHead().insertRow();
+            for (const value of section.headers) {
+                const cell = text('th', value); cell.scope = 'col'; header.append(cell);
+            }
+            const body = table.createTBody();
+            for (const row of section.rows) {
+                const tr = body.insertRow();
+                row.forEach(value => tr.append(text('td', value)));
+            }
+            wrap.append(table);
+            elements.push(text('h4', section.title), wrap);
+        }
+        node('Trial').replaceChildren(...elements);
+        node('Trial').hidden = false;
     }
 
     function refresh() {
-        const round = currentRound();
-        if (nodes.comfortProgress) nodes.comfortProgress.textContent = `${Math.min(roundIndex, 8)} / 8`;
-        if (nodes.comfortCurrentRound) {
-            nodes.comfortCurrentRound.textContent = round ? `${roundIndex + 1}/8｜${round.poseLabel}｜${round.methodLabel}` : '-';
+        if (root.isConnected && isBusy()) height.tick();
+        const state = height.getState();
+        const rec = selection();
+        node('Profile').textContent = comfortProfileText(rec?.profile || profile()) +
+            (sameProfile() ? '' : '　上方資料與此編號的已儲存資料不同，請先對齊。');
+        node('Subject').disabled = isBusy();
+        node('Folder').disabled = !canPickFolder || busy || dialog.open || (active() && !trial.loaded);
+        for (const p of ['1', '5']) node('Anchor' + p).textContent = comfortAnchorText(rec?.anchors[p]).join('\n');
+        const count = p => Object.keys(rec?.trials || {}).filter(k => k.startsWith(p)).length;
+        node('Progress').textContent = `姿勢一 ${count('1')}／4 · 姿勢五 ${count('5')}／4`;
+        buttons('calibrate').forEach(button => {
+            button.disabled = isBusy() || !node('Subject').value || !profile() || !sameProfile() || !connected() || count('1') + count('5') > 0;
+        });
+        node('AnchorShot').disabled = !folder || !bothAnchors() || isBusy();
+        buttons('pose').forEach(button => {
+            button.disabled = isBusy();
+            button.setAttribute('aria-pressed', String(button.dataset.comfortPose === pose));
+        });
+        node('EmptyConfirmed').disabled = !bothAnchors() || !sameProfile() || !connected() || isBusy();
+        buttons('method').forEach(button => {
+            const m = button.dataset.comfortMethod, done = Boolean(rec?.trials[pose + m]);
+            button.textContent = `${done ? '✓ ' : ''}${m} · ${COMFORT_METHODS[m]}`;
+            button.disabled = isBusy() || (!done && (!bothAnchors() || !sameProfile() || !connected() || !node('EmptyConfirmed').checked));
+            button.setAttribute('aria-pressed', String(trial?.method === m && trial.pose === pose));
+        });
+        node('Status').textContent = busy ? [status, state.reason].filter(Boolean).join(' · ') : status ||
+            (bothAnchors() ? '選擇姿勢、確認離枕，再按方法。' : '先完成兩個姿勢的校正。');
+        const live = latest && performance.now() - latest.receivedMonotonicMs < 3000 && connected()
+            ? Object.keys(COMFORT_CHANNELS).map(ch => `${COMFORT_CHANNELS[ch].label} ${comfortPressure(ch, latest[ch + '_adc'])}`).join('　')
+            : '等待新壓力讀值';
+        node('Live').textContent = live;
+        node('Capture').hidden = !['empty', 'loaded'].includes(trial?.stage);
+        node('Capture').textContent = trial?.stage === 'loaded' ? '記錄躺回壓力' : '記錄空枕壓力';
+        node('Capture').disabled = busy || !stableReading(trial?.after ?? Infinity, state);
+        node('Cancel').hidden = busy || !active();
+        node('ScoreGroup').hidden = !trial || trial.stage === 'blocked';
+        node('Score').disabled = busy || !trial?.loaded || Boolean(trial?.saved);
+        node('ResultShot').disabled = busy || !folder || !trial?.loaded || node('Score').value === '';
+        node('ResultShot').textContent = trial?.saved ? '重新儲存結果圖' : '截圖並儲存本次結果';
+        renderTrial();
+        if (dialog.open) {
+            const ready = calibration.initialized && state.ready && connected() && !busy;
+            const [h, n] = targetHeights();
+            const match = h === state.head && n === state.neck;
+            node('CalStatus').textContent = busy ? [calStatus, state.reason].filter(Boolean).join(' · ') : calStatus;
+            node('CalLive').textContent = `裝置回報：Head ${state.head ?? '—'} cm / Neck ${state.neck ?? '—'} cm。 ${live}`;
+            node('CalClose').disabled = busy;
+            node('CalEmpty').disabled = busy || calibration.initialized;
+            node('CalInit').disabled = busy || calibration.initialized || !connected() || !node('CalEmpty').checked;
+            head.disabled = neck.disabled = !ready;
+            buttons('step').forEach(button => { button.disabled = !ready; });
+            node('CalApply').disabled = !ready || h === null || n === null || match;
+            node('CalStable').disabled = !ready || !match;
+            node('CalSave').disabled = !ready || !match || !node('CalStable').checked ||
+                !sameProfile() || !stableReading(calibration.after, state);
         }
-        if (nodes.comfortTarget) {
-            nodes.comfortTarget.textContent = !round ? '-' : round.mode === 'ADC'
-                ? `Head ${round.targetHeadAdc} / Neck ${round.targetNeckAdc} ADC`
-                : `Head ${round.targetHeadCm.toFixed(1)} / Neck ${round.targetNeckCm.toFixed(1)} cm`;
-        }
-        if (nodes.comfortFirmwareState) nodes.comfortFirmwareState.textContent = round?.status || '尚未開始';
-        const readyToRun = status === 'running' && round && round.status === 'pending' && !awaitingRoundId;
-        const readyToCapture = status === 'running' && round && round.status === 'done' &&
-            pressureSequence > donePressureSequence && nodes.comfortScore?.value !== '';
-        if (nodes.comfortRunRound) nodes.comfortRunRound.disabled = !readyToRun;
-        if (nodes.comfortCaptureUnload) nodes.comfortCaptureUnload.disabled = !readyToCapture;
-        if (nodes.comfortMessage) nodes.comfortMessage.textContent = lastMessage;
-        renderResults();
-        options.onChange?.(getUiState());
+        options.onChange();
     }
 
-    function captureOccupied(poseId) {
-        if (!latestPressure) {
-            setMessage('尚未收到完整的 P: Monitor Neck Head 壓力資料。');
+    async function operate(work, reportError) {
+        busy = true;
+        refresh();
+        try { await work(); }
+        catch (error) { reportError(error.message, error); }
+        finally { busy = false; refresh(); }
+    }
+    function openCalibration(p) {
+        calibration = { pose: p, subject: node('Subject').value, profile: profile(), initialized: false, after: Infinity };
+        node('CalTitle').textContent = `校正${COMFORT_POSES[p].label}`;
+        node('CalEmpty').checked = node('CalStable').checked = false;
+        head.value = '7';
+        neck.value = '10';
+        calStatus = '請確認離枕，再初始化空枕。';
+        dialog.showModal();
+        refresh();
+    }
+    function closeCalibration() {
+        if (busy) return;
+        dialog.close();
+        calibration = null;
+        refresh();
+    }
+    async function startMethod(method) {
+        const rec = selection();
+        const saved = rec?.trials[pose + method];
+        if (saved) {
+            trial = saved;
+            node('Score').value = String(trial.score);
+            status = '已完成，可重新儲存本次結果圖。';
             refresh();
             return;
         }
-        const prefix = poseId === 'pose1' ? 'comfortPose1' : 'comfortPose5';
-        nodes[`${prefix}HeadAdc`].value = Math.round(latestPressure.head_adc);
-        nodes[`${prefix}NeckAdc`].value = Math.round(latestPressure.neck_adc);
-        setMessage(`已擷取${poseId === 'pose1' ? '睡姿一' : '睡姿五'}占用時最新 ADC。`);
-        refresh();
-    }
-
-    function start() {
-        if (!options.getSystemState?.().connected) {
-            setMessage('請先連線 BLE。');
+        if (isBusy() || !bothAnchors() || !sameProfile() || !connected() || !node('EmptyConfirmed').checked) return;
+        const anchor = rec.anchors[pose];
+        const plan = comfortPlan(pose, method, anchor);
+        trial = { subject: node('Subject').value, pose, method, anchor, plan, stage: 'blocked' };
+        node('Score').value = '';
+        if (plan.issues.length) {
+            status = plan.issues.join('。') + '。本次未送出充氣指令。';
             refresh();
             return;
         }
-        const setupError = validateSetup();
-        if (setupError) {
-            setMessage(setupError);
-            refresh();
-            return;
-        }
-        const built = buildRounds();
-        const targetError = validateTargets(built);
-        if (targetError) {
-            setMessage(targetError);
-            refresh();
-            return;
-        }
-        rounds = built;
-        roundIndex = 0;
-        awaitingRoundId = '';
-        status = 'running';
-        setMessage('8 輪流程已建立。請確認目前姿勢後按「送出本輪」。');
-        refresh();
+        trial.stage = 'filling';
+        node('EmptyConfirmed').checked = false;
+        status = '確認開機秒數，接著吸乾與充氣。';
+        await operate(async () => {
+            await height.prepare();
+            await height.startTimed(plan.times);
+            trial.after = performance.now();
+            trial.stage = 'empty';
+            status = '充氣已完成。保持空枕，待穩定後按「記錄空枕壓力」。';
+        }, message => { trial = null; status = message; });
     }
-
-    function runCurrentRound() {
-        const round = currentRound();
-        if (!round || status !== 'running' || round.status !== 'pending' || awaitingRoundId) return;
-        if (!options.getSystemState?.().connected) {
-            setMessage('BLE 已斷線，未送出指令。');
-            return refresh();
-        }
-        const command = round.mode === 'ADC'
-            ? `EXP02,START,${round.id},ADC,${round.targetHeadAdc},${round.targetNeckAdc}`
-            : `EXP02,START,${round.id},HEIGHT,${round.targetHeadCm.toFixed(1)},${round.targetNeckCm.toFixed(1)}`;
-        awaitingRoundId = round.id;
-        round.status = '等待 ACK';
-        options.sendCommand?.(command);
-        setMessage(`已送出 ${round.id}；等待排空、Monitor 充氣及控制完成。`);
-        refresh();
-    }
-
-    function receiveProtocolLine(line) {
-        const parts = String(line).split(',').map(value => value.trim());
-        if (parts[0] !== 'EXP02') return;
-        const round = currentRound();
-        const replyRoundId = parts[2] || '';
-        if (!round || replyRoundId !== round.id) return;
-        if (parts[1] === 'ACK') {
-            round.status = '已 ACK';
-            setMessage(`${round.id} 已由 ESP32 接收。`);
-        } else if (parts[1] === 'STATE') {
-            round.status = parts[3] || '控制中';
-            setMessage(`${round.id}：${round.status}`);
-        } else if (parts[1] === 'DONE') {
-            round.status = 'done';
-            round.actualHeadAdc = Number(parts[4]);
-            round.actualNeckAdc = Number(parts[5]);
-            awaitingRoundId = '';
-            donePressureSequence = pressureSequence;
-            setMessage('控制完成且輸出已關閉。請移開頭部，等下一筆 P 資料後評分並擷取空枕值。');
-        } else if (parts[1] === 'ERR') {
-            round.status = `錯誤：${parts[3] || 'UNKNOWN'}`;
-            awaitingRoundId = '';
-            status = 'interrupted';
-            setMessage(`${round.id} 失敗：${parts[3] || 'UNKNOWN'}`);
-        } else if (parts[1] === 'STOPPED') {
-            round.status = '已停止';
-            awaitingRoundId = '';
-            status = 'interrupted';
-            setMessage(`${round.id} 已停止。`);
+    function capturePressure() {
+        if (!stableReading(trial?.after ?? Infinity, height.getState())) return;
+        if (trial.stage === 'empty') {
+            trial.empty = { ...latest };
+            trial.after = latest.receivedMonotonicMs;
+            trial.stage = 'loaded';
+            status = `空枕壓力已保存。請以${COMFORT_POSES[trial.pose].label}躺回，穩定後記錄。`;
+        } else if (trial.stage === 'loaded') {
+            trial.loaded = { ...latest };
+            trial.stage = 'score';
+            status = '躺回壓力已保存。請詢問本次支撐的滿意度，選擇 0–10 分後儲存並截圖。';
         }
         refresh();
     }
 
-    function captureUnload() {
-        const round = currentRound();
-        if (!round || round.status !== 'done') return;
-        if (!latestPressure || pressureSequence <= donePressureSequence) {
-            setMessage('請等待 DONE 之後的新一筆 P 資料，避免保存到控制前舊值。');
-            return refresh();
-        }
-        if (nodes.comfortScore.value === '') {
-            setMessage('請先選擇舒適度 0–10 分。');
-            return refresh();
-        }
-        round.score = Number(nodes.comfortScore.value);
-        round.emptyMonitorAdc = latestPressure.monitor_adc;
-        round.emptyNeckAdc = latestPressure.neck_adc;
-        round.emptyHeadAdc = latestPressure.head_adc;
-        round.status = '完成';
-        nodes.comfortScore.value = '';
-        roundIndex += 1;
-        if (roundIndex >= rounds.length) {
-            status = 'completed';
-            setMessage('8 輪皆已完成，可以匯出 CSV 與 SVG 摘要。');
-        } else {
-            setMessage('本輪已保存。請依畫面切換姿勢／方法，再送出下一輪。');
-        }
+    for (let n = 1; n <= 10; n++) {
+        const id = 'S' + String(n).padStart(2, '0');
+        node('Subject').add(new Option(id, id));
+    }
+    for (let n = 0; n <= 10; n++) node('Score').add(new Option(String(n), String(n)));
+    node('Subject').addEventListener('change', () => {
+        pose = '1'; trial = null; status = ''; node('EmptyConfirmed').checked = false; refresh();
+    });
+    buttons('pose').forEach(button => button.addEventListener('click', () => {
+        pose = button.dataset.comfortPose; trial = null; status = ''; node('EmptyConfirmed').checked = false; refresh();
+    }));
+    buttons('method').forEach(button => button.addEventListener('click', () => startMethod(button.dataset.comfortMethod)));
+    buttons('calibrate').forEach(button => button.addEventListener('click', () => openCalibration(button.dataset.comfortCalibrate)));
+    node('CalClose').addEventListener('click', closeCalibration);
+    dialog.addEventListener('cancel', event => { event.preventDefault(); closeCalibration(); });
+    node('CalInit').addEventListener('click', () => {
+        if (!node('CalEmpty').checked || busy || calibration.initialized) return;
+        calStatus = '空枕初始化中。';
+        return operate(async () => {
+            await height.prepare();
+            const state = await height.startTimed({ monitorMs: COMFORT_MONITOR_MS, headMs: COMFORT_CHANNELS.head.minMs, neckMs: COMFORT_CHANNELS.neck.minMs });
+            const suggestion = calibration.pose === '5' ? options.getPose5Suggestion?.() : null;
+            head.value = suggestion?.head ?? state.head;
+            neck.value = suggestion?.neck ?? state.neck;
+            calibration.initialized = true;
+            calibration.after = performance.now();
+            calStatus = '請以指定姿勢躺下，依受測者感受微調頭頸高度。';
+        }, message => { calStatus = message; });
+    });
+    buttons('step').forEach(button => button.addEventListener('click', () => {
+        const [channel, delta] = button.dataset.comfortStep.split(':');
+        const input = channel === 'head' ? head : neck, spec = COMFORT_CHANNELS[channel];
+        const value = numeric(input, channel) ?? spec.minCm;
+        input.value = Math.min(spec.maxCm, Math.max(spec.minCm, value + Number(delta)));
+        node('CalStable').checked = false;
         refresh();
-    }
-
-    function endEarly() {
-        const round = currentRound();
-        if (awaitingRoundId && round) options.sendCommand?.(`EXP02,STOP,${round.id}`);
-        awaitingRoundId = '';
-        status = 'interrupted';
-        if (round && round.status !== '完成') round.status = '提前結束';
-        setMessage('實驗已提前結束；ESP32 輸出停止指令已送出。');
-        refresh();
-    }
-
-    function csvEscape(value) {
-        const text = String(value ?? '');
-        return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-    }
-
-    function download(name, blob) {
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = name;
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-    }
-
-    function exportCsv() {
-        if (!rounds.some(round => round.status === '完成')) return;
-        const headers = ['subject','round_id','pose','method','mode','head_ratio','neck_ratio',
-            'occupied_head_adc','occupied_neck_adc','target_head_adc','target_neck_adc',
-            'target_head_cm','target_neck_cm','actual_head_adc','actual_neck_adc',
-            'empty_monitor_adc','empty_neck_adc','empty_head_adc','comfort_score','status'];
-        const lines = [headers.join(',')].concat(rounds.map(round => headers.map(key => csvEscape({
-            subject: round.subject, round_id: round.id, pose: round.pose, method: round.method,
-            mode: round.mode, head_ratio: round.headRatio, neck_ratio: round.neckRatio,
-            occupied_head_adc: round.occupiedHeadAdc, occupied_neck_adc: round.occupiedNeckAdc,
-            target_head_adc: round.targetHeadAdc, target_neck_adc: round.targetNeckAdc,
-            target_head_cm: round.targetHeadCm, target_neck_cm: round.targetNeckCm,
-            actual_head_adc: round.actualHeadAdc, actual_neck_adc: round.actualNeckAdc,
-            empty_monitor_adc: round.emptyMonitorAdc, empty_neck_adc: round.emptyNeckAdc,
-            empty_head_adc: round.emptyHeadAdc, comfort_score: round.score, status: round.status
-        }[key])).join(',')));
-        const subject = rounds[0]?.subject || 'unknown';
-        download(`${subject}_experiment02.csv`, new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }));
-        const bars = rounds.filter(round => round.status === '完成').map((round, index) => {
-            const height = Number(round.score) * 14;
-            const x = 70 + index * 82;
-            return `<rect x="${x}" y="${180 - height}" width="52" height="${height}" fill="#4f7cff"/><text x="${x + 26}" y="200" text-anchor="middle" font-size="12">${round.pose}-${round.method}</text><text x="${x + 26}" y="${170 - height}" text-anchor="middle" font-size="12">${round.score}</text>`;
-        }).join('');
-        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="760" height="240" viewBox="0 0 760 240"><rect width="100%" height="100%" fill="white"/><text x="24" y="28" font-size="18">Experiment 02 comfort score</text><line x1="50" y1="180" x2="735" y2="180" stroke="#333"/>${bars}</svg>`;
-        download(`${subject}_experiment02.svg`, new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
-    }
-
-    function receivePressure(sample) {
-        if (![sample.monitor_adc, sample.neck_adc, sample.head_adc].every(Number.isFinite)) return;
-        latestPressure = { ...sample };
-        pressureSequence += 1;
-        refresh();
-    }
-
-    function onDisconnected() {
-        if (status === 'running') {
-            status = 'interrupted';
-            awaitingRoundId = '';
-            const round = currentRound();
-            if (round && round.status !== '完成') round.status = 'BLE 斷線';
-            setMessage('BLE 已斷線；本輪中止，ESP32 端會執行斷線安全停機。');
-            refresh();
+    }));
+    for (const input of [head, neck]) input.addEventListener('input', () => { node('CalStable').checked = false; refresh(); });
+    node('CalApply').addEventListener('click', () => {
+        const [h, n] = targetHeights();
+        if (h === null || n === null || !height.getState().ready) return;
+        node('CalStable').checked = false;
+        calStatus = '等待裝置到位。';
+        return operate(async () => {
+            if (height.getState().head !== h) await height.adjust('HEAD', h);
+            if (height.getState().neck !== n) await height.adjust('NECK', n);
+            calibration.after = performance.now();
+            calStatus = '高度到位，請確認姿勢、穩定度與滿意度。';
+        }, message => { calibration.initialized = false; calStatus = message; });
+    });
+    node('CalSave').addEventListener('click', () => {
+        if (node('CalSave').disabled || JSON.stringify(profile()) !== JSON.stringify(calibration.profile)) {
+            calStatus = '基本資料已變更，請關閉並重新開啟校正。'; refresh(); return;
         }
-    }
-
-    function getUiState() {
-        const connected = Boolean(options.getSystemState?.().connected);
-        return {
-            status,
-            statusText: status === 'completed' ? '已完成' : status === 'running' ? '進行中' :
-                status === 'interrupted' ? '已中止' : '尚未開始',
-            running: status === 'running',
-            startDisabled: status === 'running' || !connected,
-            finishDisabled: status !== 'running',
-            exportDisabled: !rounds.some(round => round.status === '完成'),
-            hint: lastMessage
-        };
-    }
-
-    function init() {
-        if (initialized || !root) return;
-        bindNodes();
-        nodes.comfortCapturePose1?.addEventListener('click', () => captureOccupied('pose1'));
-        nodes.comfortCapturePose5?.addEventListener('click', () => captureOccupied('pose5'));
-        nodes.comfortRunRound?.addEventListener('click', runCurrentRound);
-        nodes.comfortCaptureUnload?.addEventListener('click', captureUnload);
-        nodes.comfortScore?.addEventListener('change', refresh);
-        initialized = true;
-        refresh();
-    }
-
-    init();
+        const state = height.getState();
+        const rec = selection() || { anchors: {}, trials: {}, profile: calibration.profile };
+        rec.anchors[calibration.pose] = { head: state.head, neck: state.neck, pressure: { ...latest } };
+        records.set(calibration.subject, rec);
+        status = bothAnchors() ? '兩個基準已保存。選好儲存資料夾後即可截圖，並可開始方法測試。' : '基準已保存，請完成另一個姿勢。';
+        closeCalibration();
+    });
+    if (!canPickFolder) node('FolderStatus').textContent = '請在 Chrome 或 Edge 開啟網頁，以選擇本機儲存資料夾。';
+    node('Folder').addEventListener('click', () => {
+        if (node('Folder').disabled) return;
+        operate(async () => {
+            folder = await window.showDirectoryPicker({ mode: 'readwrite', id: 'ipillow-experiment-02' });
+            node('FolderStatus').textContent = `儲存位置：${folder.name}`;
+        }, (message, error) => {
+            if (error.name !== 'AbortError') status = `選擇資料夾失敗：${message}`;
+        });
+    });
+    node('AnchorShot').addEventListener('click', () => {
+        if (node('AnchorShot').disabled) return;
+        const rec = selection(), id = node('Subject').value;
+        const name = `${id}_00_校正總覽.svg`;
+        operate(async () => {
+            const saved = await saveComfortImage(folder, name, {
+                title: `${id}｜實驗 02 校正總覽`,
+                details: [comfortProfileText(rec.profile), 'Monitor 固定 14.5 秒。校正值為滿意度 10 分時的單筆快照。',
+                    ...['1', '5'].flatMap(p => [`${COMFORT_POSES[p].label}｜${rec.anchors[p].pressure.timestamp_iso}`, ...comfortAnchorText(rec.anchors[p])])],
+                sections: []
+            });
+            status = saved ? `已儲存 ${name}` : '已取消覆蓋，原檔保留。';
+        }, message => { status = `截圖儲存失敗：${message}`; });
+    });
+    for (const id of ['EmptyConfirmed', 'CalEmpty', 'CalStable', 'Score']) node(id).addEventListener('change', refresh);
+    node('Capture').addEventListener('click', capturePressure);
+    node('Cancel').addEventListener('click', () => {
+        if (!busy) { trial = null; status = '已取消本次測試，請重新確認離枕再選方法。'; refresh(); }
+    });
+    node('ResultShot').addEventListener('click', () => {
+        if (node('ResultShot').disabled) return;
+        const result = { ...trial, score: Number(node('Score').value), saved: true };
+        const name = `${result.subject}_${COMFORT_POSES[result.pose].label}_${result.method}.svg`;
+        operate(async () => {
+            if (!(await saveComfortImage(folder, name, comfortReport(result)))) {
+                status = '已取消覆蓋，原檔保留。';
+                return;
+            }
+            selection().trials[result.pose + result.method] = result;
+            trial = result;
+            status = `已儲存 ${name}`;
+        }, message => { status = `截圖儲存失敗：${message}`; });
+    });
+    setInterval(() => { if (root.isConnected) refresh(); }, 250);
     return {
-        start, endEarly, exportCsv, refresh, receivePressure, receiveProtocolLine,
-        onDisconnected, getUiState,
-        isRunning: () => status === 'running',
-        isBusy: () => status === 'running',
-        needsLeaveProtection: () => status === 'running'
+        refresh, isBusy, isHolding, needsLeaveProtection: () => records.size > 0 || isBusy(),
+        getUiState: () => ({
+            status: bothAnchors() ? 'completed' : 'idle',
+            statusText: busy ? '裝置設定中' : bothAnchors() ? '兩姿勢已校正' : '待完成校正',
+            hint: '校正與測試快照暫存在本頁。請在離開前確認所有 SVG 均已存入選定的資料夾。'
+        }),
+        receivePressure: sample => { if (!latest || sample.receivedMonotonicMs >= latest.receivedMonotonicMs) latest = { ...sample }; },
+        onDisconnected: () => {
+            latest = null;
+            node('EmptyConfirmed').checked = false;
+            if (calibration) {
+                calibration.initialized = false;
+                node('CalEmpty').checked = node('CalStable').checked = false;
+                calStatus = 'BLE 已斷線，請重新確認離枕並初始化。';
+            }
+            if (active() && !trial.loaded && !busy) { trial = null; status = 'BLE 已斷線，本次量測中止。'; }
+            if (root.isConnected) refresh();
+        }
     };
 }
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { comfortPlan, comfortReport };

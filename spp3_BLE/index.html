@@ -726,64 +726,14 @@ https://fustyles.github.io/webduino/WebSerial.html
 					<div>指令</div><div>用途</div><div>範例</div>
 					<code>MANUAL,ENTER</code><div>進入 ESP32 Manual 控制。</div><code>MANUAL,ENTER</code>
 					<code>MANUAL,STOP</code><div>停止所有輸出，保留 Manual 狀態。</div><code>MANUAL,STOP</code>
-					<code>MANUAL,FILL,&lt;MONITOR|HEAD&gt;</code><div>Monitor 或 Head 連續充氣。</div><code>MANUAL,FILL,HEAD</code>
-					<code>MANUAL,FILL,NECK,&lt;ms&gt;</code><div>頸部限時充氣；須通過氣量與 14 cm 安全檢查。</div><code>MANUAL,FILL,NECK,500</code>
+					<code>MANUAL,FILL,&lt;MONITOR|NECK|HEAD&gt;</code><div>單顆氣囊充氣。</div><code>MANUAL,FILL,HEAD</code>
 					<code>MANUAL,DRAIN,&lt;MONITOR|NECK|HEAD|ALL&gt;</code><div>單顆或全部吸氣/洩氣。</div><code>MANUAL,DRAIN,ALL</code>
 					<code>MANUAL,STARTUP,&lt;head_cm&gt;,&lt;neck_cm&gt;</code><div>離開 Manual 並回開機流程。</div><code>MANUAL,STARTUP,7.0,10.0</code>
 				</div>
 				<p class="command-note">在 Manual 狀態下，舊式 <code>reset,</code> 只會停止輸出並停留在 Manual；要回開機流程請用 <code>MANUAL,STARTUP,...</code>。</p>
 			</section>
-			<section>
-				<h3>Experiment 02 控制</h3>
-				<div class="command-table">
-					<div>指令</div><div>用途</div><div>範例</div>
-					<code>EXP02,START,&lt;round&gt;,ADC,&lt;head&gt;,&lt;neck&gt;</code><div>嚴格排空後，以 ADC 目標控制。</div><code>EXP02,START,E02-01-POSE1-R,ADC,2200000,2300000</code>
-					<code>EXP02,START,&lt;round&gt;,HEIGHT,&lt;head_cm&gt;,&lt;neck_cm&gt;</code><div>嚴格排空後，以原高度法控制。</div><code>EXP02,START,E02-04-POSE1-I,HEIGHT,8.0,10.5</code>
-					<code>EXP02,STOP,&lt;round&gt;</code><div>停止指定 round 並關閉氣動輸出。</div><code>EXP02,STOP,E02-01-POSE1-R</code>
-					<code>EXP02,STATUS</code><div>查詢 Experiment 02 狀態。</div><code>EXP02,STATUS</code>
-				</div>
-			</section>
 		</div>
 	</dialog>
-
-	<template id="comfortExperimentTemplate">
-		<div class="comfort-experiment">
-			<p class="pressure-purpose">比較 R（論文比例）、M（30 人資料比例）、A（兩者平均）與 I（原高度法），共 2 種姿勢 × 4 種方法＝8 輪。R／M 正式比例須由研究資料填入，系統不預設猜測值。</p>
-			<fieldset class="pressure-run-settings">
-				<legend>基本資料與正式下降比例</legend>
-				<div class="pressure-field pressure-field-wide"><label for="comfortSubject">受試者編號</label><input id="comfortSubject" type="text" maxlength="24" placeholder="例如 S01"></div>
-				<div class="comfort-ratio-grid pressure-field-wide">
-					<strong>姿勢</strong><strong>R Head</strong><strong>R Neck</strong><strong>M Head</strong><strong>M Neck</strong>
-					<span>睡姿一</span><input id="comfortPose1RHeadRatio" type="number" min="0" max="0.999" step="0.001" placeholder="0–1"><input id="comfortPose1RNeckRatio" type="number" min="0" max="0.999" step="0.001" placeholder="0–1"><input id="comfortPose1MHeadRatio" type="number" min="0" max="0.999" step="0.001" placeholder="0–1"><input id="comfortPose1MNeckRatio" type="number" min="0" max="0.999" step="0.001" placeholder="0–1">
-					<span>睡姿五</span><input id="comfortPose5RHeadRatio" type="number" min="0" max="0.999" step="0.001" placeholder="0–1"><input id="comfortPose5RNeckRatio" type="number" min="0" max="0.999" step="0.001" placeholder="0–1"><input id="comfortPose5MHeadRatio" type="number" min="0" max="0.999" step="0.001" placeholder="0–1"><input id="comfortPose5MNeckRatio" type="number" min="0" max="0.999" step="0.001" placeholder="0–1">
-				</div>
-				<p class="pressure-field-wide pressure-field-hint">比例請用小數，例如下降 12% 填 0.12。A 法會分別以 Head、Neck 的 (R＋M)÷2 自動計算。</p>
-			</fieldset>
-			<div class="comfort-calibration-grid">
-				<fieldset class="pressure-run-settings">
-					<legend>睡姿一校正</legend>
-					<label>占用 Head ADC<input id="comfortPose1HeadAdc" type="number"></label><label>占用 Neck ADC<input id="comfortPose1NeckAdc" type="number"></label>
-					<button id="comfortCapturePose1" type="button">擷取最新占用 ADC</button>
-					<label>I 法 Head（cm）<input id="comfortPose1HeadCm" type="number" min="7" max="16" step="0.5"></label><label>I 法 Neck（cm）<input id="comfortPose1NeckCm" type="number" min="10" max="14" step="0.5"></label>
-				</fieldset>
-				<fieldset class="pressure-run-settings">
-					<legend>睡姿五校正</legend>
-					<label>占用 Head ADC<input id="comfortPose5HeadAdc" type="number"></label><label>占用 Neck ADC<input id="comfortPose5NeckAdc" type="number"></label>
-					<button id="comfortCapturePose5" type="button">擷取最新占用 ADC</button>
-					<label>I 法 Head（cm）<input id="comfortPose5HeadCm" type="number" min="7" max="16" step="0.5"></label><label>I 法 Neck（cm）<input id="comfortPose5NeckCm" type="number" min="10" max="14" step="0.5"></label>
-				</fieldset>
-			</div>
-			<dl class="pressure-live-grid">
-				<div><dt>進度</dt><dd><output id="comfortProgress">0 / 8</output></dd></div>
-				<div><dt>目前輪次</dt><dd><output id="comfortCurrentRound">-</output></dd></div>
-				<div><dt>控制目標</dt><dd><output id="comfortTarget">-</output></dd></div>
-				<div><dt>ESP32 狀態</dt><dd><output id="comfortFirmwareState">尚未開始</output></dd></div>
-			</dl>
-			<div class="button-row"><button id="comfortRunRound" type="button" disabled>確認姿勢並送出本輪</button><label for="comfortScore">舒適度（0–10）</label><select id="comfortScore"><option value="">請選擇</option><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select><button id="comfortCaptureUnload" type="button" disabled>擷取空枕值並保存</button></div>
-			<p id="comfortMessage" class="pressure-run-summary" role="status">請先填入正式比例與兩種姿勢的校正資料。</p>
-			<div class="comfort-results-wrap"><table class="comfort-results"><thead><tr><th>姿勢</th><th>方法</th><th>狀態</th><th>分數</th><th>空枕 Head</th><th>空枕 Neck</th></tr></thead><tbody id="comfortResults"></tbody></table></div>
-		</div>
-	</template>
 
 	<template id="pressureExperimentTemplate">
 		<div class="pressure-experiment">
@@ -882,6 +832,87 @@ https://fustyles.github.io/webduino/WebSerial.html
 			<p id="pressureChartDescription" class="pressure-field-hint">橫軸為本輪經過時間 0–30 秒，縱軸為 ADC；曲線為 Monitor、Neck、Head。切換條件會顯示該條件的上輪曲線，沒有紀錄時顯示空圖；其他條件的結果仍暫存在本頁。</p>
 			<p id="pressureRunSummary" class="pressure-run-summary" role="status" aria-live="polite">尚無本輪收集結果。</p>
 			<p class="pressure-field-hint">「匯出 CSV＋線圖」會下載同名的 CSV 與 PNG，請確認兩個檔案都已保存。各條件只保留最後一輪於本頁記憶體，離開或重新整理會遺失；瀏覽器若詢問多個檔案下載，請允許。</p>
+		</div>
+	</template>
+
+	<template id="comfortExperimentTemplate">
+		<div class="comfort-experiment">
+			<section class="comfort-section">
+				<h4>受測者</h4>
+				<label for="comfortSubject">受測者編號</label>
+				<select id="comfortSubject"><option value="">請選擇受測者</option></select>
+				<p id="comfortProfile" class="pressure-field-hint"></p>
+				<button type="button" id="comfortFolder" aria-describedby="comfortFolderStatus">選擇儲存資料夾</button>
+				<p id="comfortFolderStatus" class="pressure-field-hint" role="status">尚未選擇儲存資料夾</p>
+			</section>
+			<section class="comfort-section">
+				<h4>兩姿勢校正</h4>
+				<div class="pressure-calibration-saved">
+					<section><h4>姿勢一 · 仰躺</h4><output id="comfortAnchor1">尚未校正</output><button type="button" data-comfort-calibrate="1">校正姿勢一</button></section>
+					<section><h4>姿勢五 · 正側躺</h4><output id="comfortAnchor5">尚未校正</output><button type="button" data-comfort-calibrate="5">校正姿勢五</button></section>
+				</div>
+				<button type="button" id="comfortAnchorShot" disabled>截圖並儲存校正總覽</button>
+			</section>
+			<section class="comfort-section">
+				<h4>方法測試</h4>
+				<p id="comfortProgress">姿勢一 0／4 · 姿勢五 0／4</p>
+				<div class="comfort-buttons" role="group" aria-label="測試姿勢">
+					<button type="button" data-comfort-pose="1" aria-pressed="true">姿勢一</button>
+					<button type="button" data-comfort-pose="5" aria-pressed="false">姿勢五</button>
+				</div>
+				<p class="pressure-field-hint">Monitor 固定 14.5 秒。請先確認離枕，再按方法開始吸乾與充氣。</p>
+				<label><input type="checkbox" id="comfortEmptyConfirmed"> 已確認受測者離枕</label>
+				<div class="comfort-buttons" role="group" aria-label="支撐方法">
+					<button type="button" data-comfort-method="R">R · 論文</button>
+					<button type="button" data-comfort-method="M">M · 30 人</button>
+					<button type="button" data-comfort-method="A">A · 平均</button>
+					<button type="button" data-comfort-method="I">I · 高度</button>
+				</div>
+				<p id="comfortStatus" class="pressure-field-hint" role="status" aria-live="polite"></p>
+				<p id="comfortLive" class="pressure-field-hint"></p>
+				<div id="comfortTrial" hidden></div>
+				<div class="comfort-buttons">
+					<button type="button" class="primary" id="comfortCapture" hidden>記錄空枕壓力</button>
+					<button type="button" id="comfortCancel" hidden>取消本次測試</button>
+				</div>
+				<div id="comfortScoreGroup" hidden>
+					<label id="comfortScoreLabel" for="comfortScore">滿意度（0–10 分）</label>
+					<select id="comfortScore"><option value="">請選擇分數</option></select>
+				</div>
+				<button type="button" class="primary" id="comfortResultShot" aria-describedby="comfortResultShotHint" disabled>截圖並儲存本次結果</button>
+				<p id="comfortResultShotHint" class="pressure-field-hint">選好資料夾、記錄躺回壓力並選擇滿意度後，即可截圖儲存。</p>
+			</section>
+			<dialog id="comfortCalibration" class="comfort-dialog" aria-labelledby="comfortCalTitle">
+				<div class="comfort-dialog-heading">
+					<h3 id="comfortCalTitle">姿勢校正</h3>
+					<button type="button" id="comfortCalClose" aria-label="關閉校正">×</button>
+				</div>
+				<p id="comfortCalStatus" class="pressure-field-hint" role="status" aria-live="polite"></p>
+				<label><input type="checkbox" id="comfortCalEmpty"> 已確認受測者離枕</label>
+				<button type="button" id="comfortCalInit">初始化空枕（Monitor 14.5 秒）</button>
+				<div class="comfort-height-fields">
+					<div>
+						<label for="comfortCalHead">頭部目標（cm）</label>
+						<div class="pressure-height-stepper">
+							<button type="button" data-comfort-step="head:-0.5" aria-label="降低頭部 0.5 cm">−</button>
+							<input id="comfortCalHead" type="number" min="7" max="16" step="0.5">
+							<button type="button" data-comfort-step="head:0.5" aria-label="升高頭部 0.5 cm">＋</button>
+						</div>
+					</div>
+					<div>
+						<label for="comfortCalNeck">頸部目標（cm）</label>
+						<div class="pressure-height-stepper">
+							<button type="button" data-comfort-step="neck:-0.5" aria-label="降低頸部 0.5 cm">−</button>
+							<input id="comfortCalNeck" type="number" min="10" max="14" step="0.5">
+							<button type="button" data-comfort-step="neck:0.5" aria-label="升高頸部 0.5 cm">＋</button>
+						</div>
+					</div>
+				</div>
+				<p id="comfortCalLive" class="pressure-field-hint"></p>
+				<button type="button" id="comfortCalApply">套用高度</button>
+				<label><input type="checkbox" id="comfortCalStable"> 已確認指定姿勢、壓力穩定且滿意度 10 分</label>
+				<button type="button" class="primary" id="comfortCalSave">校正完成</button>
+			</dialog>
 		</div>
 	</template>
 

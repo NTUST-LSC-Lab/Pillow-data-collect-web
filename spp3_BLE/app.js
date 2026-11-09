@@ -2620,9 +2620,6 @@
 				if (completeBleReceipt && serial_ready && typeof experimentHeightControl !== 'undefined' && experimentHeightControl) {
 					experimentHeightControl.receiveLine(dataString.trim(), completeBleReceipt);
 				}
-				if (completeBleReceipt && serial_ready && experimentHubModule?.receiveProtocolLine) {
-					experimentHubModule.receiveProtocolLine(dataString.trim(), completeBleReceipt);
-				}
 				debugDataBuffer += `${msg}\n`;
 				if (debugDataBuffer.includes('N2LP=')) {
 					let cleanedData = debugDataBuffer.replace(/\r?\n|\r/g, ' ').replace(/\s+/g, ' ').trim();
@@ -3017,6 +3014,7 @@
 			experimentHeightControl = createExperimentHeightControl({
 				isConnected: () => Boolean(serial_ready && bluetoothDevice?.gatt?.connected),
 				isRecording: () => Boolean(experimentHubModule?.isRunning()),
+				isHolding: () => Boolean(experimentHubModule?.isComfortHolding()),
 				sendCommand: command => sendCommand(command, { experimentHeight: true }),
 				sendQuery: command => command === 'DEBUG' ? requestSilentDebugSnapshot() : sendSilentCommand(command),
 				stopAutomatic: () => {
@@ -3043,11 +3041,11 @@
 					connected: Boolean(serial_ready && bluetoothDevice?.gatt?.connected),
 					autoHeightPossible: controlMode === CONTROL_MODE.AUTO || predEnabled || predStartRequested
 				}),
-				comfortConfig: {
-					experimentId: '02',
-					title: 'R／M／A／I 四種支撐策略之舒適度比較'
-				},
-				sendCommand: command => sendCommand(command, { experimentHeight: true }),
+				comfortConfig: { experimentId: '02', title: '壓力補償與高度控制之舒適度比較' },
+				getComfortProfile: () => ({
+					...getExperimentUserProfile(),
+					gender: document.querySelector('input[name="gender"]:checked')?.value ?? null
+				}),
 				heightControl: experimentHeightControl,
 				getUserProfile: getExperimentUserProfile,
 				getPose5Suggestion: getExperimentPose5Suggestion

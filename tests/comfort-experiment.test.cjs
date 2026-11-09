@@ -1,32 +1,56 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
+const { comfortPlan, comfortReport } = require('../spp3_BLE/comfort-experiment.js');
 
-const root = path.resolve(__dirname, '..');
-const controller = fs.readFileSync(path.join(root, 'spp3_BLE/comfort-experiment.js'), 'utf8');
-const app = fs.readFileSync(path.join(root, 'spp3_BLE/app.js'), 'utf8');
-const html = fs.readFileSync(path.join(root, 'spp3_BLE/index.html'), 'utf8');
+const anchor = {
+    head: 9,
+    neck: 12,
+    pressure: { head_adc: 2045000, neck_adc: 2200000, monitor_adc: 1950000 }
+};
 
-test('Experiment 02 uses round-scoped START/STOP and receives complete protocol lines', () => {
-    assert.match(controller, /EXP02,START,\$\{round\.id\},ADC,/);
-    assert.match(controller, /EXP02,START,\$\{round\.id\},HEIGHT,/);
-    assert.match(controller, /EXP02,STOP,\$\{round\.id\}/);
-    assert.match(controller, /replyRoundId !== round\.id/);
-    assert.match(app, /experimentHubModule\.receiveProtocolLine\(dataString\.trim\(\), completeBleReceipt\)/);
+test('Experiment 02 uses the configured R and M ratios and averages them per pose and channel', () => {
+    const expected = {
+        '1': { R: [0.33, 10.52], M: [3.1331, 9.3909], A: [1.7315, 9.9554] },
+        '5': { R: [0.34, 5.89], M: [4.9074, 8.7339], A: [2.6237, 7.3119] }
+    };
+
+    for (const [pose, methods] of Object.entries(expected)) {
+        for (const [method, percentages] of Object.entries(methods)) {
+            const { targets, times } = comfortPlan(pose, method, anchor);
+            for (const [index, channel] of ['head', 'neck'].entries()) {
+                assert.equal(Number((targets[channel].ratio * 100).toFixed(4)), percentages[index]);
+                assert.equal(targets[channel].adc, anchor.pressure[channel + '_adc'] * (1 - targets[channel].ratio));
+            }
+            assert.equal(times.monitorMs, 14500);
+        }
+    }
 });
 
-test('R and M are explicit operator inputs while A and ADC targets are calculated', () => {
-    assert.match(html, /id="comfortPose1RHeadRatio"[^>]*placeholder="0–1"/);
-    assert.match(html, /id="comfortPose5MNeckRatio"[^>]*placeholder="0–1"/);
-    assert.match(controller, /return \(r \+ m\) \/ 2/);
-    assert.match(controller, /Math\.round\(round\.occupiedHeadAdc \* \(1 - round\.headRatio\)\)/);
-    assert.match(controller, /Math\.round\(round\.occupiedNeckAdc \* \(1 - round\.neckRatio\)\)/);
+test('height control uses the calibration heights and out-of-range ADC-derived timings are rejected', () => {
+    const heightPlan = comfortPlan('5', 'I', anchor);
+    assert.deepEqual(heightPlan.times, { monitorMs: 14500, headMs: 53585, neckMs: 30000 });
+    assert.deepEqual(heightPlan.targets, {});
+    assert.deepEqual(heightPlan.issues, []);
+
+    const lowPressure = { ...anchor, pressure: { ...anchor.pressure, head_adc: 1800000 } };
+    const pressurePlan = comfortPlan('1', 'M', lowPressure);
+    assert.ok(pressurePlan.times.headMs < 30000);
+    assert.match(pressurePlan.issues.join(' '), /Head.*超出裝置範圍/);
 });
 
-test('empty-pillow capture requires DONE and a newer complete pressure sample', () => {
-    assert.match(controller, /donePressureSequence = pressureSequence/);
-    assert.match(controller, /pressureSequence > donePressureSequence/);
-    assert.match(controller, /pressureSequence <= donePressureSequence/);
-    assert.match(controller, /round\.status !== 'done'/);
+test('the saved report keeps a zero score and separates empty and occupied pressure checks', () => {
+    const report = comfortReport({
+        subject: 'S01',
+        pose: '1',
+        method: 'R',
+        anchor,
+        plan: comfortPlan('1', 'R', anchor),
+        empty: { head_adc: 1980000, neck_adc: 1930000, monitor_adc: 1770000 },
+        loaded: { head_adc: 2035000, neck_adc: 2121000, monitor_adc: 1950000 },
+        score: 0
+    });
+    assert.ok(report.details.includes('滿意度：0／10'));
+    assert.match(report.sections[0].title, /空枕/);
+    assert.match(report.sections[1].title, /躺回後/);
+    assert.match(report.sections[1].rows.find(row => row[0] === 'Head')[3], /−10,000 ADC/);
 });

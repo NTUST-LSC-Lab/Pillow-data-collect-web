@@ -36,6 +36,9 @@ function createExperimentHeightControl(options) {
         settledHeights = null;
     }
     function invalidate(message) {
+        if (pending?.type === 'startup' && pending.phase !== 'read-original' && !pending.restored) {
+            message += '；原開機秒數尚未確認恢復，請檢查裝置設定';
+        }
         prepared = false;
         clearSettled();
         reason = message;
@@ -73,6 +76,12 @@ function createExperimentHeightControl(options) {
             return;
         }
         if (!prepared) return;
+        if (pending?.type === 'startup') {
+            if (pending.phase === 'filling' && pending.acknowledged && pending.sawStartup && !blockedReason()) {
+                writeStartupTimes('restore', pending.originalTimes);
+            }
+            if (pending?.phase !== 'done') return;
+        }
         const blocked = blockedReason();
         if (blocked) {
             reason = blocked;
@@ -163,11 +172,85 @@ function createExperimentHeightControl(options) {
         }
         return promise;
     }
+    function sendStartupPhase(phase, commands, timeoutMs = 15000) {
+        pending.phase = phase;
+        pending.deadlineMs = now() + timeoutMs;
+        pending.commands = new Set(commands);
+        pending.readback = null;
+        pending.readIssuedAt = null;
+        try {
+            for (const command of commands) options.sendCommand(command);
+        } catch (error) {
+            invalidate(`開機設定指令失敗：${error.message}`);
+        }
+    }
+    function writeStartupTimes(phase, times) {
+        sendStartupPhase(phase, [
+            `SET,MONITOR,${times.Monitor}`, `SET,NECK,${times.Neck}`, `SET,HEAD,${times.Head}`, 'GET,INFT,ALL'
+        ]);
+    }
+    function startTimed(times) {
+        const monitor = times.monitorMs, neck = times.neckMs, head = times.headMs;
+        // Match the existing firmware's SET clamp so a changed time cannot silently define a trial.
+        if (monitor !== 14500 || !Number.isInteger(neck) || neck < 10000 || neck > 50000 ||
+            !Number.isInteger(head) || head < 30000 || head > 136132) {
+            return Promise.reject(new Error('充氣時間超出 ESP32 設定範圍'));
+        }
+        const state = getState();
+        if (recording() || !state.ready) return Promise.reject(new Error(state.reason || '裝置尚未待機'));
+        const promise = operation('startup', now() + 15000, {
+            times: { Monitor: monitor, Neck: neck, Head: head }, acknowledged: false, sawStartup: false
+        });
+        clearSettled();
+        sendStartupPhase('read-original', ['GET,INFT,ALL']);
+        return promise;
+    }
+    function receiveStartup(line, time) {
+        const op = pending;
+        if (op?.type !== 'startup') return;
+        if (op.phase === 'filling' && /^MANUAL,OK,STARTUP,/.test(line) && op.startIssuedAt !== undefined && time >= op.startIssuedAt) {
+            op.acknowledged = true;
+            requiredReceiptMs = time;
+            debugBuffer = null;
+            debug = null;
+            io = null;
+            return;
+        }
+        if (op.readIssuedAt === null || time < op.readIssuedAt) return;
+        const match = /^(Monitor|Neck|Head):\s*(\d+)$/.exec(line);
+        if (!match) return;
+        const [, channel, value] = match;
+        if (channel === 'Monitor') op.readback = {};
+        if (!op.readback) return;
+        op.readback[channel] = Number(value);
+        if (channel !== 'Head' || Object.keys(op.readback).length !== 3) return;
+        if (op.phase === 'read-original') {
+            op.originalTimes = op.readback;
+            writeStartupTimes('verify', op.times);
+        } else if (op.phase === 'verify') {
+            if (!Object.keys(op.times).every(key => op.readback[key] === op.times[key])) {
+                op.settingsRejected = true;
+                writeStartupTimes('restore', op.originalTimes);
+                return;
+            }
+            // ACK is followed by actual DRAIN/FILL activity and a fresh, idle DEBUG/I pair.
+            sendStartupPhase('filling', ['MANUAL,STARTUP,7.0,10.0'], 420000 + op.times.Monitor + op.times.Neck + op.times.Head + 30000);
+        } else if (op.phase === 'restore') {
+            if (!Object.keys(op.originalTimes).every(key => op.readback[key] === op.originalTimes[key])) {
+                invalidate('開機秒數讀回不符');
+            } else {
+                op.restored = true;
+                if (op.settingsRejected) invalidate('裝置讀回的充氣秒數與設定不符，未啟動充氣');
+                else op.phase = 'done';
+            }
+        }
+    }
     function receiveLine(line, receipt) {
         protectedHeightReply = false;
         if (!receipt || !Number.isFinite(receipt.receivedMonotonicMs) || !connected()) return;
         const time = receipt.receivedMonotonicMs;
         const parts = line.trim().split(',').map(value => value.trim());
+        receiveStartup(line.trim(), time);
         if (parts[0] === 'FEATURE' && parts[1] === 'STATUS') {
             features = { pred: number(parts[parts.indexOf('PRED') + 1]), legacy: number(parts[parts.indexOf('LEGACY') + 1]), receivedMonotonicMs: time };
             if ((features.pred !== 0 || features.legacy !== 0) && pending?.type !== 'prepare' && prepared) invalidate('自動控制已啟動，請重新準備');
@@ -199,6 +282,8 @@ function createExperimentHeightControl(options) {
         const match = /^I:\s*(-?\d+)\s+(\d+)\s+(\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)$/.exec(line.trim());
         if (match) {
             io = { state: Number(match[2]), outputs: Number(match[3]), receivedMonotonicMs: time };
+            if (pending?.type === 'startup' && pending.acknowledged && time >= requiredReceiptMs &&
+                io.state >= 1 && io.state <= 4) pending.sawStartup = true;
             if (io.state !== 5 || io.outputs !== 0) {
                 clearSettled();
                 if (prepared && io.state === 9) invalidate('ESP32 處於 MANUAL 模式，請先由既有流程回到一般待機');
@@ -239,6 +324,18 @@ function createExperimentHeightControl(options) {
     // Called at actual queue execution, so an already queued conflicting command is covered.
     function allowCommand(command, owned = false) {
         if (owned) {
+            if (pending?.type === 'startup') {
+                const next = command.trim();
+                if (!connected() || !pending.commands.has(next)) return false;
+                if (blockedReason()) {
+                    invalidate('送出前裝置未處於安全待機，已中止定時設定');
+                    return false;
+                }
+                pending.commands.delete(next);
+                if (next === 'GET,INFT,ALL') pending.readIssuedAt = now();
+                if (next.startsWith('MANUAL,STARTUP,')) pending.startIssuedAt = now();
+                return true;
+            }
             if (!connected() || pending?.type !== 'adjust' || command.trim() !== pending.command) return false;
             // A delayed queue must not use the state that was fresh when the button was clicked.
             if (recording() || !features || features.pred !== 0 || features.legacy !== 0 ||
@@ -251,14 +348,14 @@ function createExperimentHeightControl(options) {
             return true;
         }
         const commands = String(command).trim().toUpperCase().split(/[\r\n]+/);
-        const readOnly = /^(P|I|DEBUG|FEATURE,STATUS|ANCHOR,(STATUS|GET)(,.*)?|CLASSIFY,GET|PRED,GET|SYNCTIME,.*|RGB,.*)$/;
+        const readOnly = /^(P|I|DEBUG|FEATURE,STATUS|GET,INFT,ALL|ANCHOR,(STATUS|GET)(,.*)?|CLASSIFY,GET|PRED,GET|SYNCTIME,.*|RGB,.*)$/;
         const stopOnly = /^(PRED,STOP|CLASSIFY,STOP|FEATURE,(PRED|LEGACY),OFF|MANUAL,STOP)$/;
         if (commands.every(value => readOnly.test(value))) return true;
         if (commands.every(value => stopOnly.test(value))) {
             if (commands.includes('MANUAL,STOP') && (prepared || pending)) invalidate('手動停止已送出，請重新準備實驗高度控制');
             return true;
         }
-        if (pending) return false;
+        if (pending || options.isHolding?.()) return false;
         if (prepared) invalidate('其他控制指令已送出，請重新準備實驗高度控制');
         lastOwnedTargets = null;
         return true;
@@ -275,7 +372,7 @@ function createExperimentHeightControl(options) {
     function onTransportError(error) {
         if (prepared || pending) invalidate(`BLE 指令失敗：${error.message}；請重新準備`);
     }
-    return { prepare, adjust, getState, tick, receiveLine, allowCommand, onDisconnected, onTransportError,
+    return { prepare, adjust, startTimed, getState, tick, receiveLine, allowCommand, onDisconnected, onTransportError,
         ownsHeightReply: () => protectedHeightReply };
 }
 

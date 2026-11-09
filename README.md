@@ -1,20 +1,18 @@
-# Pillow Data Collect Web - spp3_BLE_v4
+# Pillow Data Collect Web - spp3_BLE_v4.1
 
 台科大智慧枕墊資料收集系統（iPillow Web）。主要入口是 `spp3_BLE/`，以純 HTML／CSS／JavaScript 透過 Web Bluetooth 與 ESP32 溝通，提供資料收集、校正、控制與監測介面。
 
-本版以 `spp3_BLE_cls_pre_v3.1` 為基礎，提供可收合的「實驗專區」、Experiment 01 兩姿勢獨立手動高度校正、30 秒壓力資料收集、條件曲線保存與 CSV＋PNG 匯出。保留既有雙欄介面、截圖精靈、BLE queue、IndexedDB、全站 Export Data、校正、分類、PRED 與 Manual 控制。
+v4.1 在既有 Experiment 01 壓力資料收集之外，新增 [Experiment 02 壓力補償與高度控制之舒適度比較](#experiment-02-壓力補償與高度控制之舒適度比較)。實驗 02 提供兩姿勢校正、R／M／A／I 四種支撐設定、空枕與躺回壓力快照、0～10 分評分，以及 SVG 儲存至指定資料夾。Experiment 01 仍提供 30 秒記錄和 CSV＋PNG 匯出。
 
-更新時間：`2026-11-04 18:29:50 CST (+0800)`（Asia/Taipei）
+更新日期 **2026-11-08**（Asia/Taipei）。
 
-目前驗證狀態：**Node 回歸 111／111 通過；Chrome 156.0.8078.80＋Chart.js 4.6.1 合成資料測試通過，包含桌面與 320 px 版面。ESP32 實機微調、到位、收數與中斷驗收，以及完整鍵盤操作尚未完成。** 這些測試不代表辨識穩健性已獲驗證；歷史 50 項測試紀錄另列於下方歷史更新段落。
+v4.1 已通過 **111 項 Node 回歸測試**。實驗 02 的 Chrome 模擬裝置測試涵蓋校正、充氣秒數讀回、0 分及 10 分、SVG 資料夾寫入、同名檔確認與寫入失敗後重試。實際 ESP32 充氣及系統資料夾選擇視窗仍待驗證。Experiment 01 的測試紀錄保留在各節。
 
 ## 對應版本
 
 - Web repo：[`NTUST-LSC-Lab/Pillow-data-collect-web`](https://github.com/NTUST-LSC-Lab/Pillow-data-collect-web)
-- Web branch：[`spp3_BLE_v4`](https://github.com/NTUST-LSC-Lab/Pillow-data-collect-web/tree/spp3_BLE_v4)
-- Web 基底：`spp3_BLE_cls_pre_v3.1`
-- ESP32 repo：`XUE030130/ipillow`
-- ESP32 branch：`pose_pre_v3.1`；沿用基底版本的協定與預期配對，本次未更新 firmware 或重新驗證整套硬體相容性。
+- Web branch：[`spp3_BLE_v4.1`](https://github.com/NTUST-LSC-Lab/Pillow-data-collect-web/tree/spp3_BLE_v4.1)，基於 `spp3_BLE_v4`。本節描述本機 v4.1 工作副本中的實作。
+- 現行 Web 使用 `pose_pre_v3.1` 既有韌體指令。實驗 02 專用控制的後續開發分支為 [`NTUST-LSC-Lab/ipillow · pose_cls_v4`](https://github.com/NTUST-LSC-Lab/ipillow/tree/pose_cls_v4)，新指令與實機配對仍待實作及驗證。
 - 主要 Web 目錄：`spp3_BLE/`；舊版 Web Serial 介面保留在 `spp3/`。
 
 ## 目錄結構
@@ -26,7 +24,8 @@ Pillow-data-collect-web/
 │  ├─ styles.css                 # 雙欄、七張左欄 Card 與實驗響應式樣式
 │  ├─ app.js                     # 既有 BLE／控制流程及已解析壓力樣本的橋接
 │  ├─ experiment-hub.js          # 九實驗選擇、共用控制及離頁保護
-│  ├─ experiment-height-control.js # 獨立校正高度控制、回報到位與逾時保護
+│  ├─ experiment-height-control.js # 校正微調、定時啟動、裝置到位與逾時保護
+│  ├─ comfort-experiment.js      # Experiment 02 校正、方法測試、評分與 SVG 存檔
 │  ├─ pressure-experiment.js     # Experiment 01 表單、曲線、條件暫存及雙檔下載
 │  └─ pressure-recorder.js       # 30 秒記錄器、時間／中斷狀態及 CSV
 ├─ tests/
@@ -60,6 +59,44 @@ python3 -m http.server 8080
 開啟 `http://localhost:8080/spp3_BLE/`。舊版 Web Serial 入口為 `http://localhost:8080/spp3/`。
 
 主頁沿用 `https://cdn.jsdelivr.net/npm/chart.js` 載入 Chart.js，未鎖定 CDN 版本；本次瀏覽器實際載入的是 **4.6.1**。根目錄的 `chart.umd.min.js` 是 **4.4.1**，供既有用途及 options resolver 回歸測試使用，不代表主頁也載入 4.4.1。CDN 後續版本不同時需重新測試，不能沿用本次版本的通過結論。
+
+## Experiment 02 壓力補償與高度控制之舒適度比較
+
+### 介面與新增功能
+
+- **受測者**。沿用頁面上方「使用者資料」的性別、年齡、身高與體重。在實驗 02 以選單選擇 S01～S10，並指定本次 SVG 的儲存資料夾。
+- **兩姿勢校正**。姿勢一為仰躺，姿勢五為正側躺。各自使用可關閉的校正小視窗，保存在滿意度 10 分時的三顆氣囊壓力、Head／Neck 控制高度及時間。兩組基準合成一張校正總覽。
+- **方法測試**。切換姿勢一或姿勢五後選 R／M／A／I。每組獨立記錄空枕與躺回壓力，並選 **0～10 分**。按截圖儲存後，畫面更新各姿勢的完成進度。
+
+### 四個方法與下降百分比
+
+| 按鈕 | 方法 | 姿勢一 Head | 姿勢一 Neck | 姿勢五 Head | 姿勢五 Neck |
+| --- | --- | ---: | ---: | ---: | ---: |
+| **R** | 論文補償。採用《人工智慧枕墊之機構改良、睡姿壓力分析與法規導入》圖 4-10。 | 0.3300% | 10.5200% | 0.3400% | 5.8900% |
+| **M** | 30 人平均補償。採用本研究 30 人於相同姿勢的有人校正與離枕壓力資料（2026-08-26 版本）。 | 3.1331% | 9.3909% | 4.9074% | 8.7339% |
+| **A** | 取同姿勢、同氣囊的 R 與 M 百分比平均。 | 1.7315% | 9.9554% | 2.6237% | 7.3119% |
+| **I** | 使用本人同姿勢的 Head／Neck 校正控制高度。 | — | — | — | — |
+
+表格列的是**設定下降百分比**，計算使用原始 ADC。表格取到小數第 4 位，程式使用 [原始比例](spp3_BLE/comfort-experiment.js) 計算，結果圖顯示到小數第 2 位。Monitor 四種方法皆固定充氣 **14.5 秒**，表中的比例只用於 Head 與 Neck。
+
+- R／M／A 的空枕目標 ADC 為 `同姿勢有人校正 ADC × (1 − 設定下降比例)`。
+- 空枕的實際下降比例為 `(有人校正 ADC − 空枕實測 ADC) ÷ 有人校正 ADC`。結果圖會列出實際與設定下降比例相差幾個百分點。I 沒有設定下降比例，仍可查看實際空枕 ADC。
+- 躺回後另比較 `躺回實測 ADC − 同姿勢有人校正 ADC`。畫面與 SVG 同時顯示 ADC 與換算的 kPa，比例的分母維持為 ADC。
+
+### 操作順序
+
+1. 用 Chrome 或 Edge 開啟主頁，連接 ESP32 並等待一般待命。填寫上方「使用者資料」，再到「實驗專區」選 **Experiment 02**，選擇受測者編號並按「選擇儲存資料夾」。若要使用裝置提供的姿勢五建議起始高度，先在上方完成使用者資料的「設定」。
+2. 按「校正姿勢一」，確認受測者離枕，按「初始化空枕（Monitor 14.5 秒）」。初始化完成後請受測者以指定姿勢躺下，視需要以 **0.5 cm** 微調 Head 與 Neck，按「套用高度」。Head 可設 **7–16 cm**，Neck 可設 **10–14 cm**。姿勢五若有裝置建議起始值，會帶入欄位供套用。
+3. 等裝置到位、姿勢及壓力穩定、受測者確認滿意度 **10 分**後，勾選確認並按「校正完成」。讓受測者離枕，再用同樣流程完成姿勢五校正。兩姿勢都保存後，按「截圖並儲存校正總覽」。
+4. 在「方法測試」選姿勢一或姿勢五。受測者離枕後勾選確認，按 R／M／A／I 其中一個。每次方法測試都會重新吸乾與充氣。充氣完成後維持空枕，等讀值穩定再按「記錄空枕壓力」。
+5. 請受測者**以本輪同一姿勢躺回**。待壓力穩定後按「記錄躺回壓力」，依受測者回覆選 **0～10 分**，再按「截圖並儲存本次結果」。
+6. 重複步驟 4–5，完成姿勢一四種與姿勢五四種方法。每位受測者共 **1 張校正總覽＋8 張方法結果圖**。已存的條件可再點方法按鈕檢視及重新存圖。
+
+### 存檔與目前的控制限制
+
+- 兩種截圖都採用與截圖精靈相同的 **SVG** 格式。例如 `S01_00_校正總覽.svg`、`S01_姿勢一_M.svg`、`S01_姿勢五_I.svg`。按截圖後直接存入選定資料夾，同名檔會先詢問是否覆蓋。寫入成功才會更新方法完成進度。重新整理後需再選資料夾，頁面內暫存的校正及進度也會清除，已存的 SVG 保留。
+- 操作者確認穩定後擷取當時的一筆有效壓力回報。BLE `P:` 順序為 **Monitor、Neck、Head**。校正總覽包含基本資料與兩個基準。方法結果包含方法、姿勢、校正控制高度、各氣囊充氣設定、空枕與躺回時間、壓力差值及滿意度。
+- **目前是定時充氣版**。R／M／A 先由目標 ADC 估算頭、頸充氣秒數，I 由校正控制高度換算秒數。Web 讀回裝置設定相符後才啟動現有吸乾及充氣流程，完成後嘗試恢復並核對原開機設定。若時間超出 Head **30–136.132 秒**或 Neck **10–50 秒**，畫面會顯示超界並攔截充氣。空枕是否達到壓力目標須以手動記錄的實測值比較。ESP32 依目標 ADC 停泵、實驗 02 專用分流及進階頸部定時充氣屬於 `pose_cls_v4` 後續工作。
 
 ## 2026-11-04 Experiment 01 獨立校正
 
@@ -108,7 +145,7 @@ ESP32 在 PRED／POSE 功能已停用時，連 `PRED,STOP`／`CLASSIFY,STOP` 或
 
 ## Experiment 01 壓力資料收集
 
-實驗專區位於左欄「高度與壓力監測」與「訊息紀錄」之間，九個實驗共用同一個 Hub。首次預設收合，收合僅隱藏介面；Experiment 01、02 已設定，Experiment 03–09 仍為未設定插槽。「九個實驗的切換」與各實驗內部條件是兩個不同層級。
+實驗專區位於左欄「高度與壓力監測」與「訊息紀錄」之間，九個實驗共用同一個 Hub。首次預設收合。v4.1 提供 Experiment 01 和 Experiment 02，Experiment 03–09 為未設定插槽。Experiment 01 的四種條件在該實驗內選擇。
 
 ### 目的與條件
 
@@ -325,20 +362,6 @@ PASS: real Chart.js 4.6.1; two independent synthetic calibrations; desktop/320px
 | 測試（5） | `tests/chart-browser-smoke.cjs`、`tests/experiment-hub.test.cjs`、`tests/pressure-ui.test.cjs`、`tests/experiment-height-control.test.cjs`、`tests/experiment-height-bridge.test.cjs` |
 
 該次提交未變更 `pressure-recorder.js`、firmware、舊版 Web 或原始受試者資料。該次發布僅使用這份檔案範圍，排除 `.DS_Store`、`tests/.artifacts/`、實驗 CSV／PNG、BLE log、個資、憑證與本機依賴；不使用 force push，也不變更 default branch。Git 分支、版本差異與發布結果應以實際 checkout／遠端紀錄核對；提交不等同完成 ESP32 實機驗收或網站部署。
-
-## Experiment 02 舒適度比較
-
-Experiment 02 比較兩種姿勢下四種支撐策略，共八輪：R（論文下降比例）、M（30 人資料下降比例）、A（R、M 各通道平均）與 I（原系統高度法）。正式 R／M 數值未寫死在前端，操作者必須依研究資料填入 Head、Neck 下降比例；A 由網頁計算，避免把未確認數值當成實驗依據。
-
-R／M／A 的目標公式為：
-
-```text
-target_adc = occupied_calibration_adc × (1 - decline_ratio)
-```
-
-網頁先檢查目標是否位於韌體安全範圍，再送出帶有唯一 round ID 的 `EXP02,START`。只有收到同一 round 的 `ACK`、`STATE`、`DONE`／`ERR` 才會更新該輪。`DONE` 代表韌體已關閉輸出；操作者移開頭部後，網頁還會要求至少一筆 `DONE` 之後的新 `P:` 訊息，才允許保存空枕 ADC 與 0–10 分舒適度。
-
-每輪韌體流程為嚴格排空、Monitor 固定充氣 14.5 秒，再執行 ADC 或高度控制。提前結束送 `EXP02,STOP,<round_id>`；BLE 斷線、逾時、感測器錯誤或超出安全範圍均中止該輪。完成資料可匯出 CSV 與簡易 SVG 分數圖。沒有實機連線時只能驗證前端狀態與格式，不能視為氣路驗收完成。
 
 ## 歷史更新紀錄
 
@@ -608,7 +631,7 @@ S01_APL-BSHS_ACT-BSHS_R2_07.svg
 3. `校正與分類狀態`
 4. `截圖精靈`
 5. `高度與壓力監測`
-6. `實驗專區`（可收合；Experiment 01 收集資料，02–09 待設定）
+6. `實驗專區`（可收合，Experiment 01 收集壓力，Experiment 02 比較舒適度，03–09 待設定）
 7. `訊息紀錄`
 
 右側線圖監測欄：
@@ -1132,7 +1155,6 @@ MANUAL,OK,STARTUP,7.0,10.0
 - `spp3_BLE/app.js`：BLE 連線、指令送出、資料解析、圖表更新、校正流程與 UI 狀態。
 - `spp3_BLE/experiment-hub.js`：實驗清單與單一內容容器、共用開始／結束／匯出控制、切換鎖定及離頁保護。
 - `spp3_BLE/pressure-experiment.js`：兩姿勢校正快照、手動本輪設定、四條件最後一輪暫存、獨立 Chart instance、CSV＋PNG 下載。
-- `spp3_BLE/comfort-experiment.js`：Experiment 02 的 R／M／A／I 目標計算、round 配對、DONE 後空枕擷取、舒適度與 CSV＋SVG 匯出。
 - `spp3_BLE/experiment-height-control.js`：獨立高度控制 adapter、停止自動控制、SET ownership、完整回覆與到位／逾時／斷線保護；所有指令沿用 app queue。
 - `spp3_BLE/pressure-recorder.js`：不依賴 DOM／BLE 的記錄器，負責 metadata 快照、樣本、計時、中斷狀態與 CSV 序列化。
 - `tests/`：合成資料回歸與獨立 Chrome smoke 腳本，不是正式頁面啟動依賴。

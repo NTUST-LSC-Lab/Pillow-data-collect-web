@@ -18,67 +18,6 @@
   --status-right-col: minmax(300px, 48%);
 }
 
-.comfort-experiment {
-  display: grid;
-  gap: 14px;
-}
-
-.comfort-ratio-grid {
-  display: grid;
-  grid-template-columns: minmax(80px, 1fr) repeat(4, minmax(82px, 1fr));
-  gap: 8px;
-  align-items: center;
-}
-
-.comfort-ratio-grid input,
-.comfort-calibration-grid input,
-.comfort-calibration-grid button {
-  width: 100%;
-}
-
-.comfort-calibration-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.comfort-calibration-grid fieldset {
-  display: grid;
-  gap: 10px;
-}
-
-.comfort-calibration-grid label {
-  display: grid;
-  gap: 5px;
-}
-
-.comfort-results-wrap {
-  overflow-x: auto;
-}
-
-.comfort-results {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
-}
-
-.comfort-results th,
-.comfort-results td {
-  padding: 7px;
-  border: 1px solid var(--border-color, #d8dee9);
-  text-align: center;
-}
-
-@media (max-width: 760px) {
-  .comfort-ratio-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .comfort-calibration-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
 * {
   box-sizing: border-box;
 }
@@ -1687,6 +1626,104 @@ button.full {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 4px;
+}
+
+.comfort-experiment, .comfort-section, .comfort-dialog[open] {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.comfort-experiment h4, .comfort-experiment p, .comfort-dialog h3 {
+  margin: 0;
+}
+
+.comfort-section {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.comfort-section .pressure-calibration-saved button {
+  display: block;
+  margin-top: 8px;
+}
+
+.comfort-buttons, .comfort-dialog-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.comfort-buttons button[aria-pressed="true"] {
+  background: #e1efff;
+  border-color: #5689b8;
+  color: #183560;
+}
+
+.comfort-dialog {
+  box-sizing: border-box;
+  width: min(540px, calc(100% - 20px));
+  max-height: calc(100% - 20px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+  color: inherit;
+  background: var(--panel);
+}
+
+.comfort-dialog::backdrop {
+  background: rgb(16 37 59 / 45%);
+}
+
+.comfort-dialog-heading {
+  justify-content: space-between;
+}
+
+.comfort-height-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.comfort-experiment input[type="checkbox"] {
+  width: auto;
+}
+
+.comfort-trial-table {
+  overflow-x: auto;
+  margin: 6px 0;
+}
+
+.comfort-trial-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.comfort-trial-table th, .comfort-trial-table td {
+  padding: 6px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.comfort-trial-table th {
+  background: #eaf2fc;
+  color: #183560;
+}
+
+.comfort-experiment [hidden] {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .comfort-experiment .pressure-calibration-saved, .comfort-height-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .pressure-calibration-saved {
