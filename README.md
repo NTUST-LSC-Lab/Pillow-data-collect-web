@@ -108,7 +108,7 @@ ESP32 在 PRED／POSE 功能已停用時，連 `PRED,STOP`／`CLASSIFY,STOP` 或
 
 ## Experiment 01 壓力資料收集
 
-實驗專區位於左欄「高度與壓力監測」與「訊息紀錄」之間，九個實驗共用同一個 Hub。首次預設收合，收合僅隱藏介面；Experiment 02–09 仍為未設定插槽。「九個實驗的切換」與「Experiment 01 的四種條件」是兩個不同層級。
+實驗專區位於左欄「高度與壓力監測」與「訊息紀錄」之間，九個實驗共用同一個 Hub。首次預設收合，收合僅隱藏介面；Experiment 01、02 已設定，Experiment 03–09 仍為未設定插槽。「九個實驗的切換」與各實驗內部條件是兩個不同層級。
 
 ### 目的與條件
 
@@ -325,6 +325,20 @@ PASS: real Chart.js 4.6.1; two independent synthetic calibrations; desktop/320px
 | 測試（5） | `tests/chart-browser-smoke.cjs`、`tests/experiment-hub.test.cjs`、`tests/pressure-ui.test.cjs`、`tests/experiment-height-control.test.cjs`、`tests/experiment-height-bridge.test.cjs` |
 
 該次提交未變更 `pressure-recorder.js`、firmware、舊版 Web 或原始受試者資料。該次發布僅使用這份檔案範圍，排除 `.DS_Store`、`tests/.artifacts/`、實驗 CSV／PNG、BLE log、個資、憑證與本機依賴；不使用 force push，也不變更 default branch。Git 分支、版本差異與發布結果應以實際 checkout／遠端紀錄核對；提交不等同完成 ESP32 實機驗收或網站部署。
+
+## Experiment 02 舒適度比較
+
+Experiment 02 比較兩種姿勢下四種支撐策略，共八輪：R（論文下降比例）、M（30 人資料下降比例）、A（R、M 各通道平均）與 I（原系統高度法）。正式 R／M 數值未寫死在前端，操作者必須依研究資料填入 Head、Neck 下降比例；A 由網頁計算，避免把未確認數值當成實驗依據。
+
+R／M／A 的目標公式為：
+
+```text
+target_adc = occupied_calibration_adc × (1 - decline_ratio)
+```
+
+網頁先檢查目標是否位於韌體安全範圍，再送出帶有唯一 round ID 的 `EXP02,START`。只有收到同一 round 的 `ACK`、`STATE`、`DONE`／`ERR` 才會更新該輪。`DONE` 代表韌體已關閉輸出；操作者移開頭部後，網頁還會要求至少一筆 `DONE` 之後的新 `P:` 訊息，才允許保存空枕 ADC 與 0–10 分舒適度。
+
+每輪韌體流程為嚴格排空、Monitor 固定充氣 14.5 秒，再執行 ADC 或高度控制。提前結束送 `EXP02,STOP,<round_id>`；BLE 斷線、逾時、感測器錯誤或超出安全範圍均中止該輪。完成資料可匯出 CSV 與簡易 SVG 分數圖。沒有實機連線時只能驗證前端狀態與格式，不能視為氣路驗收完成。
 
 ## 歷史更新紀錄
 
@@ -1118,6 +1132,7 @@ MANUAL,OK,STARTUP,7.0,10.0
 - `spp3_BLE/app.js`：BLE 連線、指令送出、資料解析、圖表更新、校正流程與 UI 狀態。
 - `spp3_BLE/experiment-hub.js`：實驗清單與單一內容容器、共用開始／結束／匯出控制、切換鎖定及離頁保護。
 - `spp3_BLE/pressure-experiment.js`：兩姿勢校正快照、手動本輪設定、四條件最後一輪暫存、獨立 Chart instance、CSV＋PNG 下載。
+- `spp3_BLE/comfort-experiment.js`：Experiment 02 的 R／M／A／I 目標計算、round 配對、DONE 後空枕擷取、舒適度與 CSV＋SVG 匯出。
 - `spp3_BLE/experiment-height-control.js`：獨立高度控制 adapter、停止自動控制、SET ownership、完整回覆與到位／逾時／斷線保護；所有指令沿用 app queue。
 - `spp3_BLE/pressure-recorder.js`：不依賴 DOM／BLE 的記錄器，負責 metadata 快照、樣本、計時、中斷狀態與 CSV 序列化。
 - `tests/`：合成資料回歸與獨立 Chrome smoke 腳本，不是正式頁面啟動依賴。
