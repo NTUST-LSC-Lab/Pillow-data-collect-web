@@ -726,14 +726,64 @@ https://fustyles.github.io/webduino/WebSerial.html
 					<div>指令</div><div>用途</div><div>範例</div>
 					<code>MANUAL,ENTER</code><div>進入 ESP32 Manual 控制。</div><code>MANUAL,ENTER</code>
 					<code>MANUAL,STOP</code><div>停止所有輸出，保留 Manual 狀態。</div><code>MANUAL,STOP</code>
-					<code>MANUAL,FILL,&lt;MONITOR|NECK|HEAD&gt;</code><div>單顆氣囊充氣。</div><code>MANUAL,FILL,HEAD</code>
+					<code>MANUAL,FILL,&lt;MONITOR|HEAD&gt;</code><div>Monitor 或 Head 連續充氣。</div><code>MANUAL,FILL,HEAD</code>
+					<code>MANUAL,FILL,NECK,&lt;ms&gt;</code><div>頸部限時充氣；須通過氣量與 14 cm 安全檢查。</div><code>MANUAL,FILL,NECK,500</code>
 					<code>MANUAL,DRAIN,&lt;MONITOR|NECK|HEAD|ALL&gt;</code><div>單顆或全部吸氣/洩氣。</div><code>MANUAL,DRAIN,ALL</code>
 					<code>MANUAL,STARTUP,&lt;head_cm&gt;,&lt;neck_cm&gt;</code><div>離開 Manual 並回開機流程。</div><code>MANUAL,STARTUP,7.0,10.0</code>
 				</div>
 				<p class="command-note">在 Manual 狀態下，舊式 <code>reset,</code> 只會停止輸出並停留在 Manual；要回開機流程請用 <code>MANUAL,STARTUP,...</code>。</p>
 			</section>
+			<section>
+				<h3>Experiment 02 控制</h3>
+				<div class="command-table">
+					<div>指令</div><div>用途</div><div>範例</div>
+					<code>EXP02,START,&lt;round&gt;,ADC,&lt;head&gt;,&lt;neck&gt;</code><div>嚴格排空後，以 ADC 目標控制。</div><code>EXP02,START,E02-01-POSE1-R,ADC,2200000,2300000</code>
+					<code>EXP02,START,&lt;round&gt;,HEIGHT,&lt;head_cm&gt;,&lt;neck_cm&gt;</code><div>嚴格排空後，以原高度法控制。</div><code>EXP02,START,E02-04-POSE1-I,HEIGHT,8.0,10.5</code>
+					<code>EXP02,STOP,&lt;round&gt;</code><div>停止指定 round 並關閉氣動輸出。</div><code>EXP02,STOP,E02-01-POSE1-R</code>
+					<code>EXP02,STATUS</code><div>查詢 Experiment 02 狀態。</div><code>EXP02,STATUS</code>
+				</div>
+			</section>
 		</div>
 	</dialog>
+
+	<template id="comfortExperimentTemplate">
+		<div class="comfort-experiment">
+			<p class="pressure-purpose">比較 R（論文比例）、M（30 人資料比例）、A（兩者平均）與 I（原高度法），共 2 種姿勢 × 4 種方法＝8 輪。R／M 正式比例須由研究資料填入，系統不預設猜測值。</p>
+			<fieldset class="pressure-run-settings">
+				<legend>基本資料與正式下降比例</legend>
+				<div class="pressure-field pressure-field-wide"><label for="comfortSubject">受試者編號</label><input id="comfortSubject" type="text" maxlength="24" placeholder="例如 S01"></div>
+				<div class="comfort-ratio-grid pressure-field-wide">
+					<strong>姿勢</strong><strong>R Head</strong><strong>R Neck</strong><strong>M Head</strong><strong>M Neck</strong>
+					<span>睡姿一</span><input id="comfortPose1RHeadRatio" type="number" min="0" max="0.999" step="0.001" placeholder="0–1"><input id="comfortPose1RNeckRatio" type="number" min="0" max="0.999" step="0.001" placeholder="0–1"><input id="comfortPose1MHeadRatio" type="number" min="0" max="0.999" step="0.001" placeholder="0–1"><input id="comfortPose1MNeckRatio" type="number" min="0" max="0.999" step="0.001" placeholder="0–1">
+					<span>睡姿五</span><input id="comfortPose5RHeadRatio" type="number" min="0" max="0.999" step="0.001" placeholder="0–1"><input id="comfortPose5RNeckRatio" type="number" min="0" max="0.999" step="0.001" placeholder="0–1"><input id="comfortPose5MHeadRatio" type="number" min="0" max="0.999" step="0.001" placeholder="0–1"><input id="comfortPose5MNeckRatio" type="number" min="0" max="0.999" step="0.001" placeholder="0–1">
+				</div>
+				<p class="pressure-field-wide pressure-field-hint">比例請用小數，例如下降 12% 填 0.12。A 法會分別以 Head、Neck 的 (R＋M)÷2 自動計算。</p>
+			</fieldset>
+			<div class="comfort-calibration-grid">
+				<fieldset class="pressure-run-settings">
+					<legend>睡姿一校正</legend>
+					<label>占用 Head ADC<input id="comfortPose1HeadAdc" type="number"></label><label>占用 Neck ADC<input id="comfortPose1NeckAdc" type="number"></label>
+					<button id="comfortCapturePose1" type="button">擷取最新占用 ADC</button>
+					<label>I 法 Head（cm）<input id="comfortPose1HeadCm" type="number" min="7" max="16" step="0.5"></label><label>I 法 Neck（cm）<input id="comfortPose1NeckCm" type="number" min="10" max="14" step="0.5"></label>
+				</fieldset>
+				<fieldset class="pressure-run-settings">
+					<legend>睡姿五校正</legend>
+					<label>占用 Head ADC<input id="comfortPose5HeadAdc" type="number"></label><label>占用 Neck ADC<input id="comfortPose5NeckAdc" type="number"></label>
+					<button id="comfortCapturePose5" type="button">擷取最新占用 ADC</button>
+					<label>I 法 Head（cm）<input id="comfortPose5HeadCm" type="number" min="7" max="16" step="0.5"></label><label>I 法 Neck（cm）<input id="comfortPose5NeckCm" type="number" min="10" max="14" step="0.5"></label>
+				</fieldset>
+			</div>
+			<dl class="pressure-live-grid">
+				<div><dt>進度</dt><dd><output id="comfortProgress">0 / 8</output></dd></div>
+				<div><dt>目前輪次</dt><dd><output id="comfortCurrentRound">-</output></dd></div>
+				<div><dt>控制目標</dt><dd><output id="comfortTarget">-</output></dd></div>
+				<div><dt>ESP32 狀態</dt><dd><output id="comfortFirmwareState">尚未開始</output></dd></div>
+			</dl>
+			<div class="button-row"><button id="comfortRunRound" type="button" disabled>確認姿勢並送出本輪</button><label for="comfortScore">舒適度（0–10）</label><select id="comfortScore"><option value="">請選擇</option><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select><button id="comfortCaptureUnload" type="button" disabled>擷取空枕值並保存</button></div>
+			<p id="comfortMessage" class="pressure-run-summary" role="status">請先填入正式比例與兩種姿勢的校正資料。</p>
+			<div class="comfort-results-wrap"><table class="comfort-results"><thead><tr><th>姿勢</th><th>方法</th><th>狀態</th><th>分數</th><th>空枕 Head</th><th>空枕 Neck</th></tr></thead><tbody id="comfortResults"></tbody></table></div>
+		</div>
+	</template>
 
 	<template id="pressureExperimentTemplate">
 		<div class="pressure-experiment">
@@ -839,6 +889,7 @@ https://fustyles.github.io/webduino/WebSerial.html
 
 	<script src="./pressure-recorder.js"></script>
 	<script src="./pressure-experiment.js"></script>
+	<script src="./comfort-experiment.js"></script>
 	<script src="./experiment-hub.js"></script>
 	<script src="./experiment-height-control.js"></script>
 	<script src="./app.js"></script>

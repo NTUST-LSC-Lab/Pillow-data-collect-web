@@ -18,6 +18,67 @@
   --status-right-col: minmax(300px, 48%);
 }
 
+.comfort-experiment {
+  display: grid;
+  gap: 14px;
+}
+
+.comfort-ratio-grid {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) repeat(4, minmax(82px, 1fr));
+  gap: 8px;
+  align-items: center;
+}
+
+.comfort-ratio-grid input,
+.comfort-calibration-grid input,
+.comfort-calibration-grid button {
+  width: 100%;
+}
+
+.comfort-calibration-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.comfort-calibration-grid fieldset {
+  display: grid;
+  gap: 10px;
+}
+
+.comfort-calibration-grid label {
+  display: grid;
+  gap: 5px;
+}
+
+.comfort-results-wrap {
+  overflow-x: auto;
+}
+
+.comfort-results {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.comfort-results th,
+.comfort-results td {
+  padding: 7px;
+  border: 1px solid var(--border-color, #d8dee9);
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .comfort-ratio-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .comfort-calibration-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
