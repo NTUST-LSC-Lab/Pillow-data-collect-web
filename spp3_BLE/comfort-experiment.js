@@ -1,4 +1,4 @@
-// Experiment 02 methods use dedicated ADC/height commands; calibration adjusts the current support directly.
+// Experiment 02 R/M/A use absolute ADC -> fixed fill time; I retains height control.
 const COMFORT_CHANNELS = {
     monitor: { label: 'Monitor', slope: 0.000007976305, offset: -12.414949423913 },
     head: { label: 'Head', slope: 0.0000038296, offset: -7.1811602848, adcPerMs: 2.837681, adcAtZeroMs: 1820918, minMs: 30000, maxMs: 136132, minCm: 7, maxCm: 16, cmPerSecond: 0.0848 },
@@ -10,9 +10,17 @@ const COMFORT_POSES = {
     '5': { label: '姿勢五', R: { head: 0.0034, neck: 0.0589 }, M: { head: 0.04907373891777954, neck: 0.08733870877877077 } }
 };
 
+function comfortFillTime(channel, targetAdc) {
+    const spec = COMFORT_CHANNELS[channel];
+    const calculatedMs = (targetAdc - spec.adcAtZeroMs) / spec.adcPerMs;
+    const baselineFallback = calculatedMs < 0;
+    return { calculatedMs, commandMs: baselineFallback ? spec.minMs : Math.round(calculatedMs), baselineFallback };
+}
+
 function comfortPlan(pose, method, anchor) {
     const heights = {};
     const targets = {};
+    const times = {};
     const issues = [];
     for (const channel of ['head', 'neck']) {
         const spec = COMFORT_CHANNELS[channel];
@@ -27,12 +35,42 @@ function comfortPlan(pose, method, anchor) {
             const ratio = method === 'A' ? (R[channel] + M[channel]) / 2 : COMFORT_POSES[pose][method][channel];
             const adc = anchor.pressure[channel + '_adc'] * (1 - ratio);
             targets[channel] = { ratio, adc: Math.round(adc) };
+            times[channel] = comfortFillTime(channel, targets[channel].adc);
             if (!Number.isFinite(adc) || targets[channel].adc < 1000000 || targets[channel].adc > 2550000) {
                 issues.push(`${spec.label} 目標 ADC 超出裝置接受範圍`);
             }
+            if (times[channel].commandMs > spec.maxMs) {
+                issues.push(`${spec.label} 換算充氣時間 ${(times[channel].commandMs / 1000).toFixed(3)} 秒超過安全上限 ${(spec.maxMs / 1000).toFixed(3)} 秒`);
+            }
         }
     }
-    return { mode: method === 'I' ? 'HEIGHT' : 'ADC', heights, targets, issues };
+    return { mode: method === 'I' ? 'HEIGHT' : 'ADC_TIME', heights, targets, times, issues };
+}
+
+function comfortCommand(id, plan) {
+    return plan.mode === 'ADC_TIME'
+        ? `EXP02,START,${id},ADC_TIME,${plan.targets.head.adc},${plan.targets.neck.adc}`
+        : `EXP02,START,${id},HEIGHT,${plan.heights.head.toFixed(1)},${plan.heights.neck.toFixed(1)}`;
+}
+
+function comfortDeviceTimes(parts, plan) {
+    if (parts.length !== 9 || parts.slice(3, 7).some(v => !/^-?\d+(?:\.\d+)?$/.test(v)) ||
+        !['0', '1'].includes(parts[7]) || !['0', '1'].includes(parts[8])) {
+        throw new Error('ESP32 充氣時間回覆格式不正確');
+    }
+    const times = {};
+    for (const [index, channel] of ['head', 'neck'].entries()) {
+        const expected = plan.times[channel];
+        const calculatedMs = Number(parts[3 + index]), commandMs = Number(parts[5 + index]);
+        const baselineFallback = parts[7 + index] === '1';
+        if (!Number.isFinite(calculatedMs) || !Number.isSafeInteger(commandMs) || commandMs < 0 ||
+            Math.abs(calculatedMs - expected.calculatedMs) > 0.001 ||
+            commandMs !== expected.commandMs || baselineFallback !== expected.baselineFallback) {
+            throw new Error('ESP32 充氣時間或備援政策與目前 Web 不一致，請確認配對韌體版本');
+        }
+        times[channel] = { calculatedMs, commandMs, baselineFallback };
+    }
+    return times;
 }
 
 function comfortPressure(channel, adc) {
@@ -85,27 +123,45 @@ function comfortReport(trial) {
         comfortPressure(channel, loaded?.[channel + '_adc']),
         difference(channel, loaded?.[channel + '_adc'], anchor.pressure[channel + '_adc'])
     ]);
+    const timeRows = plan.mode === 'ADC_TIME' ? ['head', 'neck'].map(channel => {
+        const spec = COMFORT_CHANNELS[channel], predicted = plan.times[channel];
+        const confirmed = trial.deviceTimes?.[channel];
+        return [spec.label, (predicted.calculatedMs / 1000).toFixed(3) + ' s',
+            (predicted.commandMs / 1000).toFixed(3) + ' s',
+            confirmed ? (confirmed.commandMs / 1000).toFixed(3) + ' s' : '待裝置確認',
+            predicted.baselineFallback ? '開機基準備援（負時間）' :
+                predicted.calculatedMs < spec.minMs ? '公式時間（低於開機基準）' : '公式時間'];
+    }) : [];
     return {
         title: `${trial.subject}｜${COMFORT_POSES[trial.pose].label}｜${method} · ${COMFORT_METHODS[method]}`,
         details: [
             `校正控制高度：Head ${anchor.head.toFixed(1)} cm / Neck ${anchor.neck.toFixed(1)} cm`,
-            plan.mode === 'ADC' ? '充氣設定：Monitor 14.5 s；Head／Neck 依空枕目標 ADC 控制' :
+            plan.mode === 'ADC_TIME' ? '充氣設定：Monitor 14.5 s；Head／Neck 依 ADC 換算固定時間' :
+                plan.mode === 'ADC' ? '充氣設定：Monitor 14.5 s；Head／Neck 依空枕目標 ADC 控制' :
                 `充氣設定：Monitor 14.5 s；Head ${plan.heights.head.toFixed(1)} cm / Neck ${plan.heights.neck.toFixed(1)} cm`,
+            ...(plan.mode === 'ADC_TIME' ? [
+                't < 0：僅該氣囊改用 Head 30 s／Neck 10 s；非負時間保持公式值。',
+                '固定時間不保證命中目標；備援結果須另行標記分析。',
+                `裝置完成時回報：Head ${comfortPressure('head', trial.deviceEmpty?.head_adc)}；Neck ${comfortPressure('neck', trial.deviceEmpty?.neck_adc)}`
+            ] : []),
             `空枕快照：${empty?.timestamp_iso || '待記錄'}　Monitor：${comfortPressure('monitor', empty?.monitor_adc)}`,
             `躺回快照：${loaded?.timestamp_iso || '待記錄'}`,
             `滿意度：${trial.score === undefined ? '待填' : trial.score + '／10'}`,
             '操作者確認穩定後擷取單筆。百分比以 ADC 計算。'
         ],
         sections: [
-            { title: '躺回前｜空枕設定與實測', headers: ['氣囊', '控制設定', '壓力目標', '空枕實測', '相對 10 分基準', '實測 − 目標'], rows: emptyRows, widths: [85, 135, 235, 235, 175, 235] },
-            { title: '躺回後｜與同姿勢有人校正基準比較', headers: ['氣囊', '10 分校正基準', '本次躺回後', '躺回後 − 校正基準'], rows: loadedRows, widths: [125, 290, 290, 395] }
+            ...(timeRows.length ? [{ title: '固定充氣時間與備援紀錄',
+                headers: ['氣囊', '理論時間', '預計指令時間', '裝置確認時間', '控制標記'],
+                rows: timeRows, widths: [85, 170, 180, 220, 645] }] : []),
+            { title: '躺回前｜空枕設定與實測', headers: ['氣囊', '控制設定', '壓力目標', '空枕實測', '相對 10 分基準', '實測 − 目標'], rows: emptyRows, widths: [85, 150, 290, 290, 200, 285] },
+            { title: '躺回後｜與同姿勢有人校正基準比較', headers: ['氣囊', '10 分校正基準', '本次躺回後', '躺回後 − 校正基準'], rows: loadedRows, widths: [125, 340, 340, 495] }
         ]
     };
 }
 
 function buildComfortImage(report) {
     const svgNamespace = 'http://www.w3.org/2000/svg';
-    const width = 1150;
+    const width = 1350;
     const height = 110 + report.details.length * 29 + report.sections.reduce((n, section) => n + 76 + section.rows.length * 40, 0);
     const image = document.createElementNS(svgNamespace, 'svg');
     image.setAttribute('width', width);
@@ -134,7 +190,7 @@ function buildComfortImage(report) {
         y += 34;
         [section.headers, ...section.rows].forEach((row, index) => {
             const fill = index === 0 ? '#eaf2fc' : index % 2 === 0 ? '#f6f8fb' : '#ffffff';
-            append('rect', { x: 24, y, width: 1100, height: 40, fill });
+            append('rect', { x: 24, y, width: width - 48, height: 40, fill });
             let x = 32;
             row.forEach((cell, col) => {
                 write(String(cell), x, y + 26, 17, index === 0);
@@ -196,9 +252,7 @@ function createComfortExperiment(root, options) {
 
     function runMethod(plan) {
         const id = 'E02' + Date.now().toString(36).toUpperCase();
-        const command = plan.mode === 'ADC'
-            ? `EXP02,START,${id},ADC,${plan.targets.head.adc},${plan.targets.neck.adc}`
-            : `EXP02,START,${id},HEIGHT,${plan.heights.head.toFixed(1)},${plan.heights.neck.toFixed(1)}`;
+        const command = comfortCommand(id, plan);
         return new Promise((resolve, reject) => {
             const timer = setTimeout(() => {
                 if (pendingRun?.id !== id) return;
@@ -213,7 +267,7 @@ function createComfortExperiment(root, options) {
                 pendingRun = null;
                 reject(new Error('ESP32 未回覆 EXP02,ACK；目前韌體可能不支援實驗 02 控制。'));
             }, 8000);
-            pendingRun = { id, resolve, reject, timer, ackTimer, acknowledged: false };
+            pendingRun = { id, plan, deviceTimes: null, resolve, reject, timer, ackTimer, acknowledged: false };
             try { options.sendExperimentCommand(command); }
             catch (error) {
                 clearTimeout(timer); clearTimeout(ackTimer); pendingRun = null; reject(error);
@@ -225,12 +279,33 @@ function createComfortExperiment(root, options) {
         if (!line.startsWith('EXP02,') || !pendingRun) return;
         const parts = line.split(',');
         if (parts[2] !== pendingRun.id) return;
+        const failReply = message => {
+            const run = pendingRun; pendingRun = null;
+            clearTimeout(run.timer); clearTimeout(run.ackTimer);
+            options.sendExperimentCommand(`EXP02,STOP,${run.id}`);
+            run.reject(new Error(message));
+        };
         if (parts[1] === 'ACK') {
+            if (parts.length !== 4 || parts[3] !== pendingRun.plan.mode) {
+                failReply('ESP32 實驗模式回覆不一致，已送出停止指令');
+                return;
+            }
             pendingRun.acknowledged = true;
             clearTimeout(pendingRun.ackTimer);
+        } else if (parts[1] === 'TIME' && pendingRun.plan.mode === 'ADC_TIME') {
+            try {
+                pendingRun.deviceTimes = comfortDeviceTimes(parts, pendingRun.plan);
+                trial.deviceTimes = pendingRun.deviceTimes;
+            } catch (error) { failReply(error.message); }
         } else if (parts[1] === 'STATE') {
             status = `裝置執行中：${parts[3] || '等待回報'}`;
         } else if (parts[1] === 'DONE' || parts[1] === 'ERR') {
+            if (parts[1] === 'DONE' && (!pendingRun.acknowledged ||
+                (pendingRun.plan.mode === 'ADC_TIME' && !pendingRun.deviceTimes) ||
+                parts.length !== 7 || parts.slice(3, 5).some(v => !/^\d+$/.test(v) || !Number.isSafeInteger(Number(v))))) {
+                failReply('ESP32 完成回覆缺少本輪模式、充氣時間或有效壓力資料');
+                return;
+            }
             const run = pendingRun;
             pendingRun = null;
             clearTimeout(run.timer);
@@ -399,7 +474,8 @@ function createComfortExperiment(root, options) {
         node('EmptyConfirmed').checked = false;
         status = '準備實驗 02 控制，等待 ESP32 吸乾與充氣。';
         await operate(async () => {
-            await runMethod(plan);
+            const done = await runMethod(plan);
+            trial.deviceEmpty = { head_adc: Number(done[3]), neck_adc: Number(done[4]) };
             trial.after = performance.now();
             trial.stage = 'empty';
             status = '充氣已完成。保持空枕，待穩定後按「記錄空枕壓力」。';
@@ -538,4 +614,6 @@ function createComfortExperiment(root, options) {
     };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { comfortPlan, comfortReport };
+if (typeof module !== 'undefined' && module.exports) module.exports = {
+    comfortPlan, comfortReport, comfortFillTime, comfortCommand, comfortDeviceTimes
+};

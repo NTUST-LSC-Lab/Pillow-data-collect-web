@@ -4,9 +4,23 @@
 
 v4.1 在既有 Experiment 01 壓力資料收集之外，新增 [Experiment 02 壓力補償與高度控制之舒適度比較](#experiment-02-壓力補償與高度控制之舒適度比較)。實驗 02 提供兩姿勢校正、R／M／A／I 四種支撐設定、空枕與躺回壓力快照、0～10 分評分，以及 SVG 儲存至指定資料夾。Experiment 01 仍提供 30 秒記錄和 CSV＋PNG 匯出。
 
-更新日期 **2026-11-10**（Asia/Taipei）。
+更新日期 **2026-11-11**（Asia/Taipei）。
 
-v4.1 已通過 **116 項 Node 回歸測試**。測試涵蓋既有 Experiment 01、Experiment 02 下降比例、整數 ADC 目標、結果格式、校正、0 分及 10 分、SVG 資料夾寫入、同名檔確認與寫入失敗後重試。ESP32 編譯已通過；完整八條件實機量測仍須依本文件逐項驗證。
+v4.1 已通過 **124 項 Node 回歸測試**。測試涵蓋既有 Experiment 01、Experiment 02 下降比例、整數 ADC 目標、結果格式、校正、0 分及 10 分、SVG 資料夾寫入、同名檔確認與寫入失敗後重試。ESP32 新模式編譯已通過；本次瀏覽器啟動受執行環境限制而未完成render驗證，新增模式尚未燒錄或完成八條件實機量測。
+
+## 2026-11-11 修改紀錄：固定時間與完整壓力結果
+
+修改時間：**2026-11-11 00:52:23 CST (+0800)**（Asia/Taipei）。目標 GitHub 分支：`spp3_BLE_v4.1`；配對韌體：`spp3_BLE_v4_experiment_02`。
+
+- R／M／A按鈕改送 `EXP02,START,<id>,ADC_TIME,<head_target_adc>,<neck_target_adc>`；I仍送 `HEIGHT`。下降百分比與目標ADC取整規則不變。
+- Web預算時間，核對ESP32回報的模式、理論時間、指令時間及逐氣囊備援旗標，確認同一輪 `DONE`後才允許記錄空枕。負時間僅該氣囊備援為Head 30秒／Neck 10秒；超限整輪阻擋。
+- 頁面與SVG顯示：目前三通道ADC／kPa、10分校正基準、下降比例、目標壓力、理論及指令時間、備援標記、裝置完成時壓力、操作者記錄的空枕及躺回壓力、空枕實測減目標、相對校正變化百分比、躺回減校正差值及0～10分滿意度。未記錄欄位顯示「—」。
+- 「裝置確認時間」是ESP32確認的指令時間，不是獨立量測的泵浦運轉時間；空枕及躺回是操作者確認穩定後的單筆快照。Monitor空枕值顯示在摘要，Head／Neck目標比較顯示在空枕表格。
+- 原BLE queue、一般校正、分類／PRED、Experiment 01、圖表、IndexedDB與既有匯出保持原樣。124項Node測試通過；瀏覽器啟動受環境限制，尚未完成原生render與實機BLE驗證。
+
+操作順序：先燒錄配對韌體並重新載入本Web → 連接BLE並填寫基本資料 → 選受測者及SVG資料夾 → 完成姿勢一、姿勢五10分校正 → 選姿勢並確認受測者離枕 → 按R／M／A／I → 等待完成並人工確認壓力穩定 → 按「記錄空枕壓力」 → 同姿勢躺回、穩定後按「記錄躺回壓力」 → 選0～10分 → 按「截圖並儲存本次結果」。完成兩姿勢各四方法，共1張校正總覽與8張方法結果圖。完整說明見下方Experiment 02章節。
+
+本次提交只包含正式程式、文件與合成測試；離線示範頁、受測者資料、量測匯出、截圖、備份與編譯產物不納入版本控制。
 
 ## 對應版本
 
@@ -38,6 +52,8 @@ Pillow-data-collect-web/
 │  ├─ experiment-height-bridge.test.cjs
 │  ├─ comfort-experiment.test.cjs
 │  ├─ comfort-report.test.cjs
+│  ├─ comfort-flow.test.cjs        # 合成DOM／協定／八條件與SVG失敗重試
+│  ├─ comfort-browser-smoke.cjs    # 真實Chrome檢查（本環境尚未完成）
 │  └─ chart-browser-smoke.cjs
 ├─ spp3/                        # 保留原 Web Serial 版本
 ├─ Images/
@@ -69,9 +85,9 @@ python3 -m http.server 8080
 | 修改範圍 | 目前行為 |
 | --- | --- |
 | 校正流程 | 姿勢一與姿勢五均由受測者直接躺在枕頭上校正；開啟校正視窗後讀取目前控制高度，直接微調，不要求離枕，也不執行空枕初始化。 |
-| 方法按鈕 | R／M／A 直接傳送 Head、Neck 目標 ADC；I 傳送同姿勢的 Head、Neck 校正控制高度。 |
+| 方法按鈕 | R／M／A 傳送 `ADC_TIME`及目標ADC，由ESP32換算固定時間；I仍傳送校正控制高度。 |
 | 實驗控制 | 只在按下 R／M／A／I 時傳送 `EXP02,START`；切換姿勢、開啟實驗或保存校正不會啟動實驗控制。 |
-| 跨端等待 | Web 只接受同一輪 ID 的 `EXP02,ACK`、`STATE`、`DONE`、`ERR`；收到 `DONE` 後才能記錄空枕。 |
+| 跨端等待 | Web 只接受同一輪 ID 的 `EXP02,ACK`、`TIME`、`STATE`、`DONE`、`ERR`；ADC_TIME必須先核對模式、裝置時間及備援政策，再收到 `DONE`才能記錄空枕。 |
 | 結果顯示 | 空枕壓力以 10 分校正基準顯示「上升／下降／持平」；R／M／A 另顯示實測與目標的正負 ADC／kPa 差值。 |
 | 儲存 | 每位受測者保存 1 張兩姿勢校正總覽與 8 張方法結果 SVG，直接寫入操作者選定的資料夾。 |
 | 進階控制 | Neck 充氣新增毫秒欄位，送出 `MANUAL,FILL,NECK,<ms>`；ESP32 保留最終時間與氣量安全檢查。 |
@@ -101,10 +117,48 @@ python3 -m http.server 8080
 
 | 按鈕 | 傳送內容 | ESP32 控制方式 |
 | --- | --- | --- |
-| R／M／A | `EXP02,START,<id>,ADC,<head_target_adc>,<neck_target_adc>` | 依空枕目標 ADC 控制 Head、Neck。 |
+| R／M／A | `EXP02,START,<id>,ADC_TIME,<head_target_adc>,<neck_target_adc>` | 使用完整ADC→時間公式固定充氣；負時間逐氣囊使用開機基準備援。 |
 | I | `EXP02,START,<id>,HEIGHT,<head_cm>,<neck_cm>` | 依同姿勢校正控制高度換算 Head、Neck 充氣時間。 |
 
 `id` 由 Web 每輪產生。R／M／A 目標先保留程式中的原始比例精度，再以 `Math.round()` 取整數 ADC 後送出。I 不使用下降百分比。
+
+### ADC_TIME時間公式與備援政策（2026-11-11）
+
+```text
+Head calculatedTimeMs = (目標ADC − 1820918) / 2.837681
+Neck calculatedTimeMs = (目標ADC − 1878787) / 5.820554
+
+該氣囊 calculatedTimeMs < 0：Head改用30000ms／Neck改用10000ms
+其餘 calculatedTimeMs >= 0：四捨五入為整數ms，不補足至開機時間
+```
+
+公式使用本設備2026-05-04時間／ADC資料及 `time_2_adc_260507.ipynb` 回歸（依本次提供的係數）；實際設備換算以ESP32為準，Web僅預算並核對裝置回覆。這是新增實驗02控制行為，不變更既有ADC↔kPa係數。
+
+- 只替換負時間的氣囊，並標記「開機基準備援（負時間）」。零秒不充氣；正值即使Head低於30秒、Neck低於10秒也照公式值，畫面標記「低於開機基準」。備援不是個人校正高度，分析時須區分純公式輪與備援輪。
+- Web在動作前拒絕超過既有 Head **136.132秒**／Neck **50秒**的時間；ESP32另有最終檢查並回 `FILL_LIMIT`。不默默截短，不送出該輪吸乾／充氣指令。
+- 固定時間不追ADC、不保證命中壓力目標；時間模式不因壓力目標落差回 `TARGET_OVERSHOOT`等達標錯誤。原 `ADC`閉迴路模式仍留在韌體，但R／M／A按鈕不再使用。
+- 原吸乾 → Monitor 14.5秒 → Neck固定時間 → Head固定時間；沿用各通道停泵後與最終5秒緩衝。**緩衝結束不代表壓力穩定**，操作者仍需待穩定再記錄空枕，再讓受測者躺回。
+
+新回覆（所有時間皆為毫秒；Head在前、Neck在後）：
+
+```text
+EXP02,ACK,<id>,ADC_TIME
+EXP02,TIME,<id>,<head_calculated_ms>,<neck_calculated_ms>,<head_command_ms>,<neck_command_ms>,<head_fallback>,<neck_fallback>
+EXP02,DONE,<id>,<head_adc>,<neck_adc>,NA,NA
+```
+
+理論時間保留正負號及小數3位，指令時間為整數ms，備援旗標為0或1。`TIME`在ACK之後、充氣之前回傳。Web核對相同輪次、模式、原始公式時間、指令時間、逐氣囊備援旗標；若不一致、缺少TIME或完成欄位不合法，送出STOP並中止。BLE斷線、ACK逾時、整輪逾時及操作者取消繼續沿用既有停止流程。此Web必須配對支援ADC_TIME的新韌體。
+
+頁面與SVG新增「固定充氣時間與備援紀錄」，同時保存理論時間、預計指令時間、裝置確認指令時間及控制標記。「裝置確認時間」是ESP32計畫執行的指令時間，不是用感測器量得的實際泵浦運轉時間。另顯示DONE當下有效空枕ADC；正式空枕／躺回快照仍由操作者待穩定後擷取。目標ADC、校正load、下降比例、實測壓力差值與0～10分均保留。
+
+驗證：`node --test tests/*.test.cjs`（124項），含合成DOM與傳輸的八條件、備援、錯輪ID／模式／時間、STOP、斷線重連及SVG寫入失敗重試；這些不是原生瀏覽器render或實機BLE測試。韌體主機端狀態機回歸及ESP32編譯通過。新增 `tests/comfort-browser-smoke.cjs`供實際Chrome合成八條件、SVG、備援、錯輪ID／時間／模式、中止及斷線驗證；本環境Chrome啟動遭限制，**尚未完成瀏覽器及實機驗證**。可在可啟動Chrome的終端機使用已安裝Playwright執行：
+
+```bash
+PLAYWRIGHT_MODULE_PATH=/path/to/playwright node tests/comfort-browser-smoke.cjs
+```
+
+最低實機項目：正常開機；正時間；Neck接近零秒；負時間逐氣囊備援；長時間及超限拒絕；中止；BLE斷線；下一方法；R／M／A／I兩姿勢各一輪；確認SVG內目標、時間、備援、空枕、躺回及滿意度完整。
+
 
 ### 操作順序
 
@@ -119,8 +173,8 @@ python3 -m http.server 8080
 
 - 兩種截圖都採用與截圖精靈相同的 **SVG** 格式。例如 `S01_00_校正總覽.svg`、`S01_姿勢一_M.svg`、`S01_姿勢五_I.svg`。按截圖後直接存入選定資料夾，同名檔會先詢問是否覆蓋。寫入成功才會更新方法完成進度。重新整理後需再選資料夾，頁面內暫存的校正及進度也會清除，已存的 SVG 保留。
 - 操作者確認穩定後擷取當時的一筆有效壓力回報。BLE `P:` 順序為 **Monitor、Neck、Head**。校正總覽包含基本資料與兩個基準。方法結果包含方法、姿勢、校正控制高度、各氣囊充氣設定、空枕與躺回時間、壓力差值及滿意度。
-- **方法測試使用實驗 02 專用流程**。R／M／A 將目標 ADC 傳給 ESP32，由韌體依有效壓力讀值停泵；I 傳送同姿勢的校正控制高度，由韌體換算充氣時間。每次均先吸乾，再固定為 Monitor 14.5 秒，最後處理 Head 與 Neck。網頁等待相同實驗 ID 的 `EXP02,ACK` 與 `EXP02,DONE` 才允許記錄空枕；逾時或裝置回報 `ERR` 會停止該次測試。空枕是否達到目標，仍由操作者待穩定後記錄實測值比較。校正小視窗沿用既有高度微調流程。
-- 新增進階文字指令 `MANUAL,FILL,NECK,<ms>`，僅供定時頸部測試；韌體仍執行時間與安全額度檢查。目前已完成部分實機流程檢查，仍需完成R／M／A／I、失敗處理與斷線行為的整套驗收。
+- **方法測試使用實驗 02 專用流程**。R／M／A 以 `ADC_TIME`將目標 ADC 傳給 ESP32，由韌體換算固定充氣時間，時間到即停泵；I 傳送同姿勢的校正控制高度，由韌體換算充氣時間。每次均先吸乾，再固定為 Monitor 14.5 秒，最後處理 Head 與 Neck。網頁等待相同實驗 ID 的 `EXP02,ACK` 與 `EXP02,DONE` 才允許記錄空枕；逾時或裝置回報 `ERR` 會停止該次測試。空枕是否達到目標，仍由操作者待穩定後記錄實測值比較。校正小視窗沿用既有高度微調流程。
+- 既有進階文字指令 `MANUAL,FILL,NECK,<ms>`，僅供定時頸部測試；韌體仍執行時間與安全額度檢查。目前已完成部分實機流程檢查，仍需完成R／M／A／I、失敗處理與斷線行為的整套驗收。
 
 ### 結果表判讀
 
@@ -143,7 +197,8 @@ python3 -m http.server 8080
 | 8 秒內沒有 `EXP02,ACK` | 確認 ESP32 已燒錄 `ipillow-spp3_BLE_v4_experiment_02`，舊韌體不支援四個方法按鈕。 |
 | `BUSY` | 等待其他高度、Manual 或實驗控制完成，確認輸出關閉後重新開始。 |
 | `SENSOR_TIMEOUT` | 檢查三通道是否持續收到有效壓力樣本。 |
-| `TARGET_BELOW_DRY`／`TARGET_OVERSHOOT`／`TARGET_UNREACHABLE`／`TARGET_MISMATCH` | 記錄目標與當時 ADC，不保存本輪空枕結果；檢查百分比、氣路及感測器後重做。 |
+| `TARGET_BELOW_DRY`／`TARGET_OVERSHOOT`／`TARGET_UNREACHABLE`／`TARGET_MISMATCH` | 僅舊ADC閉迴路模式使用；若R／M／A仍出現，先確認已載入新Web並燒錄ADC_TIME韌體。 |
+| `FILL_LIMIT`／時間超過安全上限 | 任一氣囊超限，整輪不執行；保存目標及時間供檢查，不修改安全上限。 |
 | RGB 不依狀態更新 | 在進階文字指令送出 `RGB,AUTO`，退出先前的 RGB 手動模式。 |
 | 重新整理頁面後校正消失 | 校正與進度只暫存在頁面記憶體；以已儲存的 SVG 為正式紀錄。 |
 
