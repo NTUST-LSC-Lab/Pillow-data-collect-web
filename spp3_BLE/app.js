@@ -2333,6 +2333,10 @@
 				if (parts.length < 2) {
 					return;
 				}
+				if (parts[0] === 'EXP02') {
+					experimentHubModule?.receiveLine(dataString);
+					return;
+				}
 
 				if (parts[0] === "USER") {
 					if (parts[1] === "OK") {
@@ -2404,6 +2408,8 @@
 					}
 				} else if (parts[1] === "ERR") {
 					setEspManualUi(true, `ESP32 回覆失敗：${parts.slice(2).join(",") || "BAD_COMMAND"}`, "error");
+				} else if (parts[1] === "DONE" && parts[2] === "FILL" && parts[3] === "NECK") {
+					setEspManualUi(true, `Neck 定時充氣已停止（${parts[4]} ms）`, "ok");
 				} else if (parts[1] === "IGNORED") {
 					setEspManualUi(true, `ESP32 Manual 忽略指令：${parts.slice(2).join(",")}`, "error");
 				}
@@ -2857,8 +2863,8 @@
 			console.log('Command buffered: ' + command);
 		}
 
-		function allowExperimentHeightCommand(message, owned = false) {
-			if (!experimentHeightControl || experimentHeightControl.allowCommand(message, owned)) return true;
+		function allowExperimentHeightCommand(message, owned = false, experiment02 = false) {
+			if (!experimentHeightControl || experimentHeightControl.allowCommand(message, owned, experiment02)) return true;
 			serial_message("實驗高度操作尚未完成；此控制指令未送出。", "red");
 			return false;
 		}
@@ -2869,7 +2875,7 @@
 			}
 			const encoder = new TextEncoder();
 			bleQueue.add(async () => {
-				if (!allowExperimentHeightCommand(message, options.experimentHeight === true)) return;
+				if (!allowExperimentHeightCommand(message, options.experimentHeight === true, options.experiment02 === true)) return;
 				try {
 					await rxCharacteristic.writeValue(encoder.encode(message));
 				} catch (error) {
@@ -3047,6 +3053,7 @@
 					gender: document.querySelector('input[name="gender"]:checked')?.value ?? null
 				}),
 				heightControl: experimentHeightControl,
+				sendExperimentCommand: command => sendCommand(command, { experiment02: true }),
 				getUserProfile: getExperimentUserProfile,
 				getPose5Suggestion: getExperimentPose5Suggestion
 			});
@@ -3109,7 +3116,12 @@
 				sendEspManualCommand("MANUAL,DRAIN,MONITOR", "Monitor 吸氣指令已送出");
 			});
 			document.getElementById('neckFillBtn')?.addEventListener('click', function () {
-				sendEspManualCommand("MANUAL,FILL,NECK", "Neck 充氣指令已送出");
+				const ms = Number(document.getElementById('neckFillMs')?.value);
+				if (!Number.isInteger(ms) || ms < 1000 || ms > 50000) {
+					setEspManualUi(true, 'Neck 充氣時間須為 1000–50000 ms 整數', 'error');
+					return;
+				}
+				sendEspManualCommand(`MANUAL,FILL,NECK,${ms}`, `Neck 定時充氣 ${ms} ms 已送出`);
 			});
 			document.getElementById('neckDrainBtn')?.addEventListener('click', function () {
 				sendEspManualCommand("MANUAL,DRAIN,NECK", "Neck 吸氣指令已送出");

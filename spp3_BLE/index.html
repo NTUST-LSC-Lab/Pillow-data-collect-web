@@ -88,6 +88,7 @@ https://fustyles.github.io/webduino/WebSerial.html
 							<button id="espManualStopBtn" type="button">停止</button>
 							<button id="monitorFillBtn" type="button">Monitor 充氣</button>
 							<button id="monitorDrainBtn" type="button">Monitor 吸氣</button>
+							<label class="manual-neck-fill-time" for="neckFillMs">Neck 充氣時間（ms）<input id="neckFillMs" type="number" min="1000" max="50000" step="1000" value="5000"></label>
 							<button id="neckFillBtn" type="button">Neck 充氣</button>
 							<button id="neckDrainBtn" type="button">Neck 吸氣</button>
 							<button id="headFillBtn" type="button">Head 充氣</button>
@@ -726,7 +727,8 @@ https://fustyles.github.io/webduino/WebSerial.html
 					<div>指令</div><div>用途</div><div>範例</div>
 					<code>MANUAL,ENTER</code><div>進入 ESP32 Manual 控制。</div><code>MANUAL,ENTER</code>
 					<code>MANUAL,STOP</code><div>停止所有輸出，保留 Manual 狀態。</div><code>MANUAL,STOP</code>
-					<code>MANUAL,FILL,&lt;MONITOR|NECK|HEAD&gt;</code><div>單顆氣囊充氣。</div><code>MANUAL,FILL,HEAD</code>
+					<code>MANUAL,FILL,&lt;MONITOR|HEAD&gt;</code><div>Monitor／Head 單顆充氣。</div><code>MANUAL,FILL,HEAD</code>
+					<code>MANUAL,FILL,NECK,&lt;ms&gt;</code><div>Neck 定時充氣，受 ESP32 額度限制。</div><code>MANUAL,FILL,NECK,5000</code>
 					<code>MANUAL,DRAIN,&lt;MONITOR|NECK|HEAD|ALL&gt;</code><div>單顆或全部吸氣/洩氣。</div><code>MANUAL,DRAIN,ALL</code>
 					<code>MANUAL,STARTUP,&lt;head_cm&gt;,&lt;neck_cm&gt;</code><div>離開 Manual 並回開機流程。</div><code>MANUAL,STARTUP,7.0,10.0</code>
 				</div>
@@ -888,8 +890,6 @@ https://fustyles.github.io/webduino/WebSerial.html
 					<button type="button" id="comfortCalClose" aria-label="關閉校正">×</button>
 				</div>
 				<p id="comfortCalStatus" class="pressure-field-hint" role="status" aria-live="polite"></p>
-				<label><input type="checkbox" id="comfortCalEmpty"> 已確認受測者離枕</label>
-				<button type="button" id="comfortCalInit">初始化空枕（Monitor 14.5 秒）</button>
 				<div class="comfort-height-fields">
 					<div>
 						<label for="comfortCalHead">頭部目標（cm）</label>

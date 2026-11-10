@@ -1,6 +1,4 @@
-// Experiment 02 uses the existing timed startup commands. Pressure is checked after the pump stops.
-// ADC/time fits: time_2_adc_260507; R: thesis fig. 4-10; M: 30 paired calibrations (2026-08-26).
-const COMFORT_MONITOR_MS = 14500;
+// Experiment 02 methods use dedicated ADC/height commands; calibration adjusts the current support directly.
 const COMFORT_CHANNELS = {
     monitor: { label: 'Monitor', slope: 0.000007976305, offset: -12.414949423913 },
     head: { label: 'Head', slope: 0.0000038296, offset: -7.1811602848, adcPerMs: 2.837681, adcAtZeroMs: 1820918, minMs: 30000, maxMs: 136132, minCm: 7, maxCm: 16, cmPerSecond: 0.0848 },
@@ -13,27 +11,28 @@ const COMFORT_POSES = {
 };
 
 function comfortPlan(pose, method, anchor) {
-    const times = { monitorMs: COMFORT_MONITOR_MS };
+    const heights = {};
     const targets = {};
     const issues = [];
     for (const channel of ['head', 'neck']) {
         const spec = COMFORT_CHANNELS[channel];
-        let ms;
         if (method === 'I') {
-            ms = spec.minMs + (anchor[channel] - spec.minCm) * 1000 / spec.cmPerSecond;
+            heights[channel] = anchor[channel];
+            if (!Number.isFinite(heights[channel]) || heights[channel] < spec.minCm ||
+                heights[channel] > spec.maxCm || !Number.isInteger(heights[channel] * 2)) {
+                issues.push(`${spec.label} 控制高度超出裝置範圍`);
+            }
         } else {
             const { R, M } = COMFORT_POSES[pose];
             const ratio = method === 'A' ? (R[channel] + M[channel]) / 2 : COMFORT_POSES[pose][method][channel];
             const adc = anchor.pressure[channel + '_adc'] * (1 - ratio);
-            targets[channel] = { ratio, adc };
-            ms = (adc - spec.adcAtZeroMs) / spec.adcPerMs;
-        }
-        times[channel + 'Ms'] = Math.round(ms);
-        if (!Number.isFinite(ms) || times[channel + 'Ms'] < spec.minMs || times[channel + 'Ms'] > spec.maxMs) {
-            issues.push(`${spec.label} 換算 ${(ms / 1000).toFixed(3)} 秒，超出裝置範圍 ${spec.minMs / 1000}–${spec.maxMs / 1000} 秒`);
+            targets[channel] = { ratio, adc: Math.round(adc) };
+            if (!Number.isFinite(adc) || targets[channel].adc < 1000000 || targets[channel].adc > 2550000) {
+                issues.push(`${spec.label} 目標 ADC 超出裝置接受範圍`);
+            }
         }
     }
-    return { times, targets, issues };
+    return { mode: method === 'I' ? 'HEIGHT' : 'ADC', heights, targets, issues };
 }
 
 function comfortPressure(channel, adc) {
@@ -57,40 +56,48 @@ function comfortAnchorText(anchor) {
 function comfortReport(trial) {
     const { anchor, plan, method, empty, loaded } = trial;
     const percent = ratio => `${(ratio * 100).toFixed(2)}%`;
-    const difference = (channel, reading) => {
-        const adc = reading - anchor.pressure[channel + '_adc'];
+    const difference = (channel, reading, reference) => {
+        if (!Number.isFinite(reading) || !Number.isFinite(reference)) return '—';
+        const adc = reading - reference;
         return `${adc >= 0 ? '+' : '−'}${Math.abs(adc).toLocaleString('en-US')} ADC / ${adc >= 0 ? '+' : '−'}${(Math.abs(adc) * COMFORT_CHANNELS[channel].slope).toFixed(4)} kPa`;
+    };
+    const relativeChange = (channel, reading) => {
+        const baseline = anchor.pressure[channel + '_adc'];
+        if (!Number.isFinite(reading) || !Number.isFinite(baseline) || baseline === 0) return '—';
+        const ratio = (reading - baseline) / baseline;
+        if (ratio === 0) return '持平 0.00%';
+        return `${ratio > 0 ? '上升' : '下降'} ${percent(Math.abs(ratio))}`;
     };
     const emptyRows = ['head', 'neck'].map(channel => {
         const actual = empty?.[channel + '_adc'];
         const target = plan.targets[channel];
-        const ratio = Number.isFinite(actual) ? (anchor.pressure[channel + '_adc'] - actual) / anchor.pressure[channel + '_adc'] : null;
-        const diff = ratio === null || !target ? null : (ratio - target.ratio) * 100;
         return [
-            COMFORT_CHANNELS[channel].label, target ? percent(target.ratio) : '—',
-            target ? comfortPressure(channel, target.adc) : `${anchor[channel].toFixed(1)} cm`,
-            comfortPressure(channel, actual), ratio === null ? '—' : percent(ratio),
-            diff === null ? '—' : `${diff >= 0 ? '多降' : '少降'} ${Math.abs(diff).toFixed(2)} 個百分點`
+            COMFORT_CHANNELS[channel].label,
+            target ? `下降 ${percent(target.ratio)}` : `高度 ${anchor[channel].toFixed(1)} cm`,
+            target ? comfortPressure(channel, target.adc) : '—',
+            comfortPressure(channel, actual),
+            relativeChange(channel, actual),
+            target ? difference(channel, actual, target.adc) : '—'
         ];
     });
     const loadedRows = Object.keys(COMFORT_CHANNELS).map(channel => [
         COMFORT_CHANNELS[channel].label, comfortPressure(channel, anchor.pressure[channel + '_adc']),
         comfortPressure(channel, loaded?.[channel + '_adc']),
-        loaded ? difference(channel, loaded[channel + '_adc']) : '—'
+        difference(channel, loaded?.[channel + '_adc'], anchor.pressure[channel + '_adc'])
     ]);
-    const seconds = ms => (ms / 1000).toFixed(3);
     return {
         title: `${trial.subject}｜${COMFORT_POSES[trial.pose].label}｜${method} · ${COMFORT_METHODS[method]}`,
         details: [
             `校正控制高度：Head ${anchor.head.toFixed(1)} cm / Neck ${anchor.neck.toFixed(1)} cm`,
-            `充氣設定：Monitor 14.5 s / Head ${seconds(plan.times.headMs)} s / Neck ${seconds(plan.times.neckMs)} s`,
+            plan.mode === 'ADC' ? '充氣設定：Monitor 14.5 s；Head／Neck 依空枕目標 ADC 控制' :
+                `充氣設定：Monitor 14.5 s；Head ${plan.heights.head.toFixed(1)} cm / Neck ${plan.heights.neck.toFixed(1)} cm`,
             `空枕快照：${empty?.timestamp_iso || '待記錄'}　Monitor：${comfortPressure('monitor', empty?.monitor_adc)}`,
             `躺回快照：${loaded?.timestamp_iso || '待記錄'}`,
             `滿意度：${trial.score === undefined ? '待填' : trial.score + '／10'}`,
             '操作者確認穩定後擷取單筆。百分比以 ADC 計算。'
         ],
         sections: [
-            { title: '躺回前｜空枕設定與實測', headers: ['氣囊', '設定下降', '空枕目標', '空枕實測', '實際下降', '實際 − 設定'], rows: emptyRows, widths: [95, 105, 280, 280, 110, 230] },
+            { title: '躺回前｜空枕設定與實測', headers: ['氣囊', '控制設定', '壓力目標', '空枕實測', '相對 10 分基準', '實測 − 目標'], rows: emptyRows, widths: [85, 135, 235, 235, 175, 235] },
             { title: '躺回後｜與同姿勢有人校正基準比較', headers: ['氣囊', '10 分校正基準', '本次躺回後', '躺回後 − 校正基準'], rows: loadedRows, widths: [125, 290, 290, 395] }
         ]
     };
@@ -175,16 +182,64 @@ function createComfortExperiment(root, options) {
     const canPickFolder = typeof window.showDirectoryPicker === 'function';
     let folder = null;
     let pose = '1', calibration = null, trial = null, latest = null, busy = false;
+    let pendingRun = null;
     let status = '', calStatus = '', rendered = '';
     const selection = () => records.get(node('Subject').value);
     const connected = () => Boolean(options.getSystemState().connected);
     const active = () => Boolean(trial && !trial.saved && trial.stage !== 'blocked');
     const isHolding = () => dialog.open || active();
     const isBusy = () => busy || isHolding();
-    const stableReading = (after, state) => connected() && state.ready && latest &&
+    const stableReading = (after, state, methodReading = false) => connected() && (methodReading || state.ready) && latest &&
         performance.now() - latest.receivedMonotonicMs < 3000 && latest.receivedMonotonicMs > after &&
-        latest.receivedMonotonicMs >= state.settledMonotonicMs &&
+        (methodReading || latest.receivedMonotonicMs >= state.settledMonotonicMs) &&
         Object.keys(COMFORT_CHANNELS).every(ch => Number.isFinite(latest[ch + '_adc']) && latest[ch + '_adc'] > 0);
+
+    function runMethod(plan) {
+        const id = 'E02' + Date.now().toString(36).toUpperCase();
+        const command = plan.mode === 'ADC'
+            ? `EXP02,START,${id},ADC,${plan.targets.head.adc},${plan.targets.neck.adc}`
+            : `EXP02,START,${id},HEIGHT,${plan.heights.head.toFixed(1)},${plan.heights.neck.toFixed(1)}`;
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                if (pendingRun?.id !== id) return;
+                options.sendExperimentCommand(`EXP02,STOP,${id}`);
+                pendingRun = null;
+                reject(new Error('實驗 02 等待裝置回報逾時；已送出停止指令，請確認裝置輸出已關閉。'));
+            }, 11 * 60 * 1000);
+            const ackTimer = setTimeout(() => {
+                if (pendingRun?.id !== id || pendingRun.acknowledged) return;
+                options.sendExperimentCommand(`EXP02,STOP,${id}`);
+                clearTimeout(timer);
+                pendingRun = null;
+                reject(new Error('ESP32 未回覆 EXP02,ACK；目前韌體可能不支援實驗 02 控制。'));
+            }, 8000);
+            pendingRun = { id, resolve, reject, timer, ackTimer, acknowledged: false };
+            try { options.sendExperimentCommand(command); }
+            catch (error) {
+                clearTimeout(timer); clearTimeout(ackTimer); pendingRun = null; reject(error);
+            }
+        });
+    }
+
+    function receiveLine(line) {
+        if (!line.startsWith('EXP02,') || !pendingRun) return;
+        const parts = line.split(',');
+        if (parts[2] !== pendingRun.id) return;
+        if (parts[1] === 'ACK') {
+            pendingRun.acknowledged = true;
+            clearTimeout(pendingRun.ackTimer);
+        } else if (parts[1] === 'STATE') {
+            status = `裝置執行中：${parts[3] || '等待回報'}`;
+        } else if (parts[1] === 'DONE' || parts[1] === 'ERR') {
+            const run = pendingRun;
+            pendingRun = null;
+            clearTimeout(run.timer);
+            clearTimeout(run.ackTimer);
+            if (parts[1] === 'DONE' && parts.length >= 7) run.resolve(parts);
+            else run.reject(new Error(parts[1] === 'ERR' ? `ESP32 中止實驗 02：${parts[3] || '未知原因'}` : 'ESP32 實驗回覆欄位不完整'));
+        }
+        if (root.isConnected) refresh();
+    }
 
     function profile() {
         const p = options.getUserProfile();
@@ -258,7 +313,7 @@ function createComfortExperiment(root, options) {
             button.disabled = isBusy() || (!done && (!bothAnchors() || !sameProfile() || !connected() || !node('EmptyConfirmed').checked));
             button.setAttribute('aria-pressed', String(trial?.method === m && trial.pose === pose));
         });
-        node('Status').textContent = busy ? [status, state.reason].filter(Boolean).join(' · ') : status ||
+        node('Status').textContent = busy ? [status, pendingRun ? '' : state.reason].filter(Boolean).join(' · ') : status ||
             (bothAnchors() ? '選擇姿勢、確認離枕，再按方法。' : '先完成兩個姿勢的校正。');
         const live = latest && performance.now() - latest.receivedMonotonicMs < 3000 && connected()
             ? Object.keys(COMFORT_CHANNELS).map(ch => `${COMFORT_CHANNELS[ch].label} ${comfortPressure(ch, latest[ch + '_adc'])}`).join('　')
@@ -266,22 +321,20 @@ function createComfortExperiment(root, options) {
         node('Live').textContent = live;
         node('Capture').hidden = !['empty', 'loaded'].includes(trial?.stage);
         node('Capture').textContent = trial?.stage === 'loaded' ? '記錄躺回壓力' : '記錄空枕壓力';
-        node('Capture').disabled = busy || !stableReading(trial?.after ?? Infinity, state);
-        node('Cancel').hidden = busy || !active();
+        node('Capture').disabled = busy || !stableReading(trial?.after ?? Infinity, state, true);
+        node('Cancel').hidden = !active();
         node('ScoreGroup').hidden = !trial || trial.stage === 'blocked';
         node('Score').disabled = busy || !trial?.loaded || Boolean(trial?.saved);
         node('ResultShot').disabled = busy || !folder || !trial?.loaded || node('Score').value === '';
         node('ResultShot').textContent = trial?.saved ? '重新儲存結果圖' : '截圖並儲存本次結果';
         renderTrial();
         if (dialog.open) {
-            const ready = calibration.initialized && state.ready && connected() && !busy;
+            const ready = state.ready && connected() && !busy;
             const [h, n] = targetHeights();
             const match = h === state.head && n === state.neck;
             node('CalStatus').textContent = busy ? [calStatus, state.reason].filter(Boolean).join(' · ') : calStatus;
             node('CalLive').textContent = `裝置回報：Head ${state.head ?? '—'} cm / Neck ${state.neck ?? '—'} cm。 ${live}`;
             node('CalClose').disabled = busy;
-            node('CalEmpty').disabled = busy || calibration.initialized;
-            node('CalInit').disabled = busy || calibration.initialized || !connected() || !node('CalEmpty').checked;
             head.disabled = neck.disabled = !ready;
             buttons('step').forEach(button => { button.disabled = !ready; });
             node('CalApply').disabled = !ready || h === null || n === null || match;
@@ -300,14 +353,21 @@ function createComfortExperiment(root, options) {
         finally { busy = false; refresh(); }
     }
     function openCalibration(p) {
-        calibration = { pose: p, subject: node('Subject').value, profile: profile(), initialized: false, after: Infinity };
+        calibration = { pose: p, subject: node('Subject').value, profile: profile(), after: Infinity };
         node('CalTitle').textContent = `校正${COMFORT_POSES[p].label}`;
-        node('CalEmpty').checked = node('CalStable').checked = false;
+        node('CalStable').checked = false;
         head.value = '7';
         neck.value = '10';
-        calStatus = '請確認離枕，再初始化空枕。';
+        calStatus = '正在讀取目前高度，請受測者維持指定姿勢。';
         dialog.showModal();
-        refresh();
+        return operate(async () => {
+            const state = await height.prepare();
+            const suggestion = p === '5' ? options.getPose5Suggestion?.() : null;
+            head.value = suggestion?.head ?? state.head;
+            neck.value = suggestion?.neck ?? state.neck;
+            calibration.after = performance.now();
+            calStatus = '請依受測者感受微調頭頸高度。';
+        }, message => { calStatus = message; });
     }
     function closeCalibration() {
         if (busy) return;
@@ -337,17 +397,16 @@ function createComfortExperiment(root, options) {
         }
         trial.stage = 'filling';
         node('EmptyConfirmed').checked = false;
-        status = '確認開機秒數，接著吸乾與充氣。';
+        status = '準備實驗 02 控制，等待 ESP32 吸乾與充氣。';
         await operate(async () => {
-            await height.prepare();
-            await height.startTimed(plan.times);
+            await runMethod(plan);
             trial.after = performance.now();
             trial.stage = 'empty';
             status = '充氣已完成。保持空枕，待穩定後按「記錄空枕壓力」。';
         }, message => { trial = null; status = message; });
     }
     function capturePressure() {
-        if (!stableReading(trial?.after ?? Infinity, height.getState())) return;
+        if (!stableReading(trial?.after ?? Infinity, height.getState(), true)) return;
         if (trial.stage === 'empty') {
             trial.empty = { ...latest };
             trial.after = latest.receivedMonotonicMs;
@@ -376,20 +435,6 @@ function createComfortExperiment(root, options) {
     buttons('calibrate').forEach(button => button.addEventListener('click', () => openCalibration(button.dataset.comfortCalibrate)));
     node('CalClose').addEventListener('click', closeCalibration);
     dialog.addEventListener('cancel', event => { event.preventDefault(); closeCalibration(); });
-    node('CalInit').addEventListener('click', () => {
-        if (!node('CalEmpty').checked || busy || calibration.initialized) return;
-        calStatus = '空枕初始化中。';
-        return operate(async () => {
-            await height.prepare();
-            const state = await height.startTimed({ monitorMs: COMFORT_MONITOR_MS, headMs: COMFORT_CHANNELS.head.minMs, neckMs: COMFORT_CHANNELS.neck.minMs });
-            const suggestion = calibration.pose === '5' ? options.getPose5Suggestion?.() : null;
-            head.value = suggestion?.head ?? state.head;
-            neck.value = suggestion?.neck ?? state.neck;
-            calibration.initialized = true;
-            calibration.after = performance.now();
-            calStatus = '請以指定姿勢躺下，依受測者感受微調頭頸高度。';
-        }, message => { calStatus = message; });
-    });
     buttons('step').forEach(button => button.addEventListener('click', () => {
         const [channel, delta] = button.dataset.comfortStep.split(':');
         const input = channel === 'head' ? head : neck, spec = COMFORT_CHANNELS[channel];
@@ -409,7 +454,7 @@ function createComfortExperiment(root, options) {
             if (height.getState().neck !== n) await height.adjust('NECK', n);
             calibration.after = performance.now();
             calStatus = '高度到位，請確認姿勢、穩定度與滿意度。';
-        }, message => { calibration.initialized = false; calStatus = message; });
+        }, message => { calStatus = message; });
     });
     node('CalSave').addEventListener('click', () => {
         if (node('CalSave').disabled || JSON.stringify(profile()) !== JSON.stringify(calibration.profile)) {
@@ -446,10 +491,11 @@ function createComfortExperiment(root, options) {
             status = saved ? `已儲存 ${name}` : '已取消覆蓋，原檔保留。';
         }, message => { status = `截圖儲存失敗：${message}`; });
     });
-    for (const id of ['EmptyConfirmed', 'CalEmpty', 'CalStable', 'Score']) node(id).addEventListener('change', refresh);
+    for (const id of ['EmptyConfirmed', 'CalStable', 'Score']) node(id).addEventListener('change', refresh);
     node('Capture').addEventListener('click', capturePressure);
     node('Cancel').addEventListener('click', () => {
-        if (!busy) { trial = null; status = '已取消本次測試，請重新確認離枕再選方法。'; refresh(); }
+        if (pendingRun) options.sendExperimentCommand(`EXP02,STOP,${pendingRun.id}`);
+        else if (!busy) { trial = null; status = '已取消本次測試，請重新確認離枕再選方法。'; refresh(); }
     });
     node('ResultShot').addEventListener('click', () => {
         if (node('ResultShot').disabled) return;
@@ -467,7 +513,7 @@ function createComfortExperiment(root, options) {
     });
     setInterval(() => { if (root.isConnected) refresh(); }, 250);
     return {
-        refresh, isBusy, isHolding, needsLeaveProtection: () => records.size > 0 || isBusy(),
+        refresh, isBusy, isHolding, receiveLine, needsLeaveProtection: () => records.size > 0 || isBusy(),
         getUiState: () => ({
             status: bothAnchors() ? 'completed' : 'idle',
             statusText: busy ? '裝置設定中' : bothAnchors() ? '兩姿勢已校正' : '待完成校正',
@@ -475,12 +521,16 @@ function createComfortExperiment(root, options) {
         }),
         receivePressure: sample => { if (!latest || sample.receivedMonotonicMs >= latest.receivedMonotonicMs) latest = { ...sample }; },
         onDisconnected: () => {
+            if (pendingRun) {
+                const run = pendingRun; pendingRun = null;
+                clearTimeout(run.timer); clearTimeout(run.ackTimer);
+                run.reject(new Error('BLE 已斷線；ESP32 已停止本輪輸出。'));
+            }
             latest = null;
             node('EmptyConfirmed').checked = false;
             if (calibration) {
-                calibration.initialized = false;
-                node('CalEmpty').checked = node('CalStable').checked = false;
-                calStatus = 'BLE 已斷線，請重新確認離枕並初始化。';
+                node('CalStable').checked = false;
+                calStatus = 'BLE 已斷線；重新連線後請關閉並重新開啟校正。';
             }
             if (active() && !trial.loaded && !busy) { trial = null; status = 'BLE 已斷線，本次量測中止。'; }
             if (root.isConnected) refresh();

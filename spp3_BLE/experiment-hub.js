@@ -160,6 +160,7 @@ function createExperimentHub(root, options = {}) {
             comfortExperiment = createComfortExperiment(comfortView, {
                 heightControl: options.heightControl, getSystemState: options.getSystemState,
                 getUserProfile: options.getComfortProfile, getPose5Suggestion: options.getPose5Suggestion,
+                sendExperimentCommand: options.sendExperimentCommand,
                 onChange: () => { if (currentExperiment === comfortId) updateControls(); }
             });
         }
@@ -191,6 +192,7 @@ function createExperimentHub(root, options = {}) {
             pressureExperiment?.receivePressure(sample);
             comfortExperiment?.receivePressure(sample);
         },
+        receiveLine: line => comfortExperiment?.receiveLine(line),
         onDisconnected: () => {
             pressureExperiment?.onDisconnected();
             comfortExperiment?.onDisconnected();

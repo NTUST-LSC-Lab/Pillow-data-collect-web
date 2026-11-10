@@ -19,23 +19,25 @@ test('Experiment 02 uses the configured R and M ratios and averages them per pos
             const { targets, times } = comfortPlan(pose, method, anchor);
             for (const [index, channel] of ['head', 'neck'].entries()) {
                 assert.equal(Number((targets[channel].ratio * 100).toFixed(4)), percentages[index]);
-                assert.equal(targets[channel].adc, anchor.pressure[channel + '_adc'] * (1 - targets[channel].ratio));
+                assert.equal(targets[channel].adc, Math.round(anchor.pressure[channel + '_adc'] * (1 - targets[channel].ratio)));
             }
-            assert.equal(times.monitorMs, 14500);
+            assert.equal(times, undefined);
         }
     }
 });
 
-test('height control uses the calibration heights and out-of-range ADC-derived timings are rejected', () => {
+test('height control preserves calibration heights and ADC plans expose integer pressure targets', () => {
     const heightPlan = comfortPlan('5', 'I', anchor);
-    assert.deepEqual(heightPlan.times, { monitorMs: 14500, headMs: 53585, neckMs: 30000 });
+    assert.equal(heightPlan.mode, 'HEIGHT');
+    assert.deepEqual(heightPlan.heights, { head: 9, neck: 12 });
     assert.deepEqual(heightPlan.targets, {});
     assert.deepEqual(heightPlan.issues, []);
 
     const lowPressure = { ...anchor, pressure: { ...anchor.pressure, head_adc: 1800000 } };
     const pressurePlan = comfortPlan('1', 'M', lowPressure);
-    assert.ok(pressurePlan.times.headMs < 30000);
-    assert.match(pressurePlan.issues.join(' '), /Head.*超出裝置範圍/);
+    assert.equal(pressurePlan.mode, 'ADC');
+    assert.equal(pressurePlan.targets.head.adc, Math.round(1800000 * (1 - 0.031331)));
+    assert.deepEqual(pressurePlan.issues, []);
 });
 
 test('the saved report keeps a zero score and separates empty and occupied pressure checks', () => {

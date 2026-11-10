@@ -2044,7 +2044,18 @@ button.full {
   gap: 6px;
 }
 
-.manual-command-grid button:nth-child(9) {
+.manual-neck-fill-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.manual-neck-fill-time input {
+  width: 90px;
+  min-width: 0;
+}
+
+#allDrainBtn {
   grid-column: 1 / -1;
 }
 

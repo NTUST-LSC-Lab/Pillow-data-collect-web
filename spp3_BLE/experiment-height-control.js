@@ -322,7 +322,16 @@ function createExperimentHeightControl(options) {
         evaluate();
     }
     // Called at actual queue execution, so an already queued conflicting command is covered.
-    function allowCommand(command, owned = false) {
+    function allowCommand(command, owned = false, experiment02 = false) {
+        if (experiment02) {
+            if (!connected()) return false;
+            const next = command.trim();
+            if (/^EXP02,STOP,/.test(next)) return true;
+            if (pending || recording() || !/^EXP02,START,/.test(next)) return false;
+            prepared = false;
+            clearSettled();
+            return true;
+        }
         if (owned) {
             if (pending?.type === 'startup') {
                 const next = command.trim();
