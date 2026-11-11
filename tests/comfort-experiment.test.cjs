@@ -61,7 +61,7 @@ test('the saved report keeps a zero score and separates empty and occupied press
 
 test('absolute regression retains zero and short positive times, only signed negatives use baseline', () => {
     for (const [channel, intercept, baseline] of [['head', 1820918, 30000], ['neck', 1878787, 10000]]) {
-        assert.deepEqual(comfortFillTime(channel, intercept), { calculatedMs: 0, commandMs: 0, baselineFallback: false });
+        assert.deepEqual(comfortFillTime(channel, intercept), { calculatedMs: 0, commandMs: 0, baselineFallback: false, limitCapped: false });
         const short = comfortFillTime(channel, intercept + 1);
         assert.ok(short.calculatedMs > 0 && short.calculatedMs < 1);
         assert.equal(short.commandMs, 0);
@@ -86,12 +86,41 @@ test('negative Neck falls back alone; positive Head and original targets are pre
     assert.equal(comfortCommand('RUN2', comfortPlan('1', 'I', anchor)), 'EXP02,START,RUN2,HEIGHT,9.0,12.0');
 });
 
-test('long fill is rejected before a command; targets and theoretical time are not silently capped', () => {
+test('long fill caps each command at its safe maximum while preserving targets and theoretical time', () => {
     const plan = comfortPlan('1', 'M', { ...anchor, pressure: { ...anchor.pressure, neck_adc: 2410000 } });
-    assert.ok(plan.times.neck.commandMs > 50000);
-    assert.ok(plan.issues.some(s => /Neck.*安全上限/.test(s)));
+    assert.ok(plan.times.neck.calculatedMs > 50000);
+    assert.equal(plan.times.neck.commandMs, 50000);
+    assert.equal(plan.times.neck.limitCapped, true);
+    assert.equal(plan.times.head.limitCapped, false);
+    assert.deepEqual(plan.issues, []);
+    assert.equal(plan.targets.neck.adc, Math.round(2410000 * (1 - 0.09390857201420701)));
+    assert.match(comfortCommand('CAP', plan), /^EXP02,START,CAP,ADC_TIME,/);
     const headPlan = comfortPlan('5', 'R', { ...anchor, pressure: { ...anchor.pressure, head_adc: 2400000 } });
-    assert.ok(headPlan.issues.some(s => /Head.*安全上限/.test(s)));
+    assert.ok(headPlan.times.head.calculatedMs > 136132);
+    assert.equal(headPlan.times.head.commandMs, 136132);
+    assert.equal(headPlan.times.head.limitCapped, true);
+    assert.deepEqual(headPlan.issues, []);
+});
+
+test('cap flags distinguish upper-limit rounding from theoretical overflow for each channel', () => {
+    for (const [channel, below, above, limit] of [['head', 2207217, 2207218, 136132], ['neck', 2169814, 2169815, 50000]]) {
+        const low = comfortFillTime(channel, below), high = comfortFillTime(channel, above);
+        assert.ok(low.calculatedMs < limit); assert.equal(low.commandMs, limit); assert.equal(low.limitCapped, false);
+        assert.ok(high.calculatedMs > limit); assert.equal(high.commandMs, limit); assert.equal(high.limitCapped, true);
+        assert.equal(high.baselineFallback, false);
+    }
+});
+
+test('upper cap and negative fallback remain independent and invalid ADC targets are still blocked', () => {
+    const plan = comfortPlan('1', 'R', { ...anchor, pressure: { ...anchor.pressure, head_adc: 2400000, neck_adc: 2000000 } });
+    assert.equal(plan.times.head.limitCapped, true); assert.equal(plan.times.head.commandMs, 136132);
+    assert.equal(plan.times.neck.baselineFallback, true); assert.equal(plan.times.neck.commandMs, 10000);
+    assert.equal(plan.times.head.baselineFallback, false); assert.equal(plan.times.neck.limitCapped, false);
+    assert.deepEqual(plan.issues, []);
+    for (const value of [NaN, Infinity, 0, 4000000]) {
+        const invalid = comfortPlan('1', 'R', { ...anchor, pressure: { ...anchor.pressure, head_adc: value } });
+        assert.ok(invalid.issues.some(s => /目標 ADC/.test(s)));
+    }
 });
 
 test('firmware TIME is authoritative only when formula, applied milliseconds and channel fallback agree', () => {
@@ -121,4 +150,26 @@ test('screen and SVG report distinguish theoretical negative time, baseline fall
     assert.ok(report.details.some(s => s.includes('1,950,000 ADC')));
     assert.ok(report.details.includes('滿意度：10／10'));
     assert.match(report.sections[1].rows[1][3], /1,951,000 ADC/);
+});
+
+test('TIME confirms capped commands while rejecting uncapped times and false fallback flags', () => {
+    const highAnchor = { ...anchor, pressure: { ...anchor.pressure, head_adc: 2550000, neck_adc: 2550000 } };
+    const plan = comfortPlan('1', 'R', highAnchor);
+    const line = ['EXP02', 'TIME', 'CAP', plan.times.head.calculatedMs.toFixed(3),
+        plan.times.neck.calculatedMs.toFixed(3), '136132', '50000', '0', '0'];
+    const actual = comfortDeviceTimes(line, plan);
+    assert.equal(actual.head.limitCapped, true); assert.equal(actual.neck.limitCapped, true);
+    for (const [index, value] of [[5, String(Math.round(plan.times.head.calculatedMs))],
+        [6, '50001'], [7, '1'], [3, '136132']]) {
+        const bad = [...line]; bad[index] = value;
+        assert.throws(() => comfortDeviceTimes(bad, plan));
+    }
+    const report = comfortReport({ subject: 'S00', pose: '1', method: 'R', anchor: highAnchor, plan,
+        deviceTimes: actual, empty: {}, loaded: {}, score: 8 });
+    for (const [i, time] of ['136.132 s', '50.000 s'].entries()) {
+        const row = report.sections[0].rows[i];
+        assert.notEqual(row[1], time); assert.equal(row[2], time); assert.equal(row[3], time);
+        assert.equal(row[4], '安全上限截斷');
+    }
+    assert.ok(report.details.some(s => /備援及上限截斷結果/.test(s)));
 });

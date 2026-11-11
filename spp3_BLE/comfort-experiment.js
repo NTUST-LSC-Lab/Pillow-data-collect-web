@@ -14,7 +14,9 @@ function comfortFillTime(channel, targetAdc) {
     const spec = COMFORT_CHANNELS[channel];
     const calculatedMs = (targetAdc - spec.adcAtZeroMs) / spec.adcPerMs;
     const baselineFallback = calculatedMs < 0;
-    return { calculatedMs, commandMs: baselineFallback ? spec.minMs : Math.round(calculatedMs), baselineFallback };
+    const limitCapped = calculatedMs > spec.maxMs;
+    const commandMs = baselineFallback ? spec.minMs : Math.min(spec.maxMs, Math.round(calculatedMs));
+    return { calculatedMs, commandMs, baselineFallback, limitCapped };
 }
 
 function comfortPlan(pose, method, anchor) {
@@ -38,9 +40,6 @@ function comfortPlan(pose, method, anchor) {
             times[channel] = comfortFillTime(channel, targets[channel].adc);
             if (!Number.isFinite(adc) || targets[channel].adc < 1000000 || targets[channel].adc > 2550000) {
                 issues.push(`${spec.label} 目標 ADC 超出裝置接受範圍`);
-            }
-            if (times[channel].commandMs > spec.maxMs) {
-                issues.push(`${spec.label} 換算充氣時間 ${(times[channel].commandMs / 1000).toFixed(3)} 秒超過安全上限 ${(spec.maxMs / 1000).toFixed(3)} 秒`);
             }
         }
     }
@@ -66,9 +65,9 @@ function comfortDeviceTimes(parts, plan) {
         if (!Number.isFinite(calculatedMs) || !Number.isSafeInteger(commandMs) || commandMs < 0 ||
             Math.abs(calculatedMs - expected.calculatedMs) > 0.001 ||
             commandMs !== expected.commandMs || baselineFallback !== expected.baselineFallback) {
-            throw new Error('ESP32 充氣時間或備援政策與目前 Web 不一致，請確認配對韌體版本');
+            throw new Error('ESP32 充氣時間、備援或上限截斷政策與目前 Web 不一致，請確認配對韌體版本');
         }
-        times[channel] = { calculatedMs, commandMs, baselineFallback };
+        times[channel] = { calculatedMs, commandMs, baselineFallback, limitCapped: expected.limitCapped };
     }
     return times;
 }
@@ -130,6 +129,7 @@ function comfortReport(trial) {
             (predicted.commandMs / 1000).toFixed(3) + ' s',
             confirmed ? (confirmed.commandMs / 1000).toFixed(3) + ' s' : '待裝置確認',
             predicted.baselineFallback ? '開機基準備援（負時間）' :
+                predicted.limitCapped ? '安全上限截斷' :
                 predicted.calculatedMs < spec.minMs ? '公式時間（低於開機基準）' : '公式時間'];
     }) : [];
     return {
@@ -140,8 +140,8 @@ function comfortReport(trial) {
                 plan.mode === 'ADC' ? '充氣設定：Monitor 14.5 s；Head／Neck 依空枕目標 ADC 控制' :
                 `充氣設定：Monitor 14.5 s；Head ${plan.heights.head.toFixed(1)} cm / Neck ${plan.heights.neck.toFixed(1)} cm`,
             ...(plan.mode === 'ADC_TIME' ? [
-                't < 0：僅該氣囊改用 Head 30 s／Neck 10 s；非負時間保持公式值。',
-                '固定時間不保證命中目標；備援結果須另行標記分析。',
+                't < 0：Head 30 s／Neck 10 s 備援；超上限：Head 136.132 s／Neck 50 s 截斷。',
+                '固定時間不保證命中目標；備援及上限截斷結果須另行標記分析。',
                 `裝置完成時回報：Head ${comfortPressure('head', trial.deviceEmpty?.head_adc)}；Neck ${comfortPressure('neck', trial.deviceEmpty?.neck_adc)}`
             ] : []),
             `空枕快照：${empty?.timestamp_iso || '待記錄'}　Monitor：${comfortPressure('monitor', empty?.monitor_adc)}`,

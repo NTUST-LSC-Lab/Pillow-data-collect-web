@@ -107,10 +107,10 @@ function fixture() {
     // Folder/save click handlers intentionally start async work without returning
     // it to the DOM event dispatcher. Let that work finish before assertions.
     const settle = async () => { await new Promise(setImmediate); controller.refresh(); };
-    async function setup() {
+    async function setup(calibrationPressure) {
         node('Subject').value = 'S01'; await node('Subject').dispatch('change');
         for (const pose of ['1', '5']) {
-            await button('calibrate', pose).click(); pressure(); node('CalStable').checked = true; controller.refresh();
+            await button('calibrate', pose).click(); pressure(calibrationPressure); node('CalStable').checked = true; controller.refresh();
             assert.equal(node('CalSave').disabled, false); await node('CalSave').click();
         }
         await node('Folder').click(); await settle();
@@ -312,4 +312,23 @@ test('disconnect cancels a saved retake and reconnect cannot re-record an unconf
     assert.equal(f.node('RerecordEmpty').disabled, true); assert.equal(f.node('RerecordLoaded').disabled, true);
     await f.node('RerecordLoaded').click(); assert.equal(viewText(f.node('Trial')), originalView);
     assert.deepEqual(f.commands, commands); assert.equal(f.files.size, 1);
+});
+
+test('R/M/A with oversized fill times complete and save annotated capped times without altering targets', async () => {
+    for (const method of ['R', 'M', 'A']) {
+        const f = fixture(); await f.setup({ head_adc: 2550000, neck_adc: 2550000 });
+        await completedTrial(f, method);
+        assert.match(viewText(f.node('Trial')), /安全上限截斷/);
+        assert.match(viewText(f.node('Trial')), /136\.132 s/);
+        assert.match(viewText(f.node('Trial')), /50\.000 s/);
+        await saveTrial(f);
+        assert.equal(f.files.size, 1);
+        assert.equal(f.commands.length, 1); // No FILL_LIMIT/STOP or extra actuation.
+        const parts = f.commands[0].split(',');
+        assert.equal(parts[3], 'ADC_TIME');
+        const svg = [...f.files.values()][0];
+        assert.match(svg, /安全上限截斷/); assert.match(svg, /裝置確認時間/);
+        for (const adc of parts.slice(4)) assert.ok(svg.includes(Number(adc).toLocaleString('en-US') + ' ADC'));
+        assert.match(svg, /2,550,000 ADC/);
+    }
 });
