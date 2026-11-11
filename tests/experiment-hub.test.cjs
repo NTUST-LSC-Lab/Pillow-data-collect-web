@@ -139,7 +139,7 @@ test('nine-item dropdown and previous/next share one selection; eight placeholde
         const id = String(i).padStart(2, '0');
         assert.equal(f.nodes.experimentCounter.textContent, `實驗 ${id} / 09`);
         assert.equal(f.nodes.experimentSelect.value, id);
-        assert.equal(f.nodes.experimentTitle.textContent, `Experiment ${id}`);
+        assert.equal(f.nodes.experimentTitle.textContent, (id === '03' ? '躺下後的快速姿勢辨識' : `Experiment ${id}`));
         assert.equal(f.nodes.experimentStart.disabled, true); assert.equal(f.nodes.experimentFinish.disabled, true);
         assert.equal(f.nodes.experimentExport.hidden, true);
         assert.match(f.nodes.experimentView.children[0].textContent, /尚未設定/);

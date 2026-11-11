@@ -1,0 +1,82 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>實驗三 · 操作預覽</title><link rel="stylesheet" href="styles.css"><style>body{padding:24px;background:#f4f7fb}main{max-width:1050px;margin:auto}.preview-banner{padding:16px;border:1px solid #e3ba59;border-radius:12px;background:#fff7df;margin-bottom:20px}.preview-profile{display:flex;gap:16px;flex-wrap:wrap}.preview-profile label{display:flex;flex-direction:column;gap:6px}.preview-profile input,.preview-profile select{max-width:150px}h1{font-size:24px}#previewHost{padding:22px;background:white;border:1px solid #dbe3ee;border-radius:14px}</style></head><body><main><h1>實驗 03｜躺下後的快速姿勢辨識</h1><div class="preview-banner"><strong>操作預覽 · 模擬資料</strong><br>本頁不連線 BLE、不控制硬體；建議高度亦為模擬值，正式版使用韌體依個人資料計算的建議。可操作校正、儲存與 15 秒記錄；儲存會下載模擬資料檔。實機操作請開啟 <a href="index.html">完整實驗 Web</a>。</div><section class="comfort-section"><h4>受試者基本資料</h4><div class="preview-profile"><label>性別<select id="demoGender"><option value="male">男性</option><option value="female">女性</option></select></label><label>年齡<input id="demoAge" type="number" value="25" min="1"></label><label>身高（cm）<input id="demoHeight" type="number" value="170" min="1"></label><label>體重（kg）<input id="demoWeight" type="number" value="65" min="1"></label></div><p>姿勢五依資料預設建議高度，可用校正視窗內的 ± 或輸入欄調整。</p></section><div id="previewHost"></div></main>	<template id="comfortExperimentTemplate">
+		<div class="comfort-experiment">
+			<section class="comfort-section">
+				<h4>受測者</h4>
+				<label for="comfortSubject">受測者編號</label>
+				<select id="comfortSubject"><option value="">請選擇受測者</option></select>
+				<p id="comfortProfile" class="pressure-field-hint"></p>
+				<button type="button" id="comfortFolder" aria-describedby="comfortFolderStatus">選擇儲存資料夾</button>
+				<p id="comfortFolderStatus" class="pressure-field-hint" role="status">尚未選擇儲存資料夾</p>
+			</section>
+			<section class="comfort-section">
+				<h4>兩姿勢校正</h4>
+				<div class="pressure-calibration-saved">
+					<section><h4>姿勢一 · 仰躺</h4><output id="comfortAnchor1">尚未校正</output><button type="button" data-comfort-calibrate="1">校正姿勢一</button></section>
+					<section><h4>姿勢五 · 正側躺</h4><output id="comfortAnchor5">尚未校正</output><button type="button" data-comfort-calibrate="5">校正姿勢五</button></section>
+				</div>
+				<button type="button" id="comfortAnchorShot" disabled>截圖並儲存校正總覽</button>
+			</section>
+			<section class="comfort-section">
+				<h4>方法測試</h4>
+				<p id="comfortProgress">姿勢一 0／4 · 姿勢五 0／4</p>
+				<div class="comfort-buttons" role="group" aria-label="測試姿勢">
+					<button type="button" data-comfort-pose="1" aria-pressed="true">姿勢一</button>
+					<button type="button" data-comfort-pose="5" aria-pressed="false">姿勢五</button>
+				</div>
+				<p class="pressure-field-hint">Monitor 固定 14.5 秒。R／M／A 將目標 ADC 換算為固定充氣時間；負時間的氣囊改用 Head 30 秒／Neck 10 秒備援，超過安全上限則使用 Head 136.132 秒／Neck 50 秒並標記截斷。請先確認離枕，再按方法開始吸乾與充氣。</p>
+				<label><input type="checkbox" id="comfortEmptyConfirmed"> 已確認受測者離枕</label>
+				<div class="comfort-buttons" role="group" aria-label="支撐方法">
+					<button type="button" data-comfort-method="R">R · 論文</button>
+					<button type="button" data-comfort-method="M">M · 30 人</button>
+					<button type="button" data-comfort-method="A">A · 平均</button>
+					<button type="button" data-comfort-method="I">I · 高度</button>
+				</div>
+				<p id="comfortStatus" class="pressure-field-hint" role="status" aria-live="polite"></p>
+				<p id="comfortLive" class="pressure-field-hint"></p>
+				<div id="comfortTrial" hidden></div>
+				<div class="comfort-buttons">
+					<button type="button" class="primary" id="comfortCapture" hidden>記錄空枕壓力</button>
+					<button type="button" id="comfortRerecordEmpty" aria-describedby="comfortRerecordHint" hidden>重新記錄空枕壓力</button>
+					<button type="button" id="comfortRerecordLoaded" aria-describedby="comfortRerecordHint" hidden>重新記錄躺回壓力</button>
+					<button type="button" id="comfortCancel" hidden>取消本次測試</button>
+				</div>
+				<p id="comfortRerecordHint" class="pressure-field-hint" hidden>重新記錄不重新打氣。重記空枕後需再記躺回並重新評分；已存的 SVG 需再次儲存才會更新。</p>
+				<div id="comfortScoreGroup" hidden>
+					<label id="comfortScoreLabel" for="comfortScore">滿意度（0–10 分）</label>
+					<select id="comfortScore"><option value="">請選擇分數</option></select>
+				</div>
+				<button type="button" class="primary" id="comfortResultShot" aria-describedby="comfortResultShotHint" disabled>截圖並儲存本次結果</button>
+				<p id="comfortResultShotHint" class="pressure-field-hint">選好資料夾、記錄躺回壓力並選擇滿意度後，即可截圖儲存。</p>
+			</section>
+			<dialog id="comfortCalibration" class="comfort-dialog" aria-labelledby="comfortCalTitle">
+				<div class="comfort-dialog-heading">
+					<h3 id="comfortCalTitle">姿勢校正</h3>
+					<button type="button" id="comfortCalClose" aria-label="關閉校正">×</button>
+				</div>
+				<p id="comfortCalStatus" class="pressure-field-hint" role="status" aria-live="polite"></p>
+				<div class="comfort-height-fields">
+					<div>
+						<label for="comfortCalHead">頭部目標（cm）</label>
+						<div class="pressure-height-stepper">
+							<button type="button" data-comfort-step="head:-0.5" aria-label="降低頭部 0.5 cm">−</button>
+							<input id="comfortCalHead" type="number" min="7" max="16" step="0.5">
+							<button type="button" data-comfort-step="head:0.5" aria-label="升高頭部 0.5 cm">＋</button>
+						</div>
+					</div>
+					<div>
+						<label for="comfortCalNeck">頸部目標（cm）</label>
+						<div class="pressure-height-stepper">
+							<button type="button" data-comfort-step="neck:-0.5" aria-label="降低頸部 0.5 cm">−</button>
+							<input id="comfortCalNeck" type="number" min="10" max="14" step="0.5">
+							<button type="button" data-comfort-step="neck:0.5" aria-label="升高頸部 0.5 cm">＋</button>
+						</div>
+					</div>
+				</div>
+				<p id="comfortCalLive" class="pressure-field-hint"></p>
+				<button type="button" id="comfortCalApply">套用高度</button>
+				<label><input type="checkbox" id="comfortCalStable"> 已確認指定姿勢、壓力穩定且滿意度 10 分</label>
+				<button type="button" class="primary" id="comfortCalSave">校正完成</button>
+			</dialog>
+		</div>
+	</template>
+<script src="../chart.umd.min.js"></script><script src="comfort-experiment.js"></script><script src="rapid-experiment.js"></script><script src="preview.js"></script></body></html>

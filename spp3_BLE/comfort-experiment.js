@@ -250,7 +250,7 @@ function createComfortExperiment(root, options) {
         ['loaded', 'score'].includes(trial.stage);
     const active = () => Boolean(trial && !trial.saved && trial.stage !== 'blocked');
     const isHolding = () => dialog.open || active();
-    const isBusy = () => busy || isHolding();
+    const isBusy = () => busy || isHolding() || Boolean(options.isLocked?.());
     const stableReading = (after, state, methodReading = false) => connected() && (methodReading || state.ready) && latest &&
         performance.now() - latest.receivedMonotonicMs < 3000 && latest.receivedMonotonicMs > after &&
         (methodReading || latest.receivedMonotonicMs >= state.settledMonotonicMs) &&
@@ -400,7 +400,7 @@ function createComfortExperiment(root, options) {
             button.setAttribute('aria-pressed', String(trial?.method === m && trial.pose === pose));
         });
         node('Status').textContent = busy ? [status, pendingRun ? '' : state.reason].filter(Boolean).join(' · ') : status ||
-            (bothAnchors() ? '選擇姿勢、確認離枕，再按方法。' : '先完成兩個姿勢的校正。');
+            (bothAnchors() ? (options.calibrationOnly ? '請儲存校正總覽，再請受試者離枕並開始抽乾。' : '選擇姿勢、確認離枕，再按方法。') : '先完成兩個姿勢的校正。');
         const live = latest && performance.now() - latest.receivedMonotonicMs < 3000 && connected()
             ? Object.keys(COMFORT_CHANNELS).map(ch => `${COMFORT_CHANNELS[ch].label} ${comfortPressure(ch, latest[ch + '_adc'])}`).join('　')
             : '等待新壓力讀值';
@@ -457,6 +457,7 @@ function createComfortExperiment(root, options) {
         calStatus = '正在讀取目前高度，請受測者維持指定姿勢。';
         dialog.showModal();
         return operate(async () => {
+            await options.beforeCalibrationPrepare?.(calibration);
             const state = await height.prepare();
             const suggestion = p === '5' ? options.getPose5Suggestion?.() : null;
             head.value = suggestion?.head ?? state.head;
@@ -586,22 +587,32 @@ function createComfortExperiment(root, options) {
             calStatus = '高度到位，請確認姿勢、穩定度與滿意度。';
         }, message => { calStatus = message; });
     });
-    node('CalSave').addEventListener('click', () => {
+    node('CalSave').addEventListener('click', async () => {
         if (node('CalSave').disabled || JSON.stringify(profile()) !== JSON.stringify(calibration.profile)) {
             calStatus = '基本資料已變更，請關閉並重新開啟校正。'; refresh(); return;
+        }
+        if (options.beforeCalibrationSave) {
+            let captured = false;
+            calStatus = '正在同步分類校正基準，請維持目前姿勢並自然呼吸…';
+            await operate(async () => {
+                await options.beforeCalibrationSave(calibration);
+                captured = true;
+            }, message => { calStatus = message; });
+            if (!captured || !sameProfile()) return;
         }
         const state = height.getState();
         const rec = selection() || { anchors: {}, trials: {}, profile: calibration.profile };
         rec.anchors[calibration.pose] = { head: state.head, neck: state.neck, pressure: { ...latest } };
         records.set(calibration.subject, rec);
-        status = bothAnchors() ? '兩個基準已保存。選好儲存資料夾後即可截圖，並可開始方法測試。' : '基準已保存，請完成另一個姿勢。';
+        options.onCalibrationChanged?.();
+        status = bothAnchors() ? (options.calibrationOnly ? '兩個基準已保存，請截圖並儲存校正總覽。' : '兩個基準已保存。選好儲存資料夾後即可截圖，並可開始方法測試。') : '基準已保存，請完成另一個姿勢。';
         closeCalibration();
     });
     if (!canPickFolder) node('FolderStatus').textContent = '請在 Chrome 或 Edge 開啟網頁，以選擇本機儲存資料夾。';
     node('Folder').addEventListener('click', () => {
         if (node('Folder').disabled) return;
         operate(async () => {
-            folder = await window.showDirectoryPicker({ mode: 'readwrite', id: 'ipillow-experiment-02' });
+            folder = await window.showDirectoryPicker({ mode: 'readwrite', id: options.folderId || 'ipillow-experiment-02' });
             node('FolderStatus').textContent = `儲存位置：${folder.name}`;
         }, (message, error) => {
             if (error.name !== 'AbortError') status = `選擇資料夾失敗：${message}`;
@@ -610,14 +621,15 @@ function createComfortExperiment(root, options) {
     node('AnchorShot').addEventListener('click', () => {
         if (node('AnchorShot').disabled) return;
         const rec = selection(), id = node('Subject').value;
-        const name = `${id}_00_校正總覽.svg`;
+        const name = options.experimentId ? `${id}_${options.experimentId}_00_校正總覽.svg` : `${id}_00_校正總覽.svg`;
         operate(async () => {
             const saved = await saveComfortImage(folder, name, {
-                title: `${id}｜實驗 02 校正總覽`,
+                title: `${id}｜實驗 ${options.experimentId || '02'} 校正總覽`,
                 details: [comfortProfileText(rec.profile), 'Monitor 固定 14.5 秒。校正值為滿意度 10 分時的單筆快照。',
                     ...['1', '5'].flatMap(p => [`${COMFORT_POSES[p].label}｜${rec.anchors[p].pressure.timestamp_iso}`, ...comfortAnchorText(rec.anchors[p])])],
                 sections: []
             });
+            if (saved) options.onCalibrationOverviewSaved?.();
             status = saved ? `已儲存 ${name}` : '已取消覆蓋，原檔保留。';
         }, message => { status = `截圖儲存失敗：${message}`; });
     });
@@ -651,6 +663,12 @@ function createComfortExperiment(root, options) {
     });
     setInterval(() => { if (root.isConnected) refresh(); }, 250);
     return {
+        resetCalibration: () => {
+            if (isBusy()) return;
+            records.delete(node('Subject').value); trial = null; calibration = null;
+            status = '請重新完成兩姿勢校正。'; options.onCalibrationChanged?.(); refresh();
+        },
+        getCalibration: () => ({ subject: node('Subject').value, record: selection(), folder, valid: bothAnchors() && sameProfile() }),
         refresh, isBusy, isHolding, receiveLine, needsLeaveProtection: () => records.size > 0 || isBusy(),
         getUiState: () => ({
             status: bothAnchors() ? 'completed' : 'idle',

@@ -6,7 +6,7 @@ function createExperimentHub(root, options = {}) {
     const comfortId = options.comfortConfig?.experimentId;
     const experimentRegistry = Array.from({ length: 9 }, (_, index) => {
         const id = String(index + 1).padStart(2, '0');
-        return { id, title: id === pressureId ? pressureConfig.title : id === comfortId ? options.comfortConfig.title : `Experiment ${id}` };
+        return { id, title: id === '03' ? '躺下後的快速姿勢辨識' : id === pressureId ? pressureConfig.title : id === comfortId ? options.comfortConfig.title : `Experiment ${id}` };
     });
     const experimentStates = new Map(experimentRegistry.map(experiment => [
         experiment.id, { status: '尚未開始' }
@@ -18,6 +18,7 @@ function createExperimentHub(root, options = {}) {
     let pressureView = null;
     let comfortExperiment = null;
     let comfortView = null;
+    let rapidExperiment = null, rapidView = null;
 
     function setText(node, text) {
         if (node.textContent !== text) node.textContent = text;
@@ -26,8 +27,9 @@ function createExperimentHub(root, options = {}) {
     function updateControls(uiState) {
         const selected = currentExperiment === pressureId && pressureExperiment;
         const comfortSelected = currentExperiment === comfortId && comfortExperiment;
-        const state = selected ? uiState || pressureExperiment.getUiState() : comfortSelected ? comfortExperiment.getUiState() : null;
-        const running = pressureExperiment?.isBusy() || comfortExperiment?.isBusy() || false;
+        const rapidSelected = currentExperiment === '03' && rapidExperiment;
+        const state = rapidSelected ? rapidExperiment.getUiState() : selected ? uiState || pressureExperiment.getUiState() : comfortSelected ? comfortExperiment.getUiState() : null;
+        const running = pressureExperiment?.isBusy() || comfortExperiment?.isBusy() || rapidExperiment?.isBusy() || false;
         const index = experimentRegistry.findIndex(experiment => experiment.id === currentExperiment);
         nodes.prev.disabled = running || index === 0;
         nodes.next.disabled = running || index === experimentRegistry.length - 1;
@@ -38,8 +40,8 @@ function createExperimentHub(root, options = {}) {
         setText(nodes.finish, selected ? '提前結束' : '結束實驗');
         nodes.start.disabled = !state || state.startDisabled;
         nodes.finish.disabled = !state || state.finishDisabled;
-        nodes.start.hidden = Boolean(comfortSelected);
-        nodes.finish.hidden = Boolean(comfortSelected);
+        nodes.start.hidden = Boolean(comfortSelected || rapidSelected);
+        nodes.finish.hidden = Boolean(comfortSelected || rapidSelected);
         nodes.export.hidden = !selected;
         nodes.export.disabled = !state || state.exportDisabled;
         setText(nodes.export, '匯出 CSV＋線圖');
@@ -83,6 +85,9 @@ function createExperimentHub(root, options = {}) {
         } else if (currentExperiment === comfortId && comfortExperiment) {
             nodes.view.replaceChildren(comfortView);
             comfortExperiment.refresh();
+        } else if (currentExperiment === '03' && rapidExperiment) {
+            nodes.view.replaceChildren(rapidView);
+            rapidExperiment.refresh();
         } else {
             const placeholder = document.createElement('p');
             placeholder.className = 'experiment-placeholder';
@@ -93,7 +98,7 @@ function createExperimentHub(root, options = {}) {
     }
 
     function selectExperiment(id) {
-        if (pressureExperiment?.isBusy() || comfortExperiment?.isBusy()) {
+        if (pressureExperiment?.isBusy() || comfortExperiment?.isBusy() || rapidExperiment?.isBusy()) {
             nodes.select.value = currentExperiment;
             return;
         }
@@ -129,7 +134,7 @@ function createExperimentHub(root, options = {}) {
         const experimentOptions = experimentRegistry.map(experiment => {
             const option = document.createElement('option');
             option.value = experiment.id;
-            option.textContent = experiment.id === pressureId || experiment.id === comfortId
+            option.textContent = experiment.id === pressureId || experiment.id === comfortId || experiment.id === '03'
                 ? `Experiment ${experiment.id}：${experiment.title}` : `${experiment.title}：尚未設定`;
             return option;
         });
@@ -164,6 +169,13 @@ function createExperimentHub(root, options = {}) {
                 onChange: () => { if (currentExperiment === comfortId) updateControls(); }
             });
         }
+        if (typeof createRapidExperiment === 'function') {
+        rapidView = document.createElement('div');
+        rapidExperiment = createRapidExperiment(rapidView, {
+            ...options, getUserProfile: options.getComfortProfile,
+            onChange: () => { if (currentExperiment === '03') updateControls(); }
+        });
+        }
         nodes.start.addEventListener('click', () => {
             if (currentExperiment === pressureId) pressureExperiment?.start();
         });
@@ -174,7 +186,7 @@ function createExperimentHub(root, options = {}) {
             if (currentExperiment === pressureId) pressureExperiment?.exportCsv();
         });
         window.addEventListener('beforeunload', event => {
-            if (pressureExperiment?.needsLeaveProtection() || comfortExperiment?.needsLeaveProtection()) {
+            if (pressureExperiment?.needsLeaveProtection() || comfortExperiment?.needsLeaveProtection() || rapidExperiment?.needsLeaveProtection()) {
                 event.preventDefault();
                 event.returnValue = '';
             }
@@ -186,16 +198,18 @@ function createExperimentHub(root, options = {}) {
 
     return {
         init,
-        isRunning: () => pressureExperiment?.isRunning() || false,
-        isComfortHolding: () => comfortExperiment?.isHolding() || false,
+        isRunning: () => pressureExperiment?.isRunning() || rapidExperiment?.isRunning() || false,
+        isComfortHolding: () => comfortExperiment?.isHolding() || rapidExperiment?.isBusy() || false,
         receivePressure: sample => {
             pressureExperiment?.receivePressure(sample);
             comfortExperiment?.receivePressure(sample);
+            rapidExperiment?.receivePressure(sample);
         },
-        receiveLine: line => comfortExperiment?.receiveLine(line),
+        receiveLine: line => { comfortExperiment?.receiveLine(line); rapidExperiment?.receiveLine(line); },
         onDisconnected: () => {
             pressureExperiment?.onDisconnected();
             comfortExperiment?.onDisconnected();
+            rapidExperiment?.onDisconnected();
         }
     };
 }

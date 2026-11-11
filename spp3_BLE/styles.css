@@ -2897,3 +2897,15 @@ button.full {
     text-align: left;
   }
 }
+
+/* Experiment 03 follows the existing calibration and experiment cards. */
+.rapid-test { margin-top: 20px; }
+.rapid-test label { display: flex; align-items: flex-start; gap: 8px; }
+.rapid-test input[type="checkbox"] { width: auto; margin-top: 4px; }
+.rapid-clock { display: flex; align-items: baseline; gap: 8px; margin: 18px 0; font-variant-numeric: tabular-nums; }
+.rapid-clock strong { font-size: 48px; line-height: 1.2; color: var(--primary, #2563eb); }
+.rapid-checkpoints { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.rapid-checkpoints span { border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px 12px; }
+.rapid-test [aria-pressed="true"] { background: #eaf2fc; border-color: #2563eb; color: #174ea6; }
+.rapid-test button:disabled { opacity: .45; cursor: not-allowed; }
+.rapid-test table { min-width: 700px; }

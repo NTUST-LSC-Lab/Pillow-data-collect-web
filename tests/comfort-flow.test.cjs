@@ -8,7 +8,7 @@ const vm = require('node:vm');
 const { comfortFillTime } = require('../spp3_BLE/comfort-experiment.js');
 const read = name => fs.readFileSync(path.join(__dirname, '../spp3_BLE', name), 'utf8');
 
-function fixture() {
+function fixture(hooks = {}) {
     let clock = 1, connected = true, writeFails = false, confirmResult = true;
     const commands = [], files = new Map(), nodes = {}, groups = {};
     class Element {
@@ -70,6 +70,7 @@ function fixture() {
     const state = { head: 7, neck: 10, ready: true, settledMonotonicMs: 0 };
     let controller;
     controller = context.createComfortExperiment(root, {
+        ...hooks,
         onChange() {},
         heightControl: { prepare: async () => state, getState: () => state, tick() {} },
         getUserProfile: () => ({ gender: 'male', age_years: 25, body_height_cm: 170, body_weight_kg: 65 }),
@@ -332,3 +333,15 @@ test('R/M/A with oversized fill times complete and save annotated capped times w
         assert.match(svg, /2,550,000 ADC/);
     }
 });
+
+ test('calibration overview callback fires only after successful file close; cancellation/failure never unlocks preparation', async () => {
+    let saved = 0;
+    const f = fixture({ onCalibrationOverviewSaved: () => saved++ });
+    await f.setup();
+    f.setWriteFailure(true); await f.node('AnchorShot').click(); await f.settle();
+    assert.equal(saved, 0);
+    f.setWriteFailure(false); await f.node('AnchorShot').click(); await f.settle();
+    assert.equal(saved, 1);
+    f.setConfirm(false); await f.node('AnchorShot').click(); await f.settle();
+    assert.equal(saved, 1);
+ });

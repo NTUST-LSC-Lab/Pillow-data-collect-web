@@ -2330,11 +2330,12 @@
 
 			function parseProtocolMessage(dataString) {
 				const parts = dataString.split(',').map(v => v.trim());
+                if (parts[0] !== 'EXP02' && typeof experimentHubModule !== 'undefined') experimentHubModule?.receiveLine?.(dataString);
 				if (parts.length < 2) {
 					return;
 				}
 				if (parts[0] === 'EXP02') {
-					experimentHubModule?.receiveLine(dataString);
+					experimentHubModule?.receiveLine?.(dataString);
 					return;
 				}
 
@@ -2863,8 +2864,8 @@
 			console.log('Command buffered: ' + command);
 		}
 
-		function allowExperimentHeightCommand(message, owned = false, experiment02 = false) {
-			if (!experimentHeightControl || experimentHeightControl.allowCommand(message, owned, experiment02)) return true;
+		function allowExperimentHeightCommand(message, owned = false, experiment02 = false, experiment03 = false) {
+			if (!experimentHeightControl || experimentHeightControl.allowCommand(message, owned, experiment02, experiment03)) return true;
 			serial_message("實驗高度操作尚未完成；此控制指令未送出。", "red");
 			return false;
 		}
@@ -2875,7 +2876,7 @@
 			}
 			const encoder = new TextEncoder();
 			bleQueue.add(async () => {
-				if (!allowExperimentHeightCommand(message, options.experimentHeight === true, options.experiment02 === true)) return;
+				if (!allowExperimentHeightCommand(message, options.experimentHeight === true, options.experiment02 === true, options.experiment03 === true)) return;
 				try {
 					await rxCharacteristic.writeValue(encoder.encode(message));
 				} catch (error) {
@@ -3047,7 +3048,9 @@
 					connected: Boolean(serial_ready && bluetoothDevice?.gatt?.connected),
 					autoHeightPossible: controlMode === CONTROL_MODE.AUTO || predEnabled || predStartRequested
 				}),
-				comfortConfig: { experimentId: '02', title: '壓力補償與高度控制之舒適度比較' },
+				sendRapidCommand: command => sendCommand(command, { experiment03: true }),
+                sendRapidQuery: command => sendSilentCommand(command),
+                comfortConfig: { experimentId: '02', title: '壓力補償與高度控制之舒適度比較' },
 				getComfortProfile: () => ({
 					...getExperimentUserProfile(),
 					gender: document.querySelector('input[name="gender"]:checked')?.value ?? null

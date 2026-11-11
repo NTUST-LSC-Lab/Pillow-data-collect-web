@@ -1,3 +1,21 @@
+# spp3_BLE_v4.2：實驗三快速姿勢辨識
+
+本分支以 `spp3_BLE_v4.1` 為基底，新增實驗三「躺下後的快速姿勢辨識」，保留實驗一與實驗二。
+
+操作順序：輸入個人資料 → 兩姿勢校正（姿勢五帶入韌體個人化建議，可微調頭頸高度）→ 截圖並成功儲存校正總覽 → 確認受試者離枕並開始抽乾 → 裝置回報抽乾完成 → 套用姿勢一校正高度 → 高度到位後勾選離枕確認 → 躺下並記錄 15 秒 → 比較第 3、5、10、15 秒結果及匯出 CSV／SVG。
+
+- 完整 Web：[`spp3_BLE/index.html`](spp3_BLE/index.html)，實驗專區選擇實驗 03。
+- 無硬體模擬預覽：[`spp3_BLE/preview.html`](spp3_BLE/preview.html)。預覽不會連線或控制硬體，所有讀值與建議高度均為模擬資料。
+- 操作與記錄定義：[`實驗三使用說明.txt`](實驗三使用說明.txt)。可雙擊 `啟動預覽.command` 啟動 localhost 預覽。
+- **實驗三需要配對的新韌體**：支援 `EXP02,DRAIN,<id>`、`EXP02,DRAINED,<id>` 與 `EXP02,START,<id>,HEIGHT_DRY,<head_cm>,<neck_cm>,<drain_id>`。舊韌體不支援時維持按鈕停用；不以 Web 倒數認定抽乾完成。韌體原始碼不包含在此 Web repository。
+- 壓力與分類分別保存接收時間；缺資料不補值，重測保留各輪。
+
+驗證：`node --test tests/*.test.cjs` 共 145 項通過。配對韌體另已完成 ESP32 Dev Module／Huge APP 編譯及主機回歸。瀏覽器 render 與硬體 BLE 流程尚未驗證，未燒錄硬體。
+
+以下保留 v4.1 文件與歷史紀錄。
+
+---
+
 # Pillow Data Collect Web - spp3_BLE_v4.1
 
 台科大智慧枕墊資料收集系統（iPillow Web）。主要入口是 `spp3_BLE/`，以純 HTML／CSS／JavaScript 透過 Web Bluetooth 與 ESP32 溝通，提供資料收集、校正、控制與監測介面。
