@@ -148,6 +148,8 @@ test('screen and SVG report distinguish theoretical negative time, baseline fall
     assert.equal(neck[3], '10.000 s');
     assert.match(neck[4], /開機基準備援/);
     assert.ok(report.details.some(s => s.includes('1,950,000 ADC')));
+    assert.ok(report.details.some(s => /各通道最近成功讀值/.test(s)));
+    assert.ok(report.details.some(s => /不同輪讀取，各自不超過 6 秒/.test(s)));
     assert.ok(report.details.includes('滿意度：10／10'));
     assert.match(report.sections[1].rows[1][3], /1,951,000 ADC/);
 });

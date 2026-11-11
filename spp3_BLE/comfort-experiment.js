@@ -142,7 +142,8 @@ function comfortReport(trial) {
             ...(plan.mode === 'ADC_TIME' ? [
                 't < 0：Head 30 s／Neck 10 s 備援；超上限：Head 136.132 s／Neck 50 s 截斷。',
                 '固定時間不保證命中目標；備援及上限截斷結果須另行標記分析。',
-                `裝置完成時回報：Head ${comfortPressure('head', trial.deviceEmpty?.head_adc)}；Neck ${comfortPressure('neck', trial.deviceEmpty?.neck_adc)}`
+                `裝置完成回報（各通道最近成功讀值）：Head ${comfortPressure('head', trial.deviceEmpty?.head_adc)}；Neck ${comfortPressure('neck', trial.deviceEmpty?.neck_adc)}`,
+                '完成回報允許 Head／Neck 不同輪讀取，各自不超過 6 秒；正式空枕快照仍請待穩定後記錄。'
             ] : []),
             `空枕快照：${empty?.timestamp_iso || '待記錄'}　Monitor：${comfortPressure('monitor', empty?.monitor_adc)}`,
             `躺回快照：${loaded?.timestamp_iso || '待記錄'}`,
