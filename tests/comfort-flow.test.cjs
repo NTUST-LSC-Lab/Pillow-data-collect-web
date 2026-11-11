@@ -9,7 +9,7 @@ const { comfortFillTime } = require('../spp3_BLE/comfort-experiment.js');
 const read = name => fs.readFileSync(path.join(__dirname, '../spp3_BLE', name), 'utf8');
 
 function fixture() {
-    let clock = 1, connected = true, writeFails = false;
+    let clock = 1, connected = true, writeFails = false, confirmResult = true;
     const commands = [], files = new Map(), nodes = {}, groups = {};
     class Element {
         constructor(tag = 'div') {
@@ -65,7 +65,7 @@ function fixture() {
         Option: class extends Element { constructor(text, value) { super('option'); this.textContent = text; this.value = value; } },
         XMLSerializer: class { serializeToString(el) { return serialize(el); } },
         document: { createElement: tag => new Element(tag), createElementNS: (_, tag) => new Element(tag) },
-        window: { confirm: () => true, showDirectoryPicker: async () => folder } });
+        window: { confirm: () => confirmResult, showDirectoryPicker: async () => folder } });
     vm.runInContext(read('comfort-experiment.js'), context);
     const state = { head: 7, neck: 10, ready: true, settledMonotonicMs: 0 };
     let controller;
@@ -80,10 +80,10 @@ function fixture() {
     });
     const node = id => nodes['comfort' + id];
     const button = (group, value) => groups[group].find(el => Object.values(el.dataset).includes(value));
-    const pressure = () => {
+    const pressure = (values = {}) => {
         clock += 10;
         controller.receivePressure({ head_adc: 1950000, neck_adc: 2080000, monitor_adc: 1800000,
-            receivedMonotonicMs: clock, timestamp_iso: new Date(1900000000000 + clock).toISOString() });
+            ...values, receivedMonotonicMs: clock, timestamp_iso: new Date(1900000000000 + clock).toISOString() });
         controller.refresh();
     };
     const start = method => {
@@ -115,8 +115,9 @@ function fixture() {
         }
         await node('Folder').click(); await settle();
     }
-    const capture = async () => { pressure(); assert.equal(node('Capture').disabled, false); await node('Capture').click(); };
+    const capture = async values => { pressure(values); assert.equal(node('Capture').disabled, false); await node('Capture').click(); };
     return { setup, settle, node, button, start, acknowledge, finish, capture, commands, files, controller,
+        setConfirm: value => { confirmResult = value; },
         setWriteFailure: value => { writeFails = value; },
         disconnect: () => { connected = false; controller.onDisconnected(); },
         reconnect: () => { connected = true; controller.refresh(); } };
@@ -195,4 +196,120 @@ test('timeout shows only the current run phase and preserves error-only compatib
     f.controller.receiveLine('EXP02,STATE,OTHER,NECK');
     f.controller.receiveLine('EXP02,ERR,' + run.parts[2] + ',SENSOR_TIMEOUT'); await run.done;
     assert.equal(f.node('Status').textContent, 'ESP32 中止實驗 02：SENSOR_TIMEOUT');
+});
+
+const viewText = node => [node.textContent, ...node.children.map(viewText)].join('\n');
+async function completedTrial(f, method = 'R') {
+    const run = f.start(method); f.acknowledge(run.parts); f.finish(run.parts); await run.done;
+    await f.capture(); await f.capture();
+    f.node('Score').value = '0'; f.controller.refresh();
+}
+async function saveTrial(f) {
+    await f.node('ResultShot').click(); await f.settle();
+}
+
+for (const method of ['R', 'M', 'A', 'I']) {
+    test(`${method} can re-record both pressure snapshots with fresh samples and no new pump command`, async () => {
+        const f = fixture(); await f.setup(); await completedTrial(f, method);
+        const commands = [...f.commands];
+        assert.equal(f.node('RerecordEmpty').disabled, false);
+        assert.equal(f.node('RerecordLoaded').disabled, false);
+        await f.node('RerecordEmpty').click();
+        assert.equal(f.node('Score').value, '');
+        assert.equal(f.node('ResultShot').disabled, true);
+        assert.equal(f.node('Capture').disabled, true);
+        await f.node('Capture').click(); // The last sample predates the re-record request.
+        assert.match(viewText(f.node('Trial')), /空枕快照：待記錄/);
+        assert.match(viewText(f.node('Trial')), /躺回快照：待記錄/);
+        await f.capture({ head_adc: 1911111, neck_adc: 2011111 });
+        assert.equal(f.node('Capture').textContent, '記錄躺回壓力');
+        await f.capture({ head_adc: 1999999, neck_adc: 2199999 });
+        assert.equal(f.node('ResultShot').disabled, true); // A new score is required, including after a zero score.
+        f.node('Score').value = '8'; f.controller.refresh(); await saveTrial(f);
+        const svg = [...f.files.values()][0];
+        for (const value of ['1,911,111 ADC', '2,011,111 ADC', '1,999,999 ADC', '2,199,999 ADC', '滿意度：8／10']) assert.ok(svg.includes(value), value);
+        assert.match(svg, /1,950,000 ADC/); // Original calibration still appears.
+        if (method !== 'I') assert.match(svg, /裝置確認時間/);
+        assert.deepEqual(f.commands, commands);
+        assert.match(f.node('Progress').textContent, /姿勢一 1／4/);
+    });
+}
+
+test('re-recording only occupied pressure preserves empty pressure and cancel restores original unsaved snapshots and score', async () => {
+    const f = fixture(); await f.setup(); await completedTrial(f);
+    const original = viewText(f.node('Trial')), commands = [...f.commands];
+    await f.node('RerecordLoaded').click();
+    assert.match(viewText(f.node('Trial')), /1,950,000 ADC/);
+    assert.match(viewText(f.node('Trial')), /躺回快照：待記錄/);
+    assert.equal(f.node('Capture').disabled, true);
+    await f.capture({ head_adc: 1999999, neck_adc: 2199999 });
+    f.node('Score').value = '8'; f.controller.refresh();
+    await f.node('Cancel').click();
+    assert.equal(viewText(f.node('Trial')), original);
+    assert.equal(f.node('Score').value, '0');
+    assert.deepEqual(f.commands, commands);
+    await f.node('RerecordLoaded').click(); await f.capture({ head_adc: 1999999, neck_adc: 2199999 });
+    f.node('Score').value = '9'; f.controller.refresh(); await saveTrial(f);
+    const svg = [...f.files.values()][0];
+    assert.match(svg, /1,950,000 ADC/); assert.match(svg, /2,080,000 ADC/);
+    assert.match(svg, /1,999,999 ADC/); assert.match(svg, /2,199,999 ADC/);
+});
+
+test('saved retake preserves original SVG through cancelled confirmation, overwrite cancellation and failed write', async () => {
+    const f = fixture(); await f.setup(); await completedTrial(f); await saveTrial(f);
+    const originalSvg = [...f.files.values()][0], originalView = viewText(f.node('Trial')), commands = [...f.commands];
+    f.setConfirm(false); await f.node('RerecordEmpty').click();
+    assert.equal(viewText(f.node('Trial')), originalView);
+    assert.equal(f.controller.isHolding(), false);
+    f.setConfirm(true); await f.node('RerecordEmpty').click();
+    assert.equal(f.controller.isHolding(), true);
+    assert.equal(f.node('Cancel').textContent, '取消重新記錄');
+    await f.capture({ head_adc: 1911111 }); await f.capture({ head_adc: 1999999 });
+    f.node('Score').value = '7'; f.controller.refresh();
+    f.setConfirm(false); await saveTrial(f);
+    assert.match(f.node('Status').textContent, /已取消覆蓋/);
+    assert.equal([...f.files.values()][0], originalSvg);
+    assert.equal(f.node('Score').value, '7'); assert.equal(f.controller.isHolding(), true);
+    f.setConfirm(true); f.setWriteFailure(true); await saveTrial(f);
+    assert.match(f.node('Status').textContent, /儲存失敗/);
+    assert.equal([...f.files.values()][0], originalSvg);
+    await f.node('Cancel').click();
+    assert.equal(viewText(f.node('Trial')), originalView); assert.equal(f.node('Score').value, '0');
+    assert.equal(f.controller.isHolding(), false);
+    f.setWriteFailure(false); await f.node('RerecordLoaded').click(); await f.capture({ head_adc: 1999999 });
+    f.node('Score').value = '6'; f.controller.refresh(); await saveTrial(f);
+    assert.equal(f.files.size, 1); assert.notEqual([...f.files.values()][0], originalSvg);
+    assert.match([...f.files.values()][0], /滿意度：6／10/);
+    assert.match(f.node('Progress').textContent, /姿勢一 1／4/);
+    assert.deepEqual(f.commands, commands);
+});
+
+test('old method snapshots cannot be re-recorded after applying a different method', async () => {
+    const f = fixture(); await f.setup(); await completedTrial(f, 'R'); await saveTrial(f);
+    await completedTrial(f, 'M'); await saveTrial(f);
+    const commands = [...f.commands];
+    await f.button('method', 'R').click();
+    assert.equal(f.node('RerecordEmpty').disabled, true);
+    assert.equal(f.node('RerecordLoaded').disabled, true);
+    assert.match(f.node('RerecordHint').textContent, /不能重新取樣/);
+    const originalView = viewText(f.node('Trial'));
+    await f.node('RerecordEmpty').click(); await f.node('RerecordLoaded').click();
+    assert.equal(viewText(f.node('Trial')), originalView);
+    assert.equal(f.controller.isHolding(), false);
+    await f.button('method', 'M').click();
+    assert.equal(f.node('RerecordEmpty').disabled, false);
+    assert.deepEqual(f.commands, commands);
+});
+
+test('disconnect cancels a saved retake and reconnect cannot re-record an unconfirmed support setting', async () => {
+    const f = fixture(); await f.setup(); await completedTrial(f); await saveTrial(f);
+    const originalView = viewText(f.node('Trial')), commands = [...f.commands];
+    await f.node('RerecordEmpty').click(); await f.capture({ head_adc: 1911111 });
+    f.disconnect();
+    assert.equal(viewText(f.node('Trial')), originalView); assert.equal(f.node('Score').value, '0');
+    assert.equal(f.controller.isHolding(), false);
+    f.reconnect();
+    assert.equal(f.node('RerecordEmpty').disabled, true); assert.equal(f.node('RerecordLoaded').disabled, true);
+    await f.node('RerecordLoaded').click(); assert.equal(viewText(f.node('Trial')), originalView);
+    assert.deepEqual(f.commands, commands); assert.equal(f.files.size, 1);
 });

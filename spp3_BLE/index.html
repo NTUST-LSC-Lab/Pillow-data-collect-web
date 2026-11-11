@@ -875,8 +875,11 @@ https://fustyles.github.io/webduino/WebSerial.html
 				<div id="comfortTrial" hidden></div>
 				<div class="comfort-buttons">
 					<button type="button" class="primary" id="comfortCapture" hidden>記錄空枕壓力</button>
+					<button type="button" id="comfortRerecordEmpty" aria-describedby="comfortRerecordHint" hidden>重新記錄空枕壓力</button>
+					<button type="button" id="comfortRerecordLoaded" aria-describedby="comfortRerecordHint" hidden>重新記錄躺回壓力</button>
 					<button type="button" id="comfortCancel" hidden>取消本次測試</button>
 				</div>
+				<p id="comfortRerecordHint" class="pressure-field-hint" hidden>重新記錄不重新打氣。重記空枕後需再記躺回並重新評分；已存的 SVG 需再次儲存才會更新。</p>
 				<div id="comfortScoreGroup" hidden>
 					<label id="comfortScoreLabel" for="comfortScore">滿意度（0–10 分）</label>
 					<select id="comfortScore"><option value="">請選擇分數</option></select>

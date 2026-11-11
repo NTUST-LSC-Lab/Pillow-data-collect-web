@@ -239,9 +239,14 @@ function createComfortExperiment(root, options) {
     let folder = null;
     let pose = '1', calibration = null, trial = null, latest = null, busy = false;
     let pendingRun = null;
+    let lastCompletedRunId = null, rerecordBackup = null;
     let status = '', calStatus = '', rendered = '';
     const selection = () => records.get(node('Subject').value);
     const connected = () => Boolean(options.getSystemState().connected);
+    const canRerecord = () => !busy && !pendingRun && !dialog.open && connected() && sameProfile() &&
+        trial?.subject === node('Subject').value && trial?.pose === pose &&
+        Boolean(trial?.runId && trial.runId === lastCompletedRunId) &&
+        ['loaded', 'score'].includes(trial.stage);
     const active = () => Boolean(trial && !trial.saved && trial.stage !== 'blocked');
     const isHolding = () => dialog.open || active();
     const isBusy = () => busy || isHolding();
@@ -402,7 +407,16 @@ function createComfortExperiment(root, options) {
         node('Capture').hidden = !['empty', 'loaded'].includes(trial?.stage);
         node('Capture').textContent = trial?.stage === 'loaded' ? '記錄躺回壓力' : '記錄空枕壓力';
         node('Capture').disabled = busy || !stableReading(trial?.after ?? Infinity, state, true);
+        node('RerecordEmpty').hidden = !trial?.empty;
+        node('RerecordLoaded').hidden = !trial?.loaded;
+        node('RerecordEmpty').disabled = !canRerecord() || !trial?.empty;
+        node('RerecordLoaded').disabled = !canRerecord() || !trial?.loaded;
+        node('RerecordHint').hidden = !trial?.empty && !trial?.loaded && !rerecordBackup;
+        node('RerecordHint').textContent = trial?.runId && trial.runId !== lastCompletedRunId
+            ? '此結果不是目前可確認的最近一次支撐設定，僅供檢視與存圖，不能重新取樣。'
+            : '重新記錄不重新打氣。重記空枕後需再記躺回並重新評分；已存的 SVG 需再次儲存才會更新。';
         node('Cancel').hidden = !active();
+        node('Cancel').textContent = rerecordBackup ? '取消重新記錄' : '取消本次測試';
         node('ScoreGroup').hidden = !trial || trial.stage === 'blocked';
         node('Score').disabled = busy || !trial?.loaded || Boolean(trial?.saved);
         node('ResultShot').disabled = busy || !folder || !trial?.loaded || node('Score').value === '';
@@ -433,6 +447,7 @@ function createComfortExperiment(root, options) {
         finally { busy = false; refresh(); }
     }
     function openCalibration(p) {
+        lastCompletedRunId = null;
         calibration = { pose: p, subject: node('Subject').value, profile: profile(), after: Infinity };
         node('CalTitle').textContent = `校正${COMFORT_POSES[p].label}`;
         node('CalStable').checked = false;
@@ -456,6 +471,7 @@ function createComfortExperiment(root, options) {
         refresh();
     }
     async function startMethod(method) {
+        if (isBusy()) return;
         const rec = selection();
         const saved = rec?.trials[pose + method];
         if (saved) {
@@ -476,11 +492,15 @@ function createComfortExperiment(root, options) {
             return;
         }
         trial.stage = 'filling';
+        lastCompletedRunId = null;
+        rerecordBackup = null;
         node('EmptyConfirmed').checked = false;
         status = '準備實驗 02 控制，等待 ESP32 吸乾與充氣。';
         await operate(async () => {
             const done = await runMethod(plan);
             trial.deviceEmpty = { head_adc: Number(done[3]), neck_adc: Number(done[4]) };
+            trial.runId = done[2];
+            lastCompletedRunId = done[2];
             trial.after = performance.now();
             trial.stage = 'empty';
             status = '充氣已完成。保持空枕，待穩定後按「記錄空枕壓力」。';
@@ -501,12 +521,40 @@ function createComfortExperiment(root, options) {
         refresh();
     }
 
+    function restartCapture(kind) {
+        if (!canRerecord() || !trial.empty || (kind === 'loaded' && !trial.loaded)) return;
+        if (!['empty', 'loaded'].includes(kind)) return;
+        if (trial.saved && !window.confirm('重新記錄不會重新打氣。請確認目前仍維持本輪方法的支撐設定；若已調整高度或氣囊，請取消。原 SVG 會保留，直到你再次儲存。')) return;
+        // Edit a separate working copy. Saved results/files stay intact until a
+        // successful save; Cancel can also restore an unsaved original snapshot.
+        rerecordBackup ??= { trial, score: node('Score').value };
+        trial = { ...trial, saved: false, stage: kind, after: performance.now() };
+        if (kind === 'empty') delete trial.empty;
+        delete trial.loaded;
+        delete trial.score;
+        node('Score').value = '';
+        status = kind === 'empty'
+            ? '重新記錄空枕：請受測者離枕，待壓力穩定後按「記錄空枕壓力」，再重新記錄躺回與評分。'
+            : '重新記錄躺回：保留空枕紀錄，請以本輪姿勢躺回，待穩定後按「記錄躺回壓力」，再重新評分。';
+        refresh();
+    }
+
+    function restoreRerecord(message) {
+        if (!rerecordBackup) return false;
+        trial = rerecordBackup.trial;
+        node('Score').value = rerecordBackup.score;
+        rerecordBackup = null;
+        status = message;
+        return true;
+    }
+
     for (let n = 1; n <= 10; n++) {
         const id = 'S' + String(n).padStart(2, '0');
         node('Subject').add(new Option(id, id));
     }
     for (let n = 0; n <= 10; n++) node('Score').add(new Option(String(n), String(n)));
     node('Subject').addEventListener('change', () => {
+        lastCompletedRunId = null; rerecordBackup = null;
         pose = '1'; trial = null; status = ''; node('EmptyConfirmed').checked = false; refresh();
     });
     buttons('pose').forEach(button => button.addEventListener('click', () => {
@@ -574,9 +622,16 @@ function createComfortExperiment(root, options) {
     });
     for (const id of ['EmptyConfirmed', 'CalStable', 'Score']) node(id).addEventListener('change', refresh);
     node('Capture').addEventListener('click', capturePressure);
+    node('RerecordEmpty').addEventListener('click', () => restartCapture('empty'));
+    node('RerecordLoaded').addEventListener('click', () => restartCapture('loaded'));
     node('Cancel').addEventListener('click', () => {
         if (pendingRun) options.sendExperimentCommand(`EXP02,STOP,${pendingRun.id}`);
-        else if (!busy) { trial = null; status = '已取消本次測試，請重新確認離枕再選方法。'; refresh(); }
+        else if (!busy) {
+            if (!restoreRerecord('已取消重新記錄，原壓力紀錄與評分已恢復。')) {
+                trial = null; status = '已取消本次測試，請重新確認離枕再選方法。';
+            }
+            refresh();
+        }
     });
     node('ResultShot').addEventListener('click', () => {
         if (node('ResultShot').disabled) return;
@@ -589,6 +644,7 @@ function createComfortExperiment(root, options) {
             }
             selection().trials[result.pose + result.method] = result;
             trial = result;
+            rerecordBackup = null;
             status = `已儲存 ${name}`;
         }, message => { status = `截圖儲存失敗：${message}`; });
     });
@@ -602,6 +658,7 @@ function createComfortExperiment(root, options) {
         }),
         receivePressure: sample => { if (!latest || sample.receivedMonotonicMs >= latest.receivedMonotonicMs) latest = { ...sample }; },
         onDisconnected: () => {
+            lastCompletedRunId = null;
             if (pendingRun) {
                 const run = pendingRun; pendingRun = null;
                 clearTimeout(run.timer); clearTimeout(run.ackTimer);
@@ -613,7 +670,10 @@ function createComfortExperiment(root, options) {
                 node('CalStable').checked = false;
                 calStatus = 'BLE 已斷線；重新連線後請關閉並重新開啟校正。';
             }
-            if (active() && !trial.loaded && !busy) { trial = null; status = 'BLE 已斷線，本次量測中止。'; }
+            if (!busy && restoreRerecord('BLE 已斷線，已取消重新記錄並保留原紀錄與評分。')) {
+                // Restored snapshots remain viewable, but cannot be sampled
+                // again until a newly completed run establishes the support.
+            } else if (active() && !trial.loaded && !busy) { trial = null; status = 'BLE 已斷線，本次量測中止。'; }
             if (root.isConnected) refresh();
         }
     };
