@@ -182,3 +182,17 @@ test('failed SVG write keeps occupied reading and score for retry without markin
     assert.equal(f.files.size, 1); assert.match(f.node('Progress').textContent, /姿勢一 1／4/);
     assert.match([...f.files.values()][0], /滿意度：10／10/);
 });
+
+test('timeout shows only the current run phase and preserves error-only compatibility', async () => {
+    const f = fixture(); await f.setup();
+    let run = f.start('R'); f.acknowledge(run.parts);
+    f.controller.receiveLine('EXP02,STATE,OTHER,HEAD');
+    f.controller.receiveLine('EXP02,STATE,' + run.parts[2] + ',SETTLE');
+    f.controller.receiveLine('EXP02,ERR,' + run.parts[2] + ',SENSOR_TIMEOUT'); await run.done;
+    assert.equal(f.node('Status').textContent, 'ESP32 中止實驗 02：SENSOR_TIMEOUT（階段：SETTLE）');
+    assert.equal(f.node('Capture').hidden, true);
+    run = f.start('M'); f.acknowledge(run.parts);
+    f.controller.receiveLine('EXP02,STATE,OTHER,NECK');
+    f.controller.receiveLine('EXP02,ERR,' + run.parts[2] + ',SENSOR_TIMEOUT'); await run.done;
+    assert.equal(f.node('Status').textContent, 'ESP32 中止實驗 02：SENSOR_TIMEOUT');
+});

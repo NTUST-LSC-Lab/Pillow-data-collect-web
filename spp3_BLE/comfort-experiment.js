@@ -298,6 +298,9 @@ function createComfortExperiment(root, options) {
                 trial.deviceTimes = pendingRun.deviceTimes;
             } catch (error) { failReply(error.message); }
         } else if (parts[1] === 'STATE') {
+            if (parts.length === 4 && ['DRAIN', 'MONITOR', 'NECK', 'HEAD', 'SETTLE'].includes(parts[3])) {
+                pendingRun.phase = parts[3];
+            }
             status = `裝置執行中：${parts[3] || '等待回報'}`;
         } else if (parts[1] === 'DONE' || parts[1] === 'ERR') {
             if (parts[1] === 'DONE' && (!pendingRun.acknowledged ||
@@ -311,7 +314,9 @@ function createComfortExperiment(root, options) {
             clearTimeout(run.timer);
             clearTimeout(run.ackTimer);
             if (parts[1] === 'DONE' && parts.length >= 7) run.resolve(parts);
-            else run.reject(new Error(parts[1] === 'ERR' ? `ESP32 中止實驗 02：${parts[3] || '未知原因'}` : 'ESP32 實驗回覆欄位不完整'));
+            else run.reject(new Error(parts[1] === 'ERR'
+                ? `ESP32 中止實驗 02：${parts[3] || '未知原因'}${parts[3] === 'SENSOR_TIMEOUT' && run.phase ? '（階段：' + run.phase + '）' : ''}`
+                : 'ESP32 實驗回覆欄位不完整'));
         }
         if (root.isConnected) refresh();
     }

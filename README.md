@@ -6,7 +6,17 @@ v4.1 在既有 Experiment 01 壓力資料收集之外，新增 [Experiment 02 �
 
 更新日期 **2026-11-11**（Asia/Taipei）。
 
-v4.1 已通過 **124 項 Node 回歸測試**。測試涵蓋既有 Experiment 01、Experiment 02 下降比例、整數 ADC 目標、結果格式、校正、0 分及 10 分、SVG 資料夾寫入、同名檔確認與寫入失敗後重試。ESP32 新模式編譯已通過；本次瀏覽器啟動受執行環境限制而未完成render驗證，新增模式尚未燒錄或完成八條件實機量測。
+v4.1 已通過 **125 項 Node 回歸測試**。測試涵蓋既有 Experiment 01、Experiment 02 下降比例、整數 ADC 目標、結果格式、校正、0 分及 10 分、SVG 資料夾寫入、同名檔確認與寫入失敗後重試。ESP32 新模式編譯已通過；本次瀏覽器啟動受執行環境限制而未完成render驗證，新增模式尚未燒錄或完成八條件實機量測。
+
+## 2026-11-11 還原配套：壓力數值顯示不變，逾時帶出階段
+
+修改時間：**2026-11-11 10:48:03 CST (+0800)**（Asia/Taipei）。配對ESP32「原HX710B讀取＋SETTLE健康觀察」版本。
+
+- 即時P讀值、ADC／kPa換算、目標、時間、空枕與躺回表格、差值、滿意度與SVG產生程式保持 `edd5357` 的內容，不加入測試用驅動或預覽資料。
+- 僅記住相同輪次的既有 `EXP02,STATE`，在SENSOR_TIMEOUT錯誤後附上階段，例如 `SENSOR_TIMEOUT（階段：SETTLE）`。不新增BLE命令或DIAG依賴；沒有STATE的舊回覆仍顯示原錯誤文字。
+- 125項Node回歸通過，含錯輪STATE忽略、正確階段、舊ERR相容。原生瀏覽器與實機驗證仍待完成。
+
+操作：先重新燒錄已還原感測器讀取的ESP32，再重新載入此Web。若數字異常，先確認Arduino IDE沒有使用舊測試草稿。若仍中止，貼出括號中的階段；充氣階段與最終等待階段需分別判斷，不以移除感測保護當作解法。
 
 ## 2026-11-11 修改紀錄：固定時間與完整壓力結果
 
@@ -151,7 +161,7 @@ EXP02,DONE,<id>,<head_adc>,<neck_adc>,NA,NA
 
 頁面與SVG新增「固定充氣時間與備援紀錄」，同時保存理論時間、預計指令時間、裝置確認指令時間及控制標記。「裝置確認時間」是ESP32計畫執行的指令時間，不是用感測器量得的實際泵浦運轉時間。另顯示DONE當下有效空枕ADC；正式空枕／躺回快照仍由操作者待穩定後擷取。目標ADC、校正load、下降比例、實測壓力差值與0～10分均保留。
 
-驗證：`node --test tests/*.test.cjs`（124項），含合成DOM與傳輸的八條件、備援、錯輪ID／模式／時間、STOP、斷線重連及SVG寫入失敗重試；這些不是原生瀏覽器render或實機BLE測試。韌體主機端狀態機回歸及ESP32編譯通過。新增 `tests/comfort-browser-smoke.cjs`供實際Chrome合成八條件、SVG、備援、錯輪ID／時間／模式、中止及斷線驗證；本環境Chrome啟動遭限制，**尚未完成瀏覽器及實機驗證**。可在可啟動Chrome的終端機使用已安裝Playwright執行：
+驗證：`node --test tests/*.test.cjs`（125項），含合成DOM與傳輸的八條件、備援、錯輪ID／模式／時間、STOP、斷線重連及SVG寫入失敗重試；這些不是原生瀏覽器render或實機BLE測試。韌體主機端狀態機回歸及ESP32編譯通過。新增 `tests/comfort-browser-smoke.cjs`供實際Chrome合成八條件、SVG、備援、錯輪ID／時間／模式、中止及斷線驗證；本環境Chrome啟動遭限制，**尚未完成瀏覽器及實機驗證**。可在可啟動Chrome的終端機使用已安裝Playwright執行：
 
 ```bash
 PLAYWRIGHT_MODULE_PATH=/path/to/playwright node tests/comfort-browser-smoke.cjs
