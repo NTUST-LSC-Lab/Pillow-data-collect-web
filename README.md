@@ -10,7 +10,22 @@
 - **實驗三需要配對的新韌體**：支援 `EXP02,DRAIN,<id>`、`EXP02,DRAINED,<id>` 與 `EXP02,START,<id>,HEIGHT_DRY,<head_cm>,<neck_cm>,<drain_id>`。舊韌體不支援時維持按鈕停用；不以 Web 倒數認定抽乾完成。韌體原始碼不包含在此 Web repository。
 - 壓力與分類分別保存接收時間；缺資料不補值，重測保留各輪。
 
-驗證：`node --test tests/*.test.cjs` 共 145 項通過。配對韌體另已完成 ESP32 Dev Module／Huge APP 編譯及主機回歸。瀏覽器 render 與硬體 BLE 流程尚未驗證，未燒錄硬體。
+原始實驗三版本驗證：`node --test tests/*.test.cjs` 共 145 項通過。配對韌體另已完成 ESP32 Dev Module／Huge APP 編譯及主機回歸。當時尚未驗證瀏覽器 render 與硬體 BLE 流程，未燒錄硬體；本次排版驗證見下方。
+
+## 2026-11-12 修正：實驗三視窗縮放超出卡片
+
+修改日期：**2026-11-12（Asia/Taipei）**。
+
+- 原因：實驗三圖表未套用既有的圖表容器尺寸規則。視窗縮小時，畫布原先的寬度成為網格的最小寬度，導致文字、按鈕、圖表與表格一起超出卡片。
+- `spp3_BLE/styles.css`：讓實驗三共用既有圖表容器的 `min-width: 0`、高度與畫布最大寬度設定，容許圖表隨卡片縮放。結果表格仍在自身區域左右捲動，可查看完整欄位。
+- 操作：重新載入完整 Web 或模擬預覽，再縮放視窗；窄畫面可在結果表格內左右捲動。沒有修改 JavaScript 控制流程、壓力數值、分類、匯出內容或 ESP32，不需重新燒錄。
+- 驗證：145 項 Node 測試通過；新增 `tests/rapid-browser-smoke.cjs`，在 Chrome 檢查正式頁面及預覽的空白／合成資料狀態，依序縮放 1440、1024、768、390、320、1440px，確認卡片不溢出、圖表縮放與表格可捲動，無 JavaScript 例外。另檢視桌面及窄畫面截圖。測試使用 repository 內的 Chart.js，未驗證外部 CDN、實機 BLE 或感測器資料。
+
+瀏覽器回歸測試沿用既有外部 Playwright 工具，不新增專案依賴：
+
+```sh
+PLAYWRIGHT_MODULE_PATH=/已安裝的/playwright node tests/rapid-browser-smoke.cjs
+```
 
 以下保留 v4.1 文件與歷史紀錄。
 

@@ -1612,7 +1612,8 @@ button.full {
   overflow-wrap: anywhere;
 }
 
-.pressure-experiment .pressure-chart-wrap {
+.pressure-experiment .pressure-chart-wrap,
+.rapid-test .pressure-chart-wrap {
   position: relative;
   min-width: 0;
   height: 220px;
@@ -1752,7 +1753,8 @@ button.full {
   font-variant-numeric: tabular-nums;
 }
 
-.pressure-experiment .pressure-chart-wrap canvas {
+.pressure-experiment .pressure-chart-wrap canvas,
+.rapid-test .pressure-chart-wrap canvas {
   max-width: 100%;
 }
 
@@ -1779,7 +1781,8 @@ button.full {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .pressure-experiment .pressure-chart-wrap {
+  .pressure-experiment .pressure-chart-wrap,
+  .rapid-test .pressure-chart-wrap {
     height: 200px;
   }
 }
