@@ -19,9 +19,9 @@ function createRapidExperiment(root, options) {
     const section = document.createElement('section'); section.className = 'comfort-section rapid-test';
     section.innerHTML = `
         <h4>15 秒快速姿勢辨識</h4>
-        <p class="pressure-field-hint">兩種睡姿皆固定使用姿勢一校正高度。先儲存校正總覽，再請受試者離枕並開始抽乾。抽乾完成後才能套用高度。</p>
+        <p class="pressure-field-hint">兩種睡姿皆固定使用姿勢一校正高度。先儲存校正總覽，再請受試者離枕。裝置會逐顆抽乾氣囊，再充氣恢復開機高度；完成後才能套用姿勢一高度。全程請保持離枕。</p>
         <button type="button" data-rapid="reset" hidden>重新建立此受試者校正</button>
-        <button type="button" class="primary" data-rapid="drain" disabled>受試者已離枕，開始抽乾</button>
+        <button type="button" class="primary" data-rapid="drain" disabled>受試者已離枕，抽乾並恢復開機高度</button>
         <button type="button" data-rapid="abort" hidden>停止抽乾／充氣</button>
         <button type="button" class="primary" data-rapid="prepare" disabled>套用姿勢一高度，準備測試</button>
         <p data-rapid="fixed" class="pressure-run-summary">固定高度：尚未準備</p>
@@ -104,7 +104,7 @@ function createRapidExperiment(root, options) {
         ...options, calibrationOnly: true, experimentId: '03', folderId: 'ipillow-experiment-03',
         isLocked: locked, beforeCalibrationPrepare: syncFirmwareProfile, beforeCalibrationSave: captureFirmwareAnchor,
         onCalibrationChanged: () => { overviewKey = preparedKey = ''; drained = null; n('empty').checked = false; },
-        onCalibrationOverviewSaved: () => { overviewKey = key(); preparedKey = ''; drained = null; n('empty').checked = false; message = '校正總覽已儲存。請受試者離枕，再按「受試者已離枕，開始抽乾」。'; },
+        onCalibrationOverviewSaved: () => { overviewKey = key(); preparedKey = ''; drained = null; n('empty').checked = false; message = '校正總覽已儲存。請受試者離枕，再按「受試者已離枕，抽乾並恢復開機高度」。'; },
         onChange: () => { if (calibration) render(); }
     });
     async function operate(work) {
@@ -128,16 +128,16 @@ function createRapidExperiment(root, options) {
         operate(async () => {
             const k = key(), id = 'D03' + Date.now().toString(36).toUpperCase();
             drained = null; preparedKey = ''; n('empty').checked = false;
-            message = '正在抽乾氣囊，請受試者保持離枕；等待裝置完成回報。';
+            message = '正在逐顆抽乾氣囊並充氣恢復開機高度，請受試者保持離枕；等待裝置完成回報。';
             render();
             let ack = false;
             await request(`EXP02,DRAIN,${id}`, a => {
                 if (a.join(',') === `EXP02,ACK,${id},DRAIN`) ack = true;
                 return ack && a.join(',') === `EXP02,DRAINED,${id}`;
-            }, 480000, () => query(`EXP02,STATUS,${id}`));
+            }, 660000, () => query(`EXP02,STATUS,${id}`));
             if (key() !== k || !connected()) throw new Error('受試者或校正資料已變更，請重新儲存總覽並抽乾。');
             drained = { key: k, id };
-            message = '氣囊已抽乾。可以按「套用姿勢一高度，準備測試」。';
+            message = '已恢復開機高度。請保持離枕，可以按「套用姿勢一高度，準備測試」。';
         });
     });
     n('abort').addEventListener('click', () => {
@@ -276,7 +276,7 @@ function createRapidExperiment(root, options) {
     return {
         refresh: () => calibration.refresh(), isBusy: () => locked() || calibration.isBusy(), isRunning: () => Boolean(current?.recording),
         ownsClassification: () => locked() || calibration.isBusy(),
-        getUiState: () => ({ status: current?.recording ? 'running' : 'idle', statusText: current?.recording ? '15 秒記錄中' : preparedKey ? '已準備測試' : '待準備', hint: '校正 → 儲存總覽 → 離枕並抽乾 → 套用姿勢一高度 → 勾選確認 → 躺下記錄。' }),
+        getUiState: () => ({ status: current?.recording ? 'running' : 'idle', statusText: current?.recording ? '15 秒記錄中' : preparedKey ? '已準備測試' : '待準備', hint: '校正 → 儲存總覽 → 離枕、抽乾並恢復開機高度 → 套用姿勢一高度 → 勾選確認 → 躺下記錄。' }),
         receivePressure: sample => {
             calibration.receivePressure(sample); latest = sample;
             if (current?.recording) { const t = sample.receivedMonotonicMs - current.start; if (t >= 0 && t <= 15000) current.events.push({ ...sample, type: 'pressure', elapsed_ms: t, received_at: sample.timestamp_iso }); }

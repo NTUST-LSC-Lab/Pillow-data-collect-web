@@ -5,7 +5,8 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 function fixture() {
  let clock = 100, controller, calOptions, connected = true, autoComplete = true;
- const commands = [], nodes = {}, intervals = [];
+ const commands = [], nodes = {}, intervals = [], timers = new Map();
+ let timerId = 0;
  class Element {
    constructor(){this.children=[];this.handlers={};this.dataset={};this.disabled=false;this.checked=false;this.isConnected=true;}
    append(...v){this.children.push(...v)} replaceChildren(...v){this.children=v} setAttribute(k,v){this[k]=v}
@@ -22,7 +23,8 @@ function fixture() {
  const flush=async()=>{for(let i=0;i<30;i++)await Promise.resolve()};
  const context=vm.createContext({performance:{now:()=>clock},Date,Blob,
    document:{getElementById:()=>({content:{firstElementChild:{cloneNode:()=>view}}}),createElement:()=>new Element()},
-   setTimeout:()=>1,clearTimeout(){},setInterval:f=>intervals.push(f),
+   setTimeout:(fn,ms)=>{const id=++timerId;timers.set(id,{fn,at:clock+ms});return id},
+   clearTimeout:id=>timers.delete(id),setInterval:f=>intervals.push(f),
    comfortProfileText:()=>'',saveComfortImage:async()=>true,
    createComfortExperiment:(_root,opts)=>{calOptions=opts;return {getCalibration:()=>c,refresh:()=>opts.onChange(),isBusy:()=>false,receivePressure(){},onDisconnected(){},needsLeaveProtection:()=>true}}
  });
@@ -41,7 +43,7 @@ function fixture() {
  });}
  controller=context.createRapidExperiment(root,{heightControl:{getState:()=>state,tick(){},prepare:async()=>state,adjust:async(ch,v)=>{state[ch==='HEAD'?'head':'neck']=v}},getSystemState:()=>({connected,autoHeightPossible:false}),getUserProfile:()=>profile,sendExperimentCommand:transport,sendRapidCommand:transport,sendRapidQuery:transport,onChange(){}});
  return {controller,nodes,commands,state,profile,c,poses,flush,
-   autoComplete: value=>{autoComplete=value}, cal:()=>calOptions, tick:async(ms)=>{clock+=ms;intervals.forEach(f=>f());await flush()},
+   autoComplete: value=>{autoComplete=value}, cal:()=>calOptions, tick:async(ms)=>{clock+=ms;for(const [id,timer] of timers)if(timer.at<=clock){timers.delete(id);timer.fn()}intervals.forEach(f=>f());await flush()},
    sample:(line)=>controller.receiveLine(line),
    setClock:t=>clock=t,
    disconnect:()=>{connected=false;controller.onDisconnected()},
@@ -96,4 +98,25 @@ test('older firmware BAD_COMMAND leaves preparation disabled and sends no inflat
  const f=fixture();f.cal().onCalibrationOverviewSaved();f.autoComplete(false);f.controller.refresh();f.nodes.drain.click();await f.flush();
  f.sample('EXP02,ERR,BAD_COMMAND');await f.flush();f.controller.refresh();
  assert.equal(f.nodes.prepare.disabled,true);assert(!f.commands.some(s=>s.startsWith('EXP02,START,')));
+});
+test('startup refill stays locked beyond eight minutes and stops at eleven minutes', async () => {
+ const f=fixture();f.cal().onCalibrationOverviewSaved();f.autoComplete(false);f.controller.refresh();
+ f.nodes.drain.click();await f.flush();
+ const id=f.commands.find(s=>s.startsWith('EXP02,DRAIN,')).split(',')[2];
+ await f.tick(480000);
+ assert(f.controller.isBusy());assert.equal(f.nodes.prepare.disabled,true);
+ assert.match(f.nodes.status.textContent,/充氣恢復開機高度/);
+ assert(!f.commands.includes(`EXP02,STOP,${id}`));
+ await f.tick(179999);assert(!f.commands.includes(`EXP02,STOP,${id}`));
+ await f.tick(1);
+ assert(f.commands.includes(`EXP02,STOP,${id}`));assert(!f.controller.isBusy());
+ assert.equal(f.nodes.prepare.disabled,true);assert.equal(f.nodes.drain.disabled,false);
+});
+test('startup completion after eight minutes unlocks apply and cancels the timeout', async () => {
+ const f=fixture();f.cal().onCalibrationOverviewSaved();f.autoComplete(false);f.controller.refresh();
+ f.nodes.drain.click();await f.flush();
+ const id=f.commands.find(s=>s.startsWith('EXP02,DRAIN,')).split(',')[2];
+ await f.tick(500000);f.sample(`EXP02,DRAINED,${id}`);await f.flush();f.controller.refresh();
+ assert.equal(f.nodes.prepare.disabled,false);assert.match(f.nodes.status.textContent,/已恢復開機高度/);
+ await f.tick(160000);assert(!f.commands.includes(`EXP02,STOP,${id}`));
 });

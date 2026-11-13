@@ -400,7 +400,7 @@ function createComfortExperiment(root, options) {
             button.setAttribute('aria-pressed', String(trial?.method === m && trial.pose === pose));
         });
         node('Status').textContent = busy ? [status, pendingRun ? '' : state.reason].filter(Boolean).join(' · ') : status ||
-            (bothAnchors() ? (options.calibrationOnly ? '請儲存校正總覽，再請受試者離枕並開始抽乾。' : '選擇姿勢、確認離枕，再按方法。') : '先完成兩個姿勢的校正。');
+            (bothAnchors() ? (options.calibrationOnly ? '請儲存校正總覽，再請受試者離枕，抽乾並恢復開機高度。' : '選擇姿勢、確認離枕，再按方法。') : '先完成兩個姿勢的校正。');
         const live = latest && performance.now() - latest.receivedMonotonicMs < 3000 && connected()
             ? Object.keys(COMFORT_CHANNELS).map(ch => `${COMFORT_CHANNELS[ch].label} ${comfortPressure(ch, latest[ch + '_adc'])}`).join('　')
             : '等待新壓力讀值';
