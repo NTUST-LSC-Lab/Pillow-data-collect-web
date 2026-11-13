@@ -2912,3 +2912,15 @@ button.full {
 .rapid-test [aria-pressed="true"] { background: #eaf2fc; border-color: #2563eb; color: #174ea6; }
 .rapid-test button:disabled { opacity: .45; cursor: not-allowed; }
 .rapid-test table { min-width: 700px; }
+
+/* Dual-model status card: each model remains visible at narrow widths. */
+#poseModelPanel .info-block, #poseModelPanel .state-table { min-width: 0; }
+#poseModelPanel .anchor-info-block .kv { grid-template-columns: 4.5em minmax(0, 1fr); }
+#poseModelPanel .anchor-info-block .kv span:last-child { white-space: pre-line; }
+#poseModelPanel .pose-model-group { font-size: 2rem; font-weight: 700; color: #183560; margin: 8px 0; }
+#poseModelPanel .pose-model-status { margin-bottom: 12px; }
+#poseModelPanel .pose-model-meta { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 12px; }
+#poseModelPanel .pose-pred-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 780px) {
+  #poseModelPanel .pose-pred-row { grid-template-columns: minmax(0, 1fr); }
+}

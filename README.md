@@ -1,3 +1,96 @@
+# spp3_BLE_v4_pose_model：雙模型分類狀態
+
+更新日期：**2026-11-13（Asia/Taipei）**。畫面用語統一為「校正基準」。本分支從 `spp3_BLE_v4.3` 的 `14a20b9d90bada97719df481e64397a27c0b5cb9` 建立。本次修改主頁「校正與分類狀態」區塊，配對 ESP32 `spp3_BLE_v4_model` 的 `CLASSIFY,DATA,V1` 協定。
+
+## 對應ESP32與連接關係
+
+| 元件 | GitHub分支 | 入口／責任 |
+|---|---|---|
+| Web | [Pillow-data-collect-web / spp3_BLE_v4_pose_model](https://github.com/NTUST-LSC-Lab/Pillow-data-collect-web/tree/spp3_BLE_v4_pose_model) | `spp3_BLE/index.html`；校正操作、開始／停止辨識與兩模型結果顯示 |
+| ESP32 | [ipillow / spp3_BLE_v4_model](https://github.com/NTUST-LSC-Lab/ipillow/tree/spp3_BLE_v4_model) | `node32_ipillow_3_BLE/node32_ipillow_3_BLE.ino`；保存校正基準、每秒執行static6／history20並回傳結果 |
+
+瀏覽器透過Web Bluetooth連接已燒錄上述韌體的ESP32，沿用原BLE UART服務與UUID。命令及資料以換行結束，ESP32每20 bytes分包通知，Web組合完整行後解析。兩模型都在ESP32執行，分類結果不會自動驅動氣囊。
+
+韌體基於 `spp3_BLE_v4_experiment_03`；編譯及燒錄設定見 [ESP32 README](https://github.com/NTUST-LSC-Lab/ipillow/blob/spp3_BLE_v4_model/README.md)。本配對已完成程式與合成BLE驗證，尚未完成實體BLE驗證。舊韌體／舊Web／Android的五姿勢分類格式不適用此狀態卡。
+
+## 這個區塊現在顯示什麼
+
+- 「無歷史」與「有歷史」各自顯示 Group1／Group2，以及兩組機率；Group1＝姿勢1、2，Group2＝姿勢3、4、5。Web不重新分類、不融合兩模型。
+- 原 smoothLabel／rawLabel、scoreE／scoreSupine 等五姿勢規則分數及 PRED 高度調整欄位移除。
+- 控制改成「開始辨識／停止辨識」，不啟動自動打氣或高度調整。移除 `FEATURE,PRED,ON`、`PRED,START`、`PRED,GET` 與其重試；仍保留安全關閉用的 STOP/OFF 與裝置功能狀態查詢。
+- 開始辨識會讀回裝置 BSHS／BLHL 校正基準，兩者具備才送 CLASSIFY,START。FEATURE 回報 PRED=0 不再將已啟動的分類誤判成手動停止。
+- 前6筆有效樣本，有歷史顯示「暖機中（n/6）」與「—」，第7筆才有分類與機率；無效掃描兩模型均顯示「本秒讀值無效」，不沿用前次結果。
+- 顯示上次接收時間及裝置本輪有效樣本數。重複 GET／亂序結果不更新畫面或延長新鮮度；超過3秒沒收到新序號會清空類別／機率並顯示「等待新資料」。這是 Web 顯示規則，不會清除 ESP32 歷史。
+- BLE斷線、停止或重新擷取校正時清除畫面的舊結果；斷線也清除畫面校正基準，重連／開始時再讀回裝置。Web沒有把「斷線」當成重設韌體歷史的指令。
+
+## 校正基準數值從哪裡來
+
+這個區塊顯示 **ESP32 儲存並透過 `ANCHOR,GET` 回傳的校正基準**，不是當下即時 P 讀值。
+
+| 操作 | 真正開始擷取的按鈕 | 指令／對應基準 |
+|---|---|---|
+| 使用者 → 初始校正 → 仰躺校正 | 調整到舒適高度、確認到位後按「完成校正」 | `ANCHOR,START,BSHS`，姿勢一 |
+| 使用者 → 初始校正 → 側躺校正 | 調整到舒適高度、確認到位後按「完成校正」 | `ANCHOR,START,BLHL`，姿勢五 |
+| 實驗三校正 | 儲存對應姿勢校正時 | 既有 `captureFirmwareAnchor()` 同樣送上述指令，也會更新此區塊 |
+
+只按使用者「設定」會送 USER；只開啟「初始校正」會開啟視窗。兩者都不會擷取新的校正基準。實驗二的 Web 壓力快照與此處 ESP32 校正基準是不同的資料流程，不會因為儲存實驗二校正就自動成為此區塊的基準。
+
+配對韌體在開始擷取後等待至少2秒，收集三顆皆讀取成功的8筆原平滑 ADC，確認範圍符合既有穩定條件才取平均；沒有完成則可能逾時。Web只是顯示回傳的結果，沒有重算或替換感測數值。欄位為：
+
+- `pm` → Monitor ADC、`pn` → Neck ADC、`ph` → Head ADC：有人採該校正姿勢時的8筆平均。
+- `head`／`neck` → 當時的 Head／Neck **設定高度（cm）**，不是新增的實際高度量測。
+- BSHS／BLHL 仍是兩個特定姿勢的個人基準，不是「所有 Group1／Group2 使用者」的平均。
+
+換人須重新完成兩姿勢校正；此處不新增將既有受測者校正直接套用到另一人的功能。
+
+### 校正基準狀態的意思
+
+| 畫面狀態 | 意義 |
+|---|---|
+| `IDLE` | 待命中，目前沒有正在擷取校正基準；不是錯誤 |
+| `WAIT_SETTLE` | 等待壓力穩定 |
+| `COLLECTING` | 正在收集校正數值 |
+| `DONE` | 本次校正基準擷取完成 |
+| `TIMEOUT` | 本次擷取逾時，未完成 |
+
+這一欄是擷取流程進度。是否已經有可用校正基準，請分別看仰躺BSHS／側躺BLHL的完成標記與數值；不能只由IDLE判斷。校正基準姿勢為NONE表示目前沒有指定擷取姿勢。
+
+## 修改檔案與相容範圍
+
+| 檔案 | 修改 |
+|---|---|
+| `spp3_BLE/index.html`、`styles.css` | 雙模型結果卡、校正基準來源與單位、開始／停止文字、窄視窗排列 |
+| `spp3_BLE/pose-model.js` | 嚴格解析22欄V1結果、狀態／機率顯示、session/sequence去重及過期顯示 |
+| `spp3_BLE/app.js` | 接入完整BLE資料行、移除PRED啟動／輪詢、更新分類與校正基準畫面狀態 |
+| `spp3_BLE/experiment-height-control.js` | 接受新韌體 `classifier=DUAL_CATBOOST_V1` 作為DEBUG完整結尾；仍要求FEATURE關閉、I待機及有效高度，不改安全限制 |
+| `tests/pose-model*` 與既有測試 | 合成協定、流程及瀏覽器驗證；沿用既有測試替身 |
+
+協定固定22欄：`CLASSIFY,DATA,V1,session,sequence,tickMs,sampleSeq,sampleMs,MonitorADC,NeckADC,HeadADC,staticStatus,staticGroup,staticP1,staticP2,historyStatus,historyGroup,historyP1,historyP2,historyCount,dropped,inferenceUs`。只有完整換行的BLE資料可更新結果。`historyCount` 是推論前筆數，畫面於有效列加1顯示；機率收到0–1，畫面轉為百分比。UNKNOWN／NA維持缺值，舊五姿勢payload會提示格式不相容，不以名稱猜測Group。
+
+Web端變更限於這個版本；配對ESP32另於 `spp3_BLE_v4_model` 更新。Android、`spp3/`、原壓力換算／圖表與IndexedDB schema未修改。**實驗三原15秒表格／CSV／SVG仍是舊五姿勢格式，尚未加入雙模型結果；既有一般CSV也不會因此新增兩模型欄位。** 本次結果供此狀態卡即時查看，不能以舊實驗匯出代表已記錄雙模型。Android與舊韌體亦不是本區塊的相容分類來源。
+
+## 驗證與使用
+
+1. 在本版目錄執行 `python3 -m http.server 8080`，以支援Web Bluetooth的瀏覽器開啟 `http://localhost:8080/spp3_BLE/`。
+2. 連接已燒錄 `spp3_BLE_v4_model` 的ESP32，等待正常開機流程完成。
+3. 在「使用者」設定基本資料，開啟「初始校正」。仰躺、側躺各自調整到舒適高度，確認高度到位後按「完成校正」。
+4. 確認兩姿勢完成標記與校正基準數值；本輪測試高度到位後，在「校正與分類狀態」按「開始辨識」。
+5. 分別查看「無歷史／有歷史」的Group1／Group2與機率；前6筆有效樣本有歷史顯示暖機，第7筆起才有結果。
+6. 按「停止辨識」結束本輪。重新開始需重新累積歷史暖機，原校正基準仍由裝置保留。換人須重新校正；離枕、翻身、BLE斷線本身不會清除裝置歷史。
+
+本次只提供狀態卡即時顯示；需要保存兩模型逐秒結果時，仍須另外完成記錄與匯出功能，不能使用舊實驗三匯出替代。
+
+2026-11-13：**154項Node測試通過**。實際Chrome以合成BLE資料驗證「初始校正」兩個完成按鈕→校正基準、開始／停止、20-byte分包、部分訊息不採用、兩模型不同結果、暖機／無效／過期／斷線顯示，及320–1440px縮放；沒有JavaScript例外。圖表使用repo既有Chart.js，不依賴CDN。測試未連線或控制真實硬體。
+
+```sh
+node --test tests/*.test.cjs
+PLAYWRIGHT_MODULE_PATH=/已安裝的/playwright node tests/pose-model-browser-smoke.cjs
+```
+
+以下保留原版本歷史說明；分類狀態區與配對韌體以上方2026-11-13說明為準。
+
+---
+
 # spp3_BLE_v4.2：實驗三快速姿勢辨識
 
 本分支以 `spp3_BLE_v4.1` 為基底，新增實驗三「躺下後的快速姿勢辨識」，保留實驗一與實驗二。

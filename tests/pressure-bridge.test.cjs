@@ -70,7 +70,7 @@ function fixture() {
         updateChartIfVisible() {},
         updateHeightMonitorFromParsed() {},
         updateUserDimensionsFromParsed() {},
-        setSyncTimeAck() {},
+        setSyncTimeAck() {}, resetAutoControlStartState() {}, clearAnchorDisplay() {}, setModeAck() {},
         formatAckTime: () => 'synthetic time',
         parseProtocolMessage: line => protocolMessages.push(line),
         experimentHubModule: {

@@ -152,7 +152,7 @@ https://fustyles.github.io/webduino/WebSerial.html
 				</div>
 				</section>
 
-			<section class="panel-card status-accordion">
+			<section class="panel-card status-accordion" id="poseModelPanel">
 				<div class="accordion-header">
 					<h2>校正與分類狀態</h2>
 					<button id="statusAccordionToggle" type="button" class="accordion-toggle" aria-expanded="true" aria-controls="statusAccordionBody">收合</button>
@@ -160,56 +160,60 @@ https://fustyles.github.io/webduino/WebSerial.html
 				<div id="statusAccordionBody" class="accordion-body">
 				<div class="mode-control-block">
 					<div>
-						<div class="info-title">目前模式</div>
-						<div><span id="controlModeBadge" class="pill pill-pending">手動模式</span></div>
+						<div class="info-title">辨識控制</div>
+						<div><span id="controlModeBadge" class="pill pill-pending">已停止</span></div>
 					</div>
 					<div class="mode-button-row">
-						<button id="manualModeBtn" type="button" class="primary mode-active">手動模式</button>
-						<button id="autoModeBtn" type="button">自動模式</button>
+						<button id="manualModeBtn" type="button" class="primary mode-active">停止辨識</button>
+						<button id="autoModeBtn" type="button">開始辨識</button>
 					</div>
-					<div id="controlModeHint" class="calib-hint">手動模式不會自動啟動分類與高度自動調整。</div>
-					<div id="controlModeAck" class="mode-ack">模式指令狀態：尚未送出</div>
+					<div id="controlModeHint" class="calib-hint">完成兩組校正基準後可開始辨識；此版本僅分類，不會自動調整高度。</div>
+					<div id="controlModeAck" class="mode-ack">辨識指令狀態：尚未送出</div>
 				</div>
 				<div class="calib-top-row">
 					<div class="state-table">
 						<div>流程狀態</div>
 						<div><span id="workflowStateBadge" class="pill">未校正</span></div>
-						<div>BSHS 校正</div>
+						<div>姿勢一 BSHS 校正</div>
 						<div><span id="anchorBshsStatus" class="pill pill-pending">未完成</span></div>
-						<div>BLHL 校正</div>
+						<div>姿勢五 BLHL 校正</div>
 						<div><span id="anchorBlhlStatus" class="pill pill-pending">未完成</span></div>
-						<div>Anchor State</div>
+						<div>校正基準狀態</div>
 						<div id="anchorStateValue">IDLE</div>
-						<div>Anchor Target</div>
+						<div>校正基準姿勢</div>
 						<div id="anchorTargetValue">NONE</div>
 					</div>
 
 					<div class="info-block anchor-info-block">
-						<div class="info-title">Anchor 數值</div>
-						<div class="kv"><span>BSHS</span><span id="anchorBshsValue">pm:- pn:- ph:- head:- neck:-</span></div>
-						<div class="kv"><span>BLHL</span><span id="anchorBlhlValue">pm:- pn:- ph:- head:- neck:-</span></div>
+						<div class="info-title">校正基準</div>
+						<p class="calib-hint">來源：使用者 → 初始校正 → 完成校正；實驗三儲存校正也會更新。以下為有人躺下時的壓力平均與設定高度。</p>
+						<div class="kv"><span>BSHS</span><span id="anchorBshsValue">尚未取得</span></div>
+						<div class="kv"><span>BLHL</span><span id="anchorBlhlValue">尚未取得</span></div>
 					</div>
 				</div>
 
-				<div class="pose-pred-row">
-					<div class="info-block">
-						<div class="info-title">即時姿勢</div>
-						<div class="kv"><span>smoothLabel</span><span id="poseSmoothLabel">-</span></div>
-						<div class="kv"><span>rawLabel</span><span id="poseRawLabel">-</span></div>
-						<div class="kv"><span>更新時間</span><span id="poseUpdateTime">-</span></div>
-					</div>
-
-					<details class="info-block pred-block">
-						<summary>展開分數與預測控制</summary>
-						<div class="kv"><span>scoreE</span><span id="scoreEValue">-</span></div>
-						<div class="kv"><span>scoreSupine</span><span id="scoreSupineValue">-</span></div>
-						<div class="kv"><span>scoreSideMean</span><span id="scoreSideMeanValue">-</span></div>
-						<div class="kv"><span>scorePmRule</span><span id="scorePmRuleValue">-</span></div>
-						<div class="kv"><span>PRED enabled/stage</span><span id="predStageValue">-</span></div>
-						<div class="kv"><span>頸部 +/- ΔADC</span><span id="predNeckDelta">-</span></div>
-						<div class="kv"><span>頭部 +/- ΔADC</span><span id="predHeadDelta">-</span></div>
-					</details>
-				</div>
+                <p class="calib-hint">Group1：姿勢 1、2　｜　Group2：姿勢 3、4、5</p>
+                <div class="pose-pred-row">
+                    <div class="info-block pose-model-result">
+                        <div class="info-title">無歷史</div>
+                        <div class="pose-model-group" data-pose-model="static-group">—</div>
+                        <div class="pose-model-status" data-pose-model="static-status">尚未開始</div>
+                        <div class="kv"><span>Group1 機率</span><span data-pose-model="static-p1">—</span></div>
+                        <div class="kv"><span>Group2 機率</span><span data-pose-model="static-p2">—</span></div>
+                    </div>
+                    <div class="info-block pose-model-result">
+                        <div class="info-title">有歷史</div>
+                        <div class="pose-model-group" data-pose-model="history-group">—</div>
+                        <div class="pose-model-status" data-pose-model="history-status">尚未開始</div>
+                        <div class="kv"><span>Group1 機率</span><span data-pose-model="history-p1">—</span></div>
+                        <div class="kv"><span>Group2 機率</span><span data-pose-model="history-p2">—</span></div>
+                    </div>
+                </div>
+                <div class="pose-model-meta">
+                    <span>上次接收：<span data-pose-model="updated">—</span></span>
+                    <span>本輪有效資料：<span data-pose-model="count">—</span></span>
+                </div>
+                <p class="calib-hint" data-pose-model="notice" role="status">尚未開始</p>
 				</div>
 			</section>
 
@@ -690,9 +694,9 @@ https://fustyles.github.io/webduino/WebSerial.html
 					<code>USER,&lt;gender&gt;,&lt;age&gt;,&lt;height&gt;,&lt;weight&gt;</code><div>設定使用者資料。</div><code>USER,1,25,170,65</code>
 					<code>INIT,NORM,S</code><div>讀取/套用仰躺初始高度。</div><code>INIT,NORM,S</code>
 					<code>INIT,NORM,L</code><div>讀取/套用側躺初始高度。</div><code>INIT,NORM,L</code>
-					<code>SET,OK</code><div>確認目前校正高度可擷取 anchor。</div><code>SET,OK</code>
-					<code>ANCHOR,START,BSHS</code><div>開始仰躺 anchor 擷取。</div><code>ANCHOR,START,BSHS</code>
-					<code>ANCHOR,START,BLHL</code><div>開始側躺 anchor 擷取。</div><code>ANCHOR,START,BLHL</code>
+					<code>SET,OK</code><div>確認目前校正高度可擷取校正基準。</div><code>SET,OK</code>
+					<code>ANCHOR,START,BSHS</code><div>開始仰躺校正基準擷取。</div><code>ANCHOR,START,BSHS</code>
+					<code>ANCHOR,START,BLHL</code><div>開始側躺校正基準擷取。</div><code>ANCHOR,START,BLHL</code>
 				</div>
 			</section>
 			<section>
@@ -783,7 +787,7 @@ https://fustyles.github.io/webduino/WebSerial.html
 					<section><h4>姿勢一（pose1／height1）</h4><output id="pressureCalibrationPose1Saved">尚未保存</output></section>
 					<section><h4>姿勢五（pose5／height5）</h4><output id="pressureCalibrationPose5Saved">尚未保存</output></section>
 				</div>
-				<p class="pressure-field-wide pressure-field-hint">快照保存最新一筆完整 P 訊息（非平均值），兩姿勢依受試者分開暫存於本頁。高度為裝置依充放氣時間估計，並非感測器實測。請在重新整理前截圖；這些快照不寫入 ESP32 anchor，也不併入每輪的 CSV／線圖。</p>
+				<p class="pressure-field-wide pressure-field-hint">快照保存最新一筆完整 P 訊息（非平均值），兩姿勢依受試者分開暫存於本頁。高度為裝置依充放氣時間估計，並非感測器實測。請在重新整理前截圖；這些快照不寫入 ESP32 校正基準，也不併入每輪的 CSV／線圖。</p>
 			</fieldset>
 			<p class="pressure-purpose">每輪記錄 30 秒 Monitor、Neck、Head 原始 ADC，供匯出後離線分類分析；本區不提供即時分類結果。</p>
 			<form id="pressureRunForm">
@@ -927,6 +931,7 @@ https://fustyles.github.io/webduino/WebSerial.html
 	<script src="./rapid-experiment.js?v=20261113-startup-refill"></script>
 	<script src="./experiment-hub.js"></script>
 	<script src="./experiment-height-control.js"></script>
+	<script src="./pose-model.js"></script>
 	<script src="./app.js"></script>
 </body>
 

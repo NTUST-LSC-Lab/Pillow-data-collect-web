@@ -726,7 +726,7 @@
 								receivedMonotonicMs: performance.now(),
 								timestamp_iso: new Date().toISOString()
 							});
-							if (hideLine && line.includes("pre_stable_label=")) {
+							if (hideLine && (line.includes("pre_stable_label=") || line === "classifier=DUAL_CATBOOST_V1")) {
 							suppressSilentDebugResponse = false;
 							if (silentDebugSuppressTimer) {
 								clearTimeout(silentDebugSuppressTimer);
@@ -810,6 +810,9 @@
 			const device = event.target;
 			serial_message(`Device ${device.name} is disconnected.`, "red");
 			serial_ready = false;
+			resetAutoControlStartState("BLE 已斷線");
+			clearAnchorDisplay();
+			setModeAck("BLE 已斷線", "error");
 			if (experimentHubModule) experimentHubModule.onDisconnected();
 			if (typeof experimentHeightControl !== 'undefined' && experimentHeightControl) experimentHeightControl.onDisconnected();
 		}
@@ -1007,7 +1010,7 @@
 			SUPINE: "仰躺校正中",
 			SIDE: "側躺校正中",
 			CLASSIFYING: "分類中",
-			AUTOCONTROL: "自動控制中"
+			READY: "已校正・待辨識"
 		};
 
 		const workflowStateBadge = document.getElementById('workflowStateBadge');
@@ -1017,16 +1020,7 @@
 		const anchorTargetValue = document.getElementById('anchorTargetValue');
 		const anchorBshsValue = document.getElementById('anchorBshsValue');
 		const anchorBlhlValue = document.getElementById('anchorBlhlValue');
-		const poseSmoothLabel = document.getElementById('poseSmoothLabel');
-		const poseRawLabel = document.getElementById('poseRawLabel');
-		const poseUpdateTime = document.getElementById('poseUpdateTime');
-		const scoreEValue = document.getElementById('scoreEValue');
-		const scoreSupineValue = document.getElementById('scoreSupineValue');
-		const scoreSideMeanValue = document.getElementById('scoreSideMeanValue');
-		const scorePmRuleValue = document.getElementById('scorePmRuleValue');
-		const predStageValue = document.getElementById('predStageValue');
-		const predNeckDelta = document.getElementById('predNeckDelta');
-		const predHeadDelta = document.getElementById('predHeadDelta');
+		const poseModelPanel = createPoseModelPanel(document.getElementById('poseModelPanel'));
 		const monitorPressureValue = document.getElementById('monitorPressureValue');
 		const neckPressureValue = document.getElementById('neckPressureValue');
 		const headPressureValue = document.getElementById('headPressureValue');
@@ -1046,12 +1040,10 @@
 		let pendingAnchorTarget = null;
 		let classifyStarted = false;
 		let classifyStartRequested = false;
-		let predEnabled = false;
-		let predStartRequested = false;
+		let predEnabled = false; // Readback only: never enabled by this Web.
+		let legacyEnabled = false;
 		let classifyStartAttempts = 0;
-		let predStartAttempts = 0;
 		let classifyStartRetryTimer = null;
-		let predStartRetryTimer = null;
 		let sideStandbyWatchActive = false;
 		let sideStandbyConsecutive = 0;
 		let sideStandbyTimer = null;
@@ -1125,7 +1117,7 @@
 			controlMode = nextMode;
 			const isAuto = controlMode === CONTROL_MODE.AUTO;
 			if (controlModeBadge) {
-				controlModeBadge.textContent = isAuto ? "自動模式" : "手動模式";
+				controlModeBadge.textContent = classifyStarted ? "辨識中" : isAuto ? "等待辨識" : "已停止";
 				controlModeBadge.classList.toggle('pill-ok', isAuto);
 				controlModeBadge.classList.toggle('pill-pending', !isAuto);
 			}
@@ -1139,7 +1131,7 @@
 			}
 			safeSetText(
 				controlModeHint,
-				isAuto ? "自動模式會在 BSHS 與 BLHL 校正完成後啟動分類與高度自動調整。" : "手動模式不會自動啟動分類與高度自動調整。"
+				isAuto ? "兩組校正基準完成後，並列無歷史／有歷史結果；不會自動調整高度。" : "完成兩組校正基準後可開始辨識；此版本僅分類，不會自動調整高度。"
 			);
 		}
 
@@ -1147,7 +1139,7 @@
 			if (!controlModeAck) {
 				return;
 			}
-			controlModeAck.textContent = `模式指令狀態：${message}`;
+			controlModeAck.textContent = `辨識指令狀態：${message}`;
 			controlModeAck.classList.remove('pending', 'ok', 'error');
 			if (status) {
 				controlModeAck.classList.add(status);
@@ -1301,7 +1293,7 @@
 
 		function sendModeCommands(nextMode) {
 			if (nextMode === CONTROL_MODE.AUTO && typeof experimentHeightControl !== 'undefined' && experimentHeightControl?.getState().busy) {
-				setModeAck("實驗高度操作尚未完成，無法啟動自動模式", "error");
+				setModeAck("實驗高度操作尚未完成，無法開始辨識", "error");
 				return;
 			}
 			requestedControlMode = nextMode;
@@ -1310,12 +1302,15 @@
 				setModeAck("尚未連線 BLE，指令未送出", "error");
 				return;
 			}
-			setModeAck(`${nextMode === CONTROL_MODE.AUTO ? "自動模式" : "手動模式"}指令已送出，等待 ESP32 回覆`, "pending");
+			setModeAck(`${nextMode === CONTROL_MODE.AUTO ? "開始辨識" : "停止辨識"}指令已送出，等待 ESP32 回覆`, "pending");
 			if (nextMode === CONTROL_MODE.AUTO) {
 				sendCommand("FEATURE,POSE,ON");
-				sendCommand("FEATURE,PRED,ON");
+				sendCommand("FEATURE,PRED,OFF");
+				sendCommand("FEATURE,LEGACY,OFF");
 				sendCommand("FEATURE,STATUS");
-				maybeStartClassification();
+				clearAnchorDisplay();
+				sendCommand("ANCHOR,GET,BSHS");
+				sendCommand("ANCHOR,GET,BLHL");
 				return;
 			}
 			sendCommand("PRED,STOP");
@@ -1324,7 +1319,7 @@
 			sendCommand("FEATURE,STATUS");
 			resetAutoControlStartState();
 			if (anchorDone.BSHS && anchorDone.BLHL) {
-				setWorkflowState(WORKFLOW.UNCALIBRATED);
+				setWorkflowState(WORKFLOW.READY);
 			}
 		}
 
@@ -1394,19 +1389,19 @@
 			applyAnchorBadge(anchorBlhlStatus, anchorDone.BLHL);
 		}
 
-		function renderAnchorValue(target) {
-			const data = anchorDataByTarget[target];
-			if (!data) {
-				return;
-			}
-			const text = `pm:${data.pm} pn:${data.pn} ph:${data.ph} head:${data.head} neck:${data.neck}`;
-			if (target === "BSHS") {
-				safeSetText(anchorBshsValue, text);
-			}
-			if (target === "BLHL") {
-				safeSetText(anchorBlhlValue, text);
-			}
-		}
+        function clearAnchorDisplay() {
+            anchorDone = { BSHS: false, BLHL: false };
+            anchorDataByTarget = { BSHS: null, BLHL: null };
+            refreshAnchorBadgeUI();
+            renderAnchorValue('BSHS'); renderAnchorValue('BLHL');
+            if (!classifyStarted) setWorkflowState(WORKFLOW.UNCALIBRATED);
+        }
+
+        function renderAnchorValue(target) {
+            const data = anchorDataByTarget[target];
+            const text = data ? `Monitor ${Number(data.pm).toLocaleString()} ADC\nNeck ${Number(data.pn).toLocaleString()} ADC\nHead ${Number(data.ph).toLocaleString()} ADC\n設定高度：Head ${data.head} cm ／ Neck ${data.neck} cm` : "尚未取得";
+            safeSetText(target === 'BSHS' ? anchorBshsValue : anchorBlhlValue, text);
+        }
 
 		function enableSideCalibrationControls(enabled) {
 			const ids = ['sideHeadInput', 'sideNeckInput', 'sideHeadPlus', 'sideHeadMinus', 'sideNeckPlus', 'sideNeckMinus', 'confirmSideCalibAdjustBtn'];
@@ -1425,17 +1420,6 @@
 				clearTimeout(sideStandbyTimer);
 				sideStandbyTimer = null;
 			}
-		}
-
-		function formatDelta(currentValue, targetValue) {
-			const current = Number(currentValue);
-			const target = Number(targetValue);
-			if (!isFinite(current) || !isFinite(target)) {
-				return "-";
-			}
-			const diff = target - current;
-			const sign = diff > 0 ? "+" : "";
-			return `${sign}${diff.toFixed(1)}`;
 		}
 
 		const monitorState = {
@@ -2240,51 +2224,14 @@
 			}
 		}
 
-		function clearPredStartRetry() {
-			if (predStartRetryTimer) {
-				clearTimeout(predStartRetryTimer);
-				predStartRetryTimer = null;
-			}
-		}
-
-		function resetAutoControlStartState() {
-			clearClassifyStartRetry();
-			clearPredStartRetry();
-			classifyStarted = false;
-			classifyStartRequested = false;
-			predEnabled = false;
-			predStartRequested = false;
-			classifyStartAttempts = 0;
-			predStartAttempts = 0;
-		}
-
-		function requestPredStart() {
-			// A late acknowledgement/retry must not restart AUTO after experiment preparation.
-			if (controlMode !== CONTROL_MODE.AUTO || (typeof experimentHeightControl !== 'undefined' && experimentHeightControl?.getState().busy)) return;
-			if (!classifyStarted || predEnabled || predStartRequested) {
-				return;
-			}
-			if (predStartAttempts >= AUTO_START_MAX_ATTEMPTS) {
-				serial_message("PRED,START 啟動失敗，請確認 USER、anchor 與壓力資料是否完整。", "red");
-				return;
-			}
-
-			predStartRequested = true;
-			predStartAttempts += 1;
-			sendCommand("PRED,START");
-			clearPredStartRetry();
-			predStartRetryTimer = setTimeout(() => {
-				if (!predEnabled && predStartRequested) {
-					predStartRequested = false;
-					if (predStartAttempts < AUTO_START_MAX_ATTEMPTS) {
-						serial_message(`PRED,START 未收到 OK，重試 ${predStartAttempts + 1}/${AUTO_START_MAX_ATTEMPTS}。`, "orange");
-						requestPredStart();
-					} else {
-						serial_message("PRED,START 未收到 OK，自動高度調整未確認啟動。", "red");
-					}
-				}
-			}, AUTO_START_RETRY_MS);
-		}
+		function resetAutoControlStartState(message = "已停止") {
+            clearClassifyStartRetry();
+            classifyStarted = false;
+            classifyStartRequested = false;
+            classifyStartAttempts = 0;
+            predEnabled = false;
+            poseModelPanel.reset(message);
+        }
 
 		function requestClassifyStart() {
 			// A late acknowledgement/retry must not restart AUTO after experiment preparation.
@@ -2293,7 +2240,7 @@
 				return;
 			}
 			if (classifyStartAttempts >= AUTO_START_MAX_ATTEMPTS) {
-				serial_message("CLASSIFY,START 啟動失敗，請確認 BSHS 與 BLHL anchor 是否都存在。", "red");
+				serial_message("CLASSIFY,START 啟動失敗，請確認 BSHS 與 BLHL 校正基準是否都存在。", "red");
 				return;
 			}
 
@@ -2318,8 +2265,7 @@
 		}
 
 		function maybeStartClassification() {
-			if (controlMode !== CONTROL_MODE.AUTO) {
-				serial_message("目前為手動模式：校正完成後不自動啟動分類與高度調整。", "orange");
+			if (controlMode !== CONTROL_MODE.AUTO || predEnabled || legacyEnabled) {
 				return;
 			}
 			if (!anchorDone.BSHS || !anchorDone.BLHL) {
@@ -2328,7 +2274,7 @@
 			requestClassifyStart();
 		}
 
-			function parseProtocolMessage(dataString) {
+			function parseProtocolMessage(dataString, receipt = null) {
 				const parts = dataString.split(',').map(v => v.trim());
                 if (parts[0] !== 'EXP02' && typeof experimentHubModule !== 'undefined') experimentHubModule?.receiveLine?.(dataString);
 				if (parts.length < 2) {
@@ -2343,36 +2289,37 @@
 					if (parts[1] === "OK") {
 						setUserSetAck(`已設定 (${formatAckTime()})`, "ok");
 						requestSilentDebugSnapshot();
+						clearAnchorDisplay();
+						resetAutoControlStartState("使用者資料已更新，等待校正與新結果");
+						setWorkflowState(WORKFLOW.UNCALIBRATED);
+						sendSilentCommand("ANCHOR,GET,BSHS");
+						sendSilentCommand("ANCHOR,GET,BLHL");
 					} else if (parts[1] === "ERR") {
 						setUserSetAck(`ESP32 回覆失敗：${parts.slice(2).join(',') || "BAD_COMMAND"}`, "error");
 					}
 					return;
 				}
 
-			if (parts[0] === "FEATURE") {
-				if (parts[1] === "STATUS") {
-					const predIndex = parts.indexOf("PRED");
-					if (predIndex !== -1 && parts[predIndex + 1] === "1") {
-						setModeUi(CONTROL_MODE.AUTO);
-						if (requestedControlMode === CONTROL_MODE.AUTO) {
-							setModeAck(`ESP32 已確認自動模式 (${formatAckTime()})`, "ok");
-						} else {
-							setModeAck(`ESP32 回覆目前為自動模式 (${formatAckTime()})`, "ok");
-						}
-					} else if (predIndex !== -1 && parts[predIndex + 1] === "0") {
-						setModeUi(CONTROL_MODE.MANUAL);
-						if (requestedControlMode === CONTROL_MODE.MANUAL) {
-							setModeAck(`ESP32 已確認手動模式 (${formatAckTime()})`, "ok");
-						} else {
-							setModeAck(`ESP32 回覆目前為手動模式 (${formatAckTime()})`, "ok");
-						}
-					}
-				}
-				if (parts[1] === "ERR") {
-					setModeAck(`ESP32 回覆失敗：${parts.slice(2).join(',') || 'BAD_COMMAND'}`, "error");
-				}
-				return;
-			}
+            if (parts[0] === "FEATURE") {
+                if (parts[1] === "STATUS") {
+                    const predIndex = parts.indexOf("PRED"), legacyIndex = parts.indexOf("LEGACY"), poseIndex = parts.indexOf("POSE");
+                    if (predIndex < 0 || legacyIndex < 0 || poseIndex < 0) return;
+                    predEnabled = parts[predIndex + 1] === "1";
+                    legacyEnabled = parts[legacyIndex + 1] === "1";
+                    if (predEnabled || legacyEnabled) {
+                        setModeAck("裝置的舊自動控制尚未關閉，請重新按開始辨識。", "error");
+                    } else if (parts[poseIndex + 1] === "0") {
+                        resetAutoControlStartState("辨識功能已停用");
+                        setModeUi(CONTROL_MODE.MANUAL);
+                        setModeAck("裝置辨識功能已停用", "error");
+                    } else if (requestedControlMode === CONTROL_MODE.AUTO) {
+                        setModeAck(classifyStarted ? `辨識中 (${formatAckTime()})` : "辨識功能已就緒，等待兩組校正基準與啟動確認", classifyStarted ? "ok" : "pending");
+                        maybeStartClassification();
+                    } else if (!classifyStarted) setModeAck(`辨識已停止 (${formatAckTime()})`, "ok");
+                }
+                if (parts[1] === "ERR") setModeAck(`ESP32 回覆失敗：${parts.slice(2).join(',') || 'BAD_COMMAND'}`, "error");
+                return;
+            }
 
 			if (parts[0] === "HEIGHT_SET" || parts[0] === "HEIGHT_LIMIT") {
 				const headIndex = parts.indexOf(parts[0] === "HEIGHT_SET" ? "HEAD" : "HEAD_APPLIED");
@@ -2431,11 +2378,12 @@
 							resetAutoControlStartState();
 							anchorDone[parts[3]] = false;
 							anchorDataByTarget[parts[3]] = null;
+							renderAnchorValue(parts[3]);
 							refreshAnchorBadgeUI();
 						}
 						return;
 					}
-					if ((parts[2] === "BSHS" || parts[2] === "BLHL") && parts.length >= 8) {
+					if ((parts[2] === "BSHS" || parts[2] === "BLHL") && parts.length === 8 && parts.slice(3).every(v => v !== "" && Number.isFinite(Number(v)))) {
 						const target = parts[2];
 						anchorDone[target] = true;
 						anchorDataByTarget[target] = {
@@ -2469,9 +2417,7 @@
 						}
 
 						maybeStartClassification();
-						if (!(anchorDone.BSHS && anchorDone.BLHL)) {
-							setWorkflowState(WORKFLOW.UNCALIBRATED);
-						}
+						if (!classifyStarted) setWorkflowState(anchorDone.BSHS && anchorDone.BLHL ? WORKFLOW.READY : WORKFLOW.UNCALIBRATED);
 						return;
 					}
 					if (parts[2] === "CLEAR") {
@@ -2479,8 +2425,8 @@
 						anchorDataByTarget = { BSHS: null, BLHL: null };
 						resetAutoControlStartState();
 						refreshAnchorBadgeUI();
-						safeSetText(anchorBshsValue, "pm:- pn:- ph:- head:- neck:-");
-						safeSetText(anchorBlhlValue, "pm:- pn:- ph:- head:- neck:-");
+						safeSetText(anchorBshsValue, "尚未取得");
+						safeSetText(anchorBlhlValue, "尚未取得");
 						setWorkflowState(WORKFLOW.UNCALIBRATED);
 					}
 					return;
@@ -2500,98 +2446,57 @@
 				return;
 			}
 
-			if (parts[0] === "CLASSIFY") {
-				if (parts[1] === "OK") {
-					if (parts[2] === "START") {
-						classifyStarted = true;
-						classifyStartRequested = false;
-						classifyStartAttempts = 0;
-						clearClassifyStartRetry();
-						setWorkflowState(WORKFLOW.CLASSIFYING);
-						requestPredStart();
-						return;
-					}
-					if (parts[2] === "STOP") {
-						resetAutoControlStartState();
-						setWorkflowState(WORKFLOW.UNCALIBRATED);
-						return;
-					}
-					if (parts.length >= 8) {
-						safeSetText(poseSmoothLabel, parts[2]);
-						safeSetText(poseRawLabel, parts[3]);
-						safeSetText(scoreEValue, parts[4]);
-						safeSetText(scoreSupineValue, parts[5]);
-						safeSetText(scoreSideMeanValue, parts[6]);
-						safeSetText(scorePmRuleValue, parts[7]);
-						safeSetText(poseUpdateTime, new Date().toLocaleTimeString());
-					}
-				}
-				if (parts[1] === "ERR") {
-					if (classifyStartRequested) {
-						clearClassifyStartRetry();
-						classifyStartRequested = false;
-						if (parts[2] === "ANCHOR_MISSING") {
-							classifyStartAttempts = AUTO_START_MAX_ATTEMPTS;
-							serial_message("CLASSIFY,START 失敗：ESP32 表示 anchor 不完整，請重新確認 BSHS/BLHL。", "red");
-						} else if (classifyStartAttempts < AUTO_START_MAX_ATTEMPTS) {
-							setTimeout(requestClassifyStart, 1000);
-						} else {
-							serial_message("CLASSIFY,START 失敗，請查看 ESP32 回覆。", "red");
-						}
-					}
-				}
-				return;
-			}
-
-			if (parts[0] === "PRED") {
-				if (parts[1] === "OK" && parts[2] === "START") {
-					predStartRequested = false;
-					predStartAttempts = 0;
-					predEnabled = true;
-					clearPredStartRetry();
-					setWorkflowState(WORKFLOW.AUTOCONTROL);
-					return;
-				}
-				if (parts[1] === "OK" && parts[2] === "STOP") {
-					predStartRequested = false;
-					predEnabled = false;
-					clearPredStartRetry();
-					setWorkflowState(classifyStarted ? WORKFLOW.CLASSIFYING : WORKFLOW.UNCALIBRATED);
-					return;
-				}
-				if (parts[1] === "OK") {
-					if (parts.length >= 11) {
-						predEnabled = parts[2] === "1";
-						if (predEnabled) {
-							predStartRequested = false;
-							predStartAttempts = 0;
-							clearPredStartRetry();
-						}
-						safeSetText(predStageValue, `${parts[2]}/${parts[3]}`);
-						safeSetText(predNeckDelta, formatDelta(parts[7], parts[8]));
-						safeSetText(predHeadDelta, formatDelta(parts[9], parts[10]));
-						if (predEnabled) {
-							setWorkflowState(WORKFLOW.AUTOCONTROL);
-						} else if (classifyStarted) {
-							setWorkflowState(WORKFLOW.CLASSIFYING);
-						}
-					}
-					return;
-				}
-				if (parts[1] === "ERR" && predStartRequested) {
-					clearPredStartRetry();
-					predStartRequested = false;
-					if (parts[2] === "NOT_READY") {
-						serial_message("PRED,START 尚未就緒，確認 USER/anchor/壓力資料後重試。", "orange");
-					}
-					if (predStartAttempts < AUTO_START_MAX_ATTEMPTS) {
-						setTimeout(requestPredStart, 1000);
-					} else {
-						serial_message("PRED,START 失敗，自動高度調整未啟動。", "red");
-					}
-				}
-				return;
-			}
+            if (parts[0] === "CLASSIFY") {
+                if (parts[1] === "DATA") {
+                    if (!receipt || !serial_ready) return; // Only newline-complete BLE messages can update results.
+                    if (poseModelPanel.receive(dataString)) {
+                        classifyStarted = true;
+                        setModeUi(controlMode);
+                        setWorkflowState(WORKFLOW.CLASSIFYING);
+                    }
+                    return;
+                }
+                if (parts[1] === "OK") {
+                    if (parts[2] === "START") {
+                        if (!classifyStarted) poseModelPanel.reset("等待第一筆結果");
+                        classifyStarted = true;
+                        classifyStartRequested = false;
+                        classifyStartAttempts = 0;
+                        clearClassifyStartRetry();
+                        setWorkflowState(WORKFLOW.CLASSIFYING);
+                        setModeUi(controlMode);
+                        setModeAck(`ESP32 已開始辨識 (${formatAckTime()})`, "ok");
+                        return;
+                    }
+                    if (parts[2] === "STOP") {
+                        resetAutoControlStartState();
+                        setWorkflowState(anchorDone.BSHS && anchorDone.BLHL ? WORKFLOW.READY : WORKFLOW.UNCALIBRATED);
+                        setModeUi(CONTROL_MODE.MANUAL);
+                        setModeAck(`ESP32 已停止辨識 (${formatAckTime()})`, "ok");
+                        return;
+                    }
+                    poseModelPanel.reset("分類格式不相容，請使用 spp3_BLE_v4_model 韌體。");
+                    return;
+                }
+                if (parts[1] === "ERR") {
+                    const reason = parts[2] || 'BAD_COMMAND';
+                    if (reason === 'NOT_READY') return;
+                    poseModelPanel.reset(`辨識尚未就緒：${reason}`);
+                    setModeAck(`ESP32 回覆：${reason}`, "error");
+                    if (reason === 'NOT_RUNNING' || reason === 'DISABLED') classifyStarted = false;
+                    if (classifyStartRequested) {
+                        clearClassifyStartRetry();
+                        classifyStartRequested = false;
+                        if (['ANCHOR_MISSING','TASK_UNAVAILABLE','DISABLED'].includes(reason)) {
+                            classifyStartAttempts = AUTO_START_MAX_ATTEMPTS;
+                            if (reason === 'ANCHOR_MISSING') clearAnchorDisplay();
+                        } else if (classifyStartAttempts < AUTO_START_MAX_ATTEMPTS) setTimeout(requestClassifyStart, 1000);
+                    }
+                }
+                return;
+            }
+            // Removed in the paired firmware; keep STOP/OFF acknowledgements harmless.
+            if (parts[0] === "PRED") return;
 
 			if (parts[0] === "INIT" && parts[1] === "OK") {
 				if (awaitingInitMode === "L" && parts.length >= 4) {
@@ -2849,7 +2754,7 @@
 			}
 
 			if ((colour === "green" || colour === LOG_SUCCESS_GREEN) && dataString.includes(',')) {
-				parseProtocolMessage(dataString.trim());
+				parseProtocolMessage(dataString.trim(), completeBleReceipt);
 			}
 		}
 
@@ -2915,6 +2820,7 @@
 
 		var func_count = 0;
 		setInterval(function () {
+			poseModelPanel.tick();
 			if (!rxCharacteristic || !serial_ready) {
 				return;
 			}
@@ -2933,7 +2839,6 @@
 
 			if (classifyStarted) {
 				sendSilentCommand("CLASSIFY,GET");
-				sendSilentCommand("PRED,GET");
 			}
 
 			const nowMs = Date.now();
@@ -3046,7 +2951,7 @@
 				},
 				getSystemState: () => ({
 					connected: Boolean(serial_ready && bluetoothDevice?.gatt?.connected),
-					autoHeightPossible: controlMode === CONTROL_MODE.AUTO || predEnabled || predStartRequested
+					autoHeightPossible: predEnabled || legacyEnabled
 				}),
 				sendRapidCommand: command => sendCommand(command, { experiment03: true }),
                 sendRapidQuery: command => sendSilentCommand(command),
@@ -3529,7 +3434,7 @@
 				}
 				pendingAnchorTarget = "BSHS";
 				if (supineCalibHint) {
-					supineCalibHint.textContent = "正在擷取 BSHS anchor，請保持姿勢。";
+					supineCalibHint.textContent = "正在擷取 BSHS 校正基準，請保持姿勢。";
 				}
 				sendCommand("SET,OK");
 				sendCommand("ANCHOR,START,BSHS");
@@ -3545,7 +3450,7 @@
 				}
 				pendingAnchorTarget = "BLHL";
 				if (sideCalibHint) {
-					sideCalibHint.textContent = "正在擷取 BLHL anchor，請保持姿勢。";
+					sideCalibHint.textContent = "正在擷取 BLHL 校正基準，請保持姿勢。";
 				}
 				sendCommand("SET,OK");
 				sendCommand("ANCHOR,START,BLHL");

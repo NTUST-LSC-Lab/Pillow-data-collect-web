@@ -295,7 +295,7 @@ function createExperimentHeightControl(options) {
             if (pair[1] === 'gender') debugBuffer = { values: {}, startedMonotonicMs: time };
             if (debugBuffer) {
                 debugBuffer.values[pair[1]] = pair[2];
-                if (pair[1] === 'pre_stable_label') {
+                if (pair[1] === 'pre_stable_label' || (pair[1] === 'classifier' && pair[2] === 'DUAL_CATBOOST_V1')) {
                     const values = debugBuffer.values;
                     debug = {
                         head: number(values.currentHeadNumber), neck: number(values.currentNeckNumber),
@@ -303,7 +303,7 @@ function createExperimentHeightControl(options) {
                         userGender: number(values.gender), userAge: number(values.age),
                         userHeight: number(values.height), userWeight: number(values.weight),
                         pose5HeadCm: number(values.HLF), pose5NeckCm: number(values.N1LF),
-                        anchorState: values.anchor_state, preStage: values.pre_stage,
+                        anchorState: values.anchor_state, preStage: values.classifier === 'DUAL_CATBOOST_V1' ? 'REMOVED' : values.pre_stage,
                         startedMonotonicMs: debugBuffer.startedMonotonicMs, receivedMonotonicMs: time
                     };
                     debugBuffer = null;

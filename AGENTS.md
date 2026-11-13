@@ -1,6 +1,6 @@
 # Pillow-data-collect-web agent instructions
 
-適用於 `NTUST-LSC-Lab/Pillow-data-collect-web` 的 `spp3_BLE_cls_pre_v3.1` 線。先讀 organization shared contract `NTUST-LSC-Lab/lab-docs/AGENTS.md` 與 version matrix；本檔只補充 Web repo 的執行細節。回答使用繁體中文。
+適用於 `NTUST-LSC-Lab/Pillow-data-collect-web` 的 `spp3_BLE_v4_pose_model`，基於 v4.3。先讀 organization shared contract `NTUST-LSC-Lab/lab-docs/AGENTS.md` 與 version matrix；本檔補充本分支差異。回答使用繁體中文。使用者已授權把分類狀態區改為無歷史／有歷史兩組Group1/Group2，配對 ESP32 `spp3_BLE_v4_model`；不得恢復舊五姿勢規則分數或PRED自動調整。
 
 ## Goal and completion bar
 
@@ -20,7 +20,8 @@
 - 舊版：`spp3/`
 - 其他：`Images/`、vendored `chart.umd.min.js`、`README.md`
 - 沒有 backend API、Node server、bundler 或 framework。
-- 這條 Web 主線預設搭配 `ipillow` 的 `pose_pre_v3.1`，不得當成 demo client。
+- 此分支分類區搭配 `ipillow/spp3_BLE_v4_model`，22欄 `CLASSIFY,DATA,V1` 詳見README；舊五姿勢payload不可直接映射Group。
+- `pose-model.js` 只解析／顯示裝置結果，不在Web重新分類或融合模型。完整BLE行、缺值狀態、session/sequence去重與過期顯示必須保留。
 
 回答／診斷只讀；修改／修復可做此 repo 內必要編輯與非破壞性驗證。刪除資料、發布、替換 vendored dependency、改 branch 歷史或擴到其他 repo 前需確認。
 
@@ -30,7 +31,7 @@
 - 維持純 HTML／CSS／vanilla JS，不自行增加 dependency、backend、功能或裝飾性 UI。
 - 指令只走 `sendCommand()`／`sendSilentCommand()` queue，不直接寫 characteristic。
 - Parser 在 `parseProtocolMessage()`／`serial_message()`。欄位變更需追查 workflow state、badge、chart、IndexedDB 與 exporter。
-- Silent polling 包含 `DEBUG`、`ANCHOR,STATUS`、`CLASSIFY,GET`、`PRED,GET`；`MANUAL,IGNORED,DEBUG` 是既有 firmware mode 的預期行為。
+- Silent polling 包含 `DEBUG`、`ANCHOR,STATUS`、`CLASSIFY,GET`；不送 `PRED,GET`、`PRED,START` 或 `FEATURE,PRED,ON`。STOP/OFF仍用於安全關閉。`MANUAL,IGNORED,DEBUG` 是既有 firmware mode 的預期行為。
 - 保留 design tokens、responsive behavior 與 expected states；UI 變更須 render 檢查。
 - `chart.umd.min.js` 除非更新版本是任務本身，否則不替換。
 
@@ -50,4 +51,5 @@
 
 ## Changelog
 
+- 2026-11-13 使用者授權雙模型分類狀態區。Anchor擷取操作保留並說明來源；原實驗三15秒表格及CSV/SVG尚未遷移，不能宣稱雙模型已納入匯出。本輪不改ESP32／Android或其他Web版本。
 - 2026-07-15 依 GPT-5.6 guidance 重寫為 goal、completion、scope、constraints、validation 與 stop rules，保留 Web 主線不變式。

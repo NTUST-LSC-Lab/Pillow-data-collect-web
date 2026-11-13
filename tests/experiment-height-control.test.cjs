@@ -71,6 +71,16 @@ test('missing/null heights cannot become zero or inherit an earlier complete sna
     await rejected;
 });
 
+test('dual-model DEBUG completes only at its explicit terminator with idle and feature-off readback', async () => {
+    const f = fixture(); const promise = f.control.prepare();
+    for (const line of ['gender=0','headNumber=8.0','neckNumber=11.0','currentHeadNumber=8.0',
+        'currentNeckNumber=11.0','anchor_state=DONE','anchor_target=BLHL']) f.receive(line);
+    f.features(); f.idle(); assert.equal(f.control.getState().ready, false);
+    f.receive('classifier=OTHER'); assert.equal(f.control.getState().ready, false);
+    f.receive('classifier=DUAL_CATBOOST_V1'); assert.equal((await promise).ready, true);
+    assert.equal(f.control.getState().debugReceipt.preStage, 'REMOVED');
+});
+
 test('complete DEBUG retains pose5 recommendation and applied profile without mixing earlier fields', () => {
     const f = fixture();
     f.debug({ age: '25', height: '170', weight: '65', HLF: '11.5', N1LF: '12.0' });
@@ -458,7 +468,7 @@ test('production AUTO helper refuses busy height operation before changing mode 
 });
 
 
-test('late classifier/PRED retry callbacks cannot restart AUTO in manual mode or during height operation', () => {
+test('late classifier retry callbacks cannot restart AUTO in manual mode or during height operation', () => {
     for (const state of [{ mode: 'MANUAL', busy: false }, { mode: 'AUTO', busy: true }]) {
         const context = vm.createContext({
             CONTROL_MODE: { AUTO: 'AUTO', MANUAL: 'MANUAL' }, controlMode: state.mode,
@@ -466,7 +476,7 @@ test('late classifier/PRED retry callbacks cannot restart AUTO in manual mode or
             sendCommand: () => { throw new Error('retry must not send'); },
             setTimeout: () => { throw new Error('retry must not reschedule'); }
         });
-        vm.runInContext(productionFunction('requestPredStart', 'function maybeStartClassification('), context);
-        context.requestPredStart(); context.requestClassifyStart();
+        vm.runInContext(productionFunction('requestClassifyStart', 'function maybeStartClassification('), context);
+        context.requestClassifyStart();
     }
 });
