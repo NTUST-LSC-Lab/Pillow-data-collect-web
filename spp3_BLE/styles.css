@@ -2927,3 +2927,88 @@ button.full {
 @media (max-width: 780px) {
   #poseModelPanel .pose-pred-row { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* EXP04 keeps recording controls visible; setup and retrospective detail can fold. */
+.occupancy-test { grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 8px; }
+.occupancy-test > *, .occupancy-detail-body > * { min-width: 0; }
+.occupancy-test p, .occupancy-test h4 { margin: 0; }
+.occupancy-test p, .occupancy-test summary, .occupancy-setup summary { overflow-wrap: anywhere; }
+.occupancy-test button { min-height: 32px; }
+.occupancy-test button:disabled { opacity: .45; cursor: not-allowed; }
+.occupancy-test [aria-pressed="true"] { background: #eaf2fc; border-color: #2563eb; color: #174ea6; }
+.occupancy-test :is(button, summary):focus-visible, .occupancy-setup summary:focus-visible { outline: 2px solid var(--primary, #2563eb); outline-offset: 2px; }
+.occupancy-live { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 8px 0; }
+.occupancy-live [data-occ="active"] { font-weight: 700; margin-bottom: 4px; }
+.occupancy-timer { display: grid; max-width: 135px; text-align: right; font-variant-numeric: tabular-nums; }
+.occupancy-timer strong { font-size: 32px; line-height: 1.2; }
+.occupancy-timer span { font-size: 12px; }
+.occupancy-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.occupancy-group { display: grid; gap: 6px; border: 1px solid var(--line, #cbd5e1); border-radius: 6px; padding: 10px; min-width: 0; }
+.occupancy-group-heading { display: flex; gap: 6px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.occupancy-group.is-active { border-color: var(--primary, #2563eb); }
+.occupancy-group [data-occ^="height"], .occupancy-group [data-occ^="progress"] { font-size: 13px; }
+.occupancy-actions [data-occ="export-csv"] { margin-left: auto; }
+.occupancy-height-tools { display: grid; gap: 6px; border-top: 1px solid var(--line, #cbd5e1); padding-top: 8px; }
+.occupancy-confirm { display: flex; align-items: baseline; gap: 5px; font-size: 13px; }
+.occupancy-confirm input { width: auto; flex: 0 0 auto; }
+.occupancy-detectors { font-weight: 600; }
+.occupancy-test table { min-width: 500px; }
+.occupancy-test .comfort-trial-table { margin: 0; }
+.occupancy-test :is(th, td) { padding: 4px 6px; }
+.occupancy-disclosure { border-top: 1px solid var(--line, #cbd5e1); padding-top: 6px; }
+.occupancy-disclosure > summary, .occupancy-setup > summary { cursor: pointer; padding: 4px 0; }
+.occupancy-detail-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 8px 0; }
+.occupancy-run-picker { display: flex; gap: 8px; align-items: center; }
+.occupancy-run-picker select { flex: 1; min-width: 0; }
+.occupancy-test .pressure-chart-wrap { height: 180px; }
+.occupancy-setup > summary { font-weight: 600; }
+.occupancy-setup > .comfort-experiment { margin-top: 6px; }
+.occupancy-setup .comfort-section { border: 0; border-radius: 0; padding: 0; background: transparent; }
+.occupancy-setup .occupancy-subject { grid-template-columns: auto minmax(100px, 1fr) auto; align-items: center; }
+.occupancy-subject h4 { display: none; }
+.occupancy-subject #comfortProfile { grid-column: 1 / 3; grid-row: 2; }
+.occupancy-subject #comfortFolder { grid-column: 3; grid-row: 1; }
+.occupancy-subject #comfortFolderStatus { grid-column: 3; grid-row: 2; }
+@media (max-width: 780px) {
+  .occupancy-groups { grid-template-columns: minmax(0, 1fr); }
+  .occupancy-setup .occupancy-subject { grid-template-columns: auto minmax(0, 1fr); }
+  .occupancy-subject #comfortProfile, .occupancy-subject #comfortFolder, .occupancy-subject #comfortFolderStatus { grid-column: 1 / -1; grid-row: auto; }
+}
+
+/* EXP03 layout only: existing controls and live state remain in the same recorder. */
+.rapid-test { grid-template-columns: minmax(0, 1fr); gap: 8px; margin-top: 8px; }
+.rapid-test > *, .rapid-detail-body > * { min-width: 0; }
+.rapid-test p, .rapid-test h4 { margin: 0; }
+.rapid-test p, .rapid-test summary, .rapid-setup summary { overflow-wrap: anywhere; }
+.rapid-test button { min-height: 32px; }
+.rapid-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.rapid-heading h4 { margin-bottom: 6px; }
+.rapid-test .rapid-clock { gap: 5px; }
+.rapid-test .rapid-clock strong { font-size: 32px; }
+.rapid-pose-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.rapid-test .rapid-timing { margin: 0; }
+.rapid-test .rapid-checkpoints span { padding: 3px 6px; }
+.rapid-actions [data-rapid="export"] { margin-left: auto; }
+.rapid-test input[type="checkbox"] { flex: 0 0 auto; }
+.rapid-disclosure { border-top: 1px solid var(--line); padding-top: 6px; }
+.rapid-disclosure > summary, .rapid-setup > summary { cursor: pointer; padding: 4px 0; }
+.rapid-setup > summary { font-weight: 600; }
+.rapid-setup > .rapid-calibration { margin-top: 6px; }
+.rapid-detail-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding-top: 8px; }
+.rapid-test .pressure-chart-wrap { height: 180px; }
+.rapid-test .comfort-trial-table { margin: 0; max-height: 320px; overflow: auto; }
+.rapid-test :is(th, td) { padding: 4px 6px; }
+.rapid-test :is(button, summary):focus-visible, .rapid-setup summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.rapid-calibration .rapid-subject { grid-template-columns: auto minmax(100px, 1fr) auto; align-items: center; }
+.rapid-subject h4 { grid-column: 1 / -1; }
+.rapid-subject #comfortProfile { grid-column: 1 / 3; grid-row: 3; }
+.rapid-subject #comfortFolder { grid-column: 3; grid-row: 2; }
+.rapid-subject #comfortFolderStatus { grid-column: 3; grid-row: 3; }
+@media (max-width: 480px) {
+  .rapid-heading { grid-template-columns: minmax(0, 1fr); }
+  .rapid-heading .rapid-clock { justify-self: end; }
+}
+@media (max-width: 780px) {
+  .rapid-calibration .rapid-subject { grid-template-columns: auto minmax(0, 1fr); }
+  .rapid-subject #comfortProfile, .rapid-subject #comfortFolder, .rapid-subject #comfortFolderStatus { grid-column: 1 / -1; grid-row: auto; }
+}

@@ -3,7 +3,7 @@ cd -- "${0:A:h}"
 python3 - <<'PY'
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 import threading, webbrowser
-url = 'http://localhost:8083/spp3_BLE/preview.html'
+url = 'http://localhost:8083/spp3_BLE/preview.html?experiment=04'
 try:
     server = ThreadingHTTPServer(('127.0.0.1', 8083), SimpleHTTPRequestHandler)
 except OSError as e:

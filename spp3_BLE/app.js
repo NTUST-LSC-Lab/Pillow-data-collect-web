@@ -2572,6 +2572,8 @@
 							monitor_adc: values[0], neck_adc: values[1], head_adc: values[2],
 							...completeBleReceipt
 						});
+					} else if (completeBleReceipt && experimentHubModule && serial_ready) {
+						experimentHubModule.receiveInvalidPressure({ ...completeBleReceipt, raw_line: dataString });
 					}
 					if (values.length >= 3) {
 						updatePressureMonitor(values);

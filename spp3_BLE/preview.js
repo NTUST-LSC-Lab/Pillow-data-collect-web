@@ -1,4 +1,11 @@
 // Explicitly simulated transport for local review. Never included by index.html.
+const demoExp04 = new URLSearchParams(location.search).get('experiment') === '04';
+if (demoExp04) {
+    document.title = '實驗四 · 操作預覽';
+    document.querySelector('h1').textContent = '實驗04｜兩組高度躺枕／離枕偵測';
+    document.querySelector('.preview-banner').innerHTML = '<strong>操作預覽 · 模擬資料</strong><p>本頁不連線BLE、不控制硬體。可操作兩姿勢校正、兩組高度與30秒分段測試；儲存會下載模擬資料。正式操作請開啟 <a href="index.html">完整實驗Web</a>。</p>';
+    document.querySelectorAll('.preview-banner')[1].querySelector('p').textContent = '模擬躺下／離枕只改變壓力。請使用實驗04的六顆按鈕標記實際狀態；計時不會自動切換。';
+}
 const demoProfile = () => ({ gender: document.getElementById('demoGender').value,
     age_years: Number(document.getElementById('demoAge').value), body_height_cm: Number(document.getElementById('demoHeight').value), body_weight_kg: Number(document.getElementById('demoWeight').value) });
 const demoOperations = new Map();
@@ -37,7 +44,7 @@ function demoReply(command) {
     if (p[0] === 'EXP02') {
         if (p[1] === 'DRAIN') {
             response = `EXP02,ACK,${p[2]},DRAIN`;
-            demoOperations.set(p[2], setTimeout(() => { demoOperations.delete(p[2]); window.demoExperiment.receiveLine(`EXP02,DRAINED,${p[2]}`); }, 1800));
+            demoOperations.set(p[2], setTimeout(() => { demoOperations.delete(p[2]); demoState.head = 7; demoState.neck = 10; window.demoExperiment.receiveLine(`EXP02,DRAINED,${p[2]}`); }, 1800));
         } else if (p[1] === 'START') {
             response = `EXP02,ACK,${p[2]},HEIGHT_DRY`;
             demoOperations.set(p[2], setTimeout(() => {
@@ -65,7 +72,7 @@ function demoReply(command) {
     if (response) setTimeout(() => window.demoExperiment.receiveLine(response, demoReceipt()), 30);
 }
 function demoPoseLabel() { return document.querySelector('[data-rapid-pose="5"]').getAttribute('aria-pressed') === 'true' ? 'GROUP2' : 'GROUP1'; }
-window.demoExperiment = createRapidExperiment(document.getElementById('previewHost'), {
+window.demoExperiment = (demoExp04 ? createOccupancyExperiment : createRapidExperiment)(document.getElementById('previewHost'), {
     simulated: true,
     getSystemState: () => ({ connected: true, autoHeightPossible: false }), getUserProfile: demoProfile,
     getPose5Suggestion: () => { const p = demoProfile(); return { head: Math.max(7,Math.min(14,Math.round((p.body_height_cm / 20 + p.body_weight_kg / 60 + (p.gender === 'male' ? .5 : 0)) * 2)/2)), neck: Math.max(10,Math.min(14,Math.round((p.body_height_cm/18 + p.body_weight_kg/60)*2)/2)) }; },

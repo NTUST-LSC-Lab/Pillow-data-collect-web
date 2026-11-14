@@ -6,7 +6,7 @@ function createExperimentHub(root, options = {}) {
     const comfortId = options.comfortConfig?.experimentId;
     const experimentRegistry = Array.from({ length: 9 }, (_, index) => {
         const id = String(index + 1).padStart(2, '0');
-        return { id, title: id === '03' ? '躺下後的快速姿勢辨識' : id === pressureId ? pressureConfig.title : id === comfortId ? options.comfortConfig.title : `Experiment ${id}` };
+        return { id, title: id === '04' ? '兩組高度躺枕／離枕偵測' : id === '03' ? '躺下後的快速姿勢辨識' : id === pressureId ? pressureConfig.title : id === comfortId ? options.comfortConfig.title : `Experiment ${id}` };
     });
     const experimentStates = new Map(experimentRegistry.map(experiment => [
         experiment.id, { status: '尚未開始' }
@@ -19,6 +19,7 @@ function createExperimentHub(root, options = {}) {
     let comfortExperiment = null;
     let comfortView = null;
     let rapidExperiment = null, rapidView = null;
+    let occupancyExperiment = null, occupancyView = null;
 
     function setText(node, text) {
         if (node.textContent !== text) node.textContent = text;
@@ -28,8 +29,9 @@ function createExperimentHub(root, options = {}) {
         const selected = currentExperiment === pressureId && pressureExperiment;
         const comfortSelected = currentExperiment === comfortId && comfortExperiment;
         const rapidSelected = currentExperiment === '03' && rapidExperiment;
-        const state = rapidSelected ? rapidExperiment.getUiState() : selected ? uiState || pressureExperiment.getUiState() : comfortSelected ? comfortExperiment.getUiState() : null;
-        const running = pressureExperiment?.isBusy() || comfortExperiment?.isBusy() || rapidExperiment?.isBusy() || false;
+        const occupancySelected = currentExperiment === '04' && occupancyExperiment;
+        const state = occupancySelected ? occupancyExperiment.getUiState() : rapidSelected ? rapidExperiment.getUiState() : selected ? uiState || pressureExperiment.getUiState() : comfortSelected ? comfortExperiment.getUiState() : null;
+        const running = pressureExperiment?.isBusy() || comfortExperiment?.isBusy() || rapidExperiment?.isBusy() || occupancyExperiment?.isBusy() || false;
         const index = experimentRegistry.findIndex(experiment => experiment.id === currentExperiment);
         nodes.prev.disabled = running || index === 0;
         nodes.next.disabled = running || index === experimentRegistry.length - 1;
@@ -40,8 +42,8 @@ function createExperimentHub(root, options = {}) {
         setText(nodes.finish, selected ? '提前結束' : '結束實驗');
         nodes.start.disabled = !state || state.startDisabled;
         nodes.finish.disabled = !state || state.finishDisabled;
-        nodes.start.hidden = Boolean(comfortSelected || rapidSelected);
-        nodes.finish.hidden = Boolean(comfortSelected || rapidSelected);
+        nodes.start.hidden = Boolean(comfortSelected || rapidSelected || occupancySelected);
+        nodes.finish.hidden = Boolean(comfortSelected || rapidSelected || occupancySelected);
         nodes.export.hidden = !selected;
         nodes.export.disabled = !state || state.exportDisabled;
         setText(nodes.export, '匯出 CSV＋線圖');
@@ -88,6 +90,9 @@ function createExperimentHub(root, options = {}) {
         } else if (currentExperiment === '03' && rapidExperiment) {
             nodes.view.replaceChildren(rapidView);
             rapidExperiment.refresh();
+        } else if (currentExperiment === '04' && occupancyExperiment) {
+            nodes.view.replaceChildren(occupancyView);
+            occupancyExperiment.refresh();
         } else {
             const placeholder = document.createElement('p');
             placeholder.className = 'experiment-placeholder';
@@ -98,7 +103,7 @@ function createExperimentHub(root, options = {}) {
     }
 
     function selectExperiment(id) {
-        if (pressureExperiment?.isBusy() || comfortExperiment?.isBusy() || rapidExperiment?.isBusy()) {
+        if (pressureExperiment?.isBusy() || comfortExperiment?.isBusy() || rapidExperiment?.isBusy() || occupancyExperiment?.isBusy()) {
             nodes.select.value = currentExperiment;
             return;
         }
@@ -134,7 +139,7 @@ function createExperimentHub(root, options = {}) {
         const experimentOptions = experimentRegistry.map(experiment => {
             const option = document.createElement('option');
             option.value = experiment.id;
-            option.textContent = experiment.id === pressureId || experiment.id === comfortId || experiment.id === '03'
+            option.textContent = experiment.id === pressureId || experiment.id === comfortId || ['03', '04'].includes(experiment.id)
                 ? `Experiment ${experiment.id}：${experiment.title}` : `${experiment.title}：尚未設定`;
             return option;
         });
@@ -176,6 +181,13 @@ function createExperimentHub(root, options = {}) {
             onChange: () => { if (currentExperiment === '03') updateControls(); }
         });
         }
+        if (typeof createOccupancyExperiment === 'function') {
+            occupancyView = document.createElement('div');
+            occupancyExperiment = createOccupancyExperiment(occupancyView, {
+                ...options, getUserProfile: options.getComfortProfile,
+                onChange: () => { if (currentExperiment === '04') updateControls(); }
+            });
+        }
         nodes.start.addEventListener('click', () => {
             if (currentExperiment === pressureId) pressureExperiment?.start();
         });
@@ -186,7 +198,7 @@ function createExperimentHub(root, options = {}) {
             if (currentExperiment === pressureId) pressureExperiment?.exportCsv();
         });
         window.addEventListener('beforeunload', event => {
-            if (pressureExperiment?.needsLeaveProtection() || comfortExperiment?.needsLeaveProtection() || rapidExperiment?.needsLeaveProtection()) {
+            if (pressureExperiment?.needsLeaveProtection() || comfortExperiment?.needsLeaveProtection() || rapidExperiment?.needsLeaveProtection() || occupancyExperiment?.needsLeaveProtection()) {
                 event.preventDefault();
                 event.returnValue = '';
             }
@@ -198,18 +210,21 @@ function createExperimentHub(root, options = {}) {
 
     return {
         init,
-        isRunning: () => pressureExperiment?.isRunning() || rapidExperiment?.isRunning() || false,
-        isComfortHolding: () => comfortExperiment?.isHolding() || rapidExperiment?.isBusy() || false,
+        isRunning: () => pressureExperiment?.isRunning() || rapidExperiment?.isRunning() || occupancyExperiment?.isRunning() || false,
+        isComfortHolding: () => comfortExperiment?.isHolding() || rapidExperiment?.isBusy() || occupancyExperiment?.isBusy() || false,
         receivePressure: sample => {
             pressureExperiment?.receivePressure(sample);
             comfortExperiment?.receivePressure(sample);
             rapidExperiment?.receivePressure(sample);
+            occupancyExperiment?.receivePressure(sample);
         },
-        receiveLine: (line, receipt) => { comfortExperiment?.receiveLine(line); rapidExperiment?.receiveLine(line, receipt); },
+        receiveInvalidPressure: sample => occupancyExperiment?.receivePressure(sample),
+        receiveLine: (line, receipt) => { comfortExperiment?.receiveLine(line); rapidExperiment?.receiveLine(line, receipt); occupancyExperiment?.receiveLine(line); },
         onDisconnected: () => {
             pressureExperiment?.onDisconnected();
             comfortExperiment?.onDisconnected();
             rapidExperiment?.onDisconnected();
+            occupancyExperiment?.onDisconnected();
         }
     };
 }

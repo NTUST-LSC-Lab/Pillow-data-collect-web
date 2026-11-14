@@ -163,7 +163,7 @@ function comfortReport(trial) {
 function buildComfortImage(report) {
     const svgNamespace = 'http://www.w3.org/2000/svg';
     const width = 1350;
-    const height = 110 + report.details.length * 29 + report.sections.reduce((n, section) => n + 76 + section.rows.length * 40, 0);
+    const height = 110 + report.details.length * 29 + report.sections.reduce((n, section) => n + 86 + section.rows.length * 40, 0);
     const image = document.createElementNS(svgNamespace, 'svg');
     image.setAttribute('width', width);
     image.setAttribute('height', height);
@@ -385,7 +385,7 @@ function createComfortExperiment(root, options) {
         const count = p => Object.keys(rec?.trials || {}).filter(k => k.startsWith(p)).length;
         node('Progress').textContent = `姿勢一 ${count('1')}／4 · 姿勢五 ${count('5')}／4`;
         buttons('calibrate').forEach(button => {
-            button.disabled = isBusy() || !node('Subject').value || !profile() || !sameProfile() || !connected() || count('1') + count('5') > 0;
+            button.disabled = isBusy() || !node('Subject').value || !profile() || !sameProfile() || !connected() || count('1') + count('5') > 0 || options.canCalibrate?.(button.dataset.comfortCalibrate) === false;
         });
         node('AnchorShot').disabled = !folder || !bothAnchors() || isBusy();
         buttons('pose').forEach(button => {
@@ -400,7 +400,7 @@ function createComfortExperiment(root, options) {
             button.setAttribute('aria-pressed', String(trial?.method === m && trial.pose === pose));
         });
         node('Status').textContent = busy ? [status, pendingRun ? '' : state.reason].filter(Boolean).join(' · ') : status ||
-            (bothAnchors() ? (options.calibrationOnly ? '請儲存校正總覽，再請受試者離枕，抽乾並恢復開機高度。' : '選擇姿勢、確認離枕，再按方法。') : '先完成兩個姿勢的校正。');
+            (bothAnchors() ? (options.calibrationOnly ? (options.calibrationHint || '請儲存校正總覽，再請受試者離枕，抽乾並恢復開機高度。') : '選擇姿勢、確認離枕，再按方法。') : '先完成兩個姿勢的校正。');
         const live = latest && performance.now() - latest.receivedMonotonicMs < 3000 && connected()
             ? Object.keys(COMFORT_CHANNELS).map(ch => `${COMFORT_CHANNELS[ch].label} ${comfortPressure(ch, latest[ch + '_adc'])}`).join('　')
             : '等待新壓力讀值';
@@ -448,6 +448,7 @@ function createComfortExperiment(root, options) {
         finally { busy = false; refresh(); }
     }
     function openCalibration(p) {
+        if (isBusy() || options.canCalibrate?.(p) === false) return;
         lastCompletedRunId = null;
         calibration = { pose: p, subject: node('Subject').value, profile: profile(), after: Infinity };
         node('CalTitle').textContent = `校正${COMFORT_POSES[p].label}`;
@@ -626,7 +627,7 @@ function createComfortExperiment(root, options) {
             const saved = await saveComfortImage(folder, name, {
                 title: `${id}｜實驗 ${options.experimentId || '02'} 校正總覽`,
                 details: [comfortProfileText(rec.profile), 'Monitor 固定 14.5 秒。校正值為滿意度 10 分時的單筆快照。',
-                    ...['1', '5'].flatMap(p => [`${COMFORT_POSES[p].label}｜${rec.anchors[p].pressure.timestamp_iso}`, ...comfortAnchorText(rec.anchors[p])])],
+                    ...['1', '5'].flatMap(p => [`${COMFORT_POSES[p].label}｜${options.formatTimestamp ? options.formatTimestamp(rec.anchors[p].pressure.timestamp_iso) : rec.anchors[p].pressure.timestamp_iso}`, ...comfortAnchorText(rec.anchors[p])])],
                 sections: []
             });
             if (saved) options.onCalibrationOverviewSaved?.();

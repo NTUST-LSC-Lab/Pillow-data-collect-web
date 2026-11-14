@@ -16,46 +16,62 @@ function createRapidExperiment(root, options) {
     // Keep the calibration DOM, fields, suggestion and adjustments identical to EXP02.
     view.querySelectorAll(':scope > section')[2].hidden = true;
     view.querySelectorAll(':scope > section')[1].append(view.querySelector('#comfortStatus'));
+    view.classList.add('rapid-calibration');
+    view.querySelector(':scope > section').classList.add('rapid-subject');
+    const setup = document.createElement('details'); setup.className = 'rapid-setup'; setup.open = true;
+    const setupSummary = document.createElement('summary'); setupSummary.textContent = '受測者與校正';
+    setup.append(setupSummary, view);
     const section = document.createElement('section'); section.className = 'comfort-section rapid-test';
     section.innerHTML = `
-        <h4>20 秒雙模型姿勢辨識</h4>
-        <p class="pressure-field-hint"><strong>開始前必須完成同一位受測者的姿勢一、姿勢五校正，並等待裝置確認兩組分類校正基準。</strong>無歷史與有歷史模型都需要這兩組基準；缺少任一組時無法開始測試。換人須重新校正。</p>
-        <p class="pressure-field-hint">兩種睡姿皆固定使用姿勢一校正高度。先儲存校正總覽，再請受試者離枕。裝置會逐顆抽乾氣囊，再充氣恢復開機高度；完成後才能套用姿勢一高度。全程請保持離枕。</p>
-        <button type="button" data-rapid="reset" hidden>重新建立此受試者校正</button>
-        <button type="button" class="primary" data-rapid="drain" disabled>受試者已離枕，抽乾並恢復開機高度</button>
-        <button type="button" data-rapid="abort" hidden>停止抽乾／充氣</button>
-        <button type="button" class="primary" data-rapid="prepare" disabled>套用姿勢一高度，準備測試</button>
-        <p data-rapid="fixed" class="pressure-run-summary">固定高度：尚未準備</p>
-        <div class="comfort-buttons" role="group" aria-label="本輪睡姿">
-          <button type="button" data-rapid-pose="1" aria-pressed="true">姿勢一 · 仰躺</button>
-          <button type="button" data-rapid-pose="5" aria-pressed="false">姿勢五 · 正側躺</button>
+        <div class="rapid-heading">
+          <div><h4>20 秒雙模型姿勢辨識</h4><p data-rapid="fixed" class="pressure-run-summary">固定高度：尚未準備</p></div>
+          <div class="rapid-clock"><strong data-rapid="elapsed">00.0</strong><span>／20 秒</span></div>
         </div>
-        <p data-rapid="progress">姿勢一：未完成 · 姿勢五：未完成</p>
+        <div class="comfort-buttons rapid-height-actions">
+          <button type="button" data-rapid="reset" hidden>重新建立此受試者校正</button>
+          <button type="button" class="primary" data-rapid="drain" disabled>受試者已離枕，抽乾並恢復開機高度</button>
+          <button type="button" data-rapid="abort" hidden>停止抽乾／充氣</button>
+          <button type="button" class="primary" data-rapid="prepare" disabled>套用姿勢一高度，準備測試</button>
+        </div>
+        <div class="rapid-pose-row">
+          <div class="comfort-buttons" role="group" aria-label="本輪睡姿">
+            <button type="button" data-rapid-pose="1" aria-pressed="true">姿勢一 · 仰躺</button>
+            <button type="button" data-rapid-pose="5" aria-pressed="false">姿勢五 · 正側躺</button>
+          </div>
+          <p data-rapid="progress">姿勢一：未完成 · 姿勢五：未完成</p>
+        </div>
         <label><input type="checkbox" data-rapid="empty"> 已確認受試者離枕，準備以選定姿勢重新躺下</label>
         <p class="pressure-field-hint">先確認即時壓力持續更新。頭部接觸枕頭時按開始，記錄20秒；不以壓力門檻自動判斷躺下。請維持指定姿勢並自然呼吸。</p>
-        <div class="comfort-buttons">
+        <div class="comfort-buttons rapid-actions">
           <button type="button" class="primary" data-rapid="start" disabled>開始記錄 20 秒</button>
           <button type="button" data-rapid="stop" hidden>提前結束</button>
           <button type="button" class="primary" data-rapid="finish" hidden>完成本輪</button>
+          <button type="button" data-rapid="export" disabled>儲存CSV、結果總覽與壓力曲線</button>
         </div>
         <p data-rapid="status" role="status" aria-live="polite"></p>
-        <div class="rapid-timing">
-          <div class="rapid-clock"><strong data-rapid="elapsed">00.0</strong><span>／20 秒</span></div>
-          <div class="rapid-checkpoints" data-rapid="checkpoints"></div>
-        </div>
+        <div class="rapid-timing"><div class="rapid-checkpoints" data-rapid="checkpoints"></div></div>
         <p data-rapid="live" class="pressure-field-hint">等待壓力與分類資料</p>
-        <label class="rapid-run-picker">查看輪次 <select data-rapid="view-run" aria-label="查看記錄輪次"></select></label>
-        <div class="pressure-chart-wrap"><canvas data-rapid="chart" aria-label="20 秒 Monitor、Neck、Head ADC 曲線"></canvas></div>
-        <h4>第1～20秒分類結果</h4>
         <p data-rapid="model-live" class="pressure-field-hint">等待模型結果</p>
         <p data-rapid="quality" class="pressure-field-hint"></p>
-        <div class="comfort-trial-table"><table><thead><tr><th>秒</th><th>無歷史</th><th>Group1機率</th><th>Group2機率</th><th>有歷史</th><th>Group1機率</th><th>Group2機率</th></tr></thead><tbody data-rapid="seconds"></tbody></table></div>
-        <p class="pressure-field-hint">Group1＝姿勢1、2；Group2＝姿勢3、4、5。每秒採該接收區間最後一筆新序號結果；歷史前6筆有效資料暖機，缺資料不補值。實際睡姿由操作者選擇，模型不細分五種姿勢。</p>
-        <h4>各輪第3、5、10、15、20秒比較</h4>
-        <div class="comfort-trial-table"><table><thead><tr><th>實際睡姿／輪次／模型</th><th>3 秒</th><th>5 秒</th><th>10 秒</th><th>15 秒</th><th>20 秒</th><th>狀態</th></tr></thead><tbody data-rapid="results"></tbody></table></div>
-        <button type="button" data-rapid="export" disabled>儲存CSV、結果總覽與壓力曲線</button>
-        <p class="pressure-field-hint">儲存逐秒分類CSV、壓力與分類事件CSV、結果總覽SVG及每輪壓力曲線PNG。壓力與分類保留各自時間；兩模型使用的ADC保存在分類列。重測新增輪次，離開或重新整理前請先儲存。</p>`;
-    root.append(view, section);
+        <details class="rapid-disclosure" data-rapid-disclosure="records"><summary>壓力曲線、逐秒結果與各輪比較</summary>
+          <div class="rapid-detail-body">
+            <label class="rapid-run-picker">查看輪次 <select data-rapid="view-run" aria-label="查看記錄輪次"></select></label>
+            <div class="pressure-chart-wrap"><canvas data-rapid="chart" aria-label="20 秒 Monitor、Neck、Head ADC 曲線"></canvas></div>
+            <h4>第1～20秒分類結果</h4>
+            <div class="comfort-trial-table"><table><thead><tr><th>秒</th><th>無歷史</th><th>Group1機率</th><th>Group2機率</th><th>有歷史</th><th>Group1機率</th><th>Group2機率</th></tr></thead><tbody data-rapid="seconds"></tbody></table></div>
+            <p class="pressure-field-hint">Group1＝姿勢1、2；Group2＝姿勢3、4、5。每秒採該接收區間最後一筆新序號結果；歷史前6筆有效資料暖機，缺資料不補值。實際睡姿由操作者選擇，模型不細分五種姿勢。</p>
+            <h4>各輪第3、5、10、15、20秒比較</h4>
+            <div class="comfort-trial-table"><table><thead><tr><th>實際睡姿／輪次／模型</th><th>3 秒</th><th>5 秒</th><th>10 秒</th><th>15 秒</th><th>20 秒</th><th>狀態</th></tr></thead><tbody data-rapid="results"></tbody></table></div>
+          </div>
+        </details>
+        <details class="rapid-disclosure"><summary>操作與儲存說明</summary>
+          <div class="rapid-detail-body">
+            <p class="pressure-field-hint"><strong>開始前必須完成同一位受測者的姿勢一、姿勢五校正，並等待裝置確認兩組分類校正基準。</strong>無歷史與有歷史模型都需要這兩組基準；缺少任一組時無法開始測試。換人須重新校正。</p>
+            <p class="pressure-field-hint">兩種睡姿皆固定使用姿勢一校正高度。先儲存校正總覽，再請受試者離枕。裝置會逐顆抽乾氣囊，再充氣恢復開機高度；完成後才能套用姿勢一高度。全程請保持離枕。</p>
+            <p class="pressure-field-hint">儲存逐秒分類CSV、壓力與分類事件CSV、結果總覽SVG及每輪壓力曲線PNG。壓力與分類保留各自時間；兩模型使用的ADC保存在分類列。重測新增輪次，離開或重新整理前請先儲存。</p>
+          </div>
+        </details>`;
+    root.append(setup, section);
     const n = id => section.querySelector(`[data-rapid="${id}"]`);
     const info = () => calibration?.getCalibration();
     const key = () => { const c = info(); return c?.valid ? JSON.stringify([c.subject, c.record.profile, c.record.anchors]) : ''; };

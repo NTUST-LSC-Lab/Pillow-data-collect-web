@@ -1,6 +1,10 @@
 # Pillow-data-collect-web agent instructions
 
-適用於 `NTUST-LSC-Lab/Pillow-data-collect-web` 的 `web_pose_model_dual_exp3`，基於 `spp3_BLE_v4_pose_model`。先讀 organization shared contract `NTUST-LSC-Lab/lab-docs/AGENTS.md` 與 version matrix；本檔補充本分支差異。回答使用繁體中文。使用者已授權實驗三20秒雙模型顯示與CSV／壓力曲線匯出，配對 ESP32 `spp3_BLE_v4_model`；不得恢復舊五姿勢規則分數或PRED自動調整。提交前核對目前Git分支與遠端，不能只由資料夾名稱推定。
+適用於 `NTUST-LSC-Lab/Pillow-data-collect-web` 的 `web_pose_model_dual_exp4`，基於 `web_pose_model_dual_exp3` commit `6832264`。先讀 organization shared contract `NTUST-LSC-Lab/lab-docs/AGENTS.md` 與 version matrix；本檔補充本分支差異。回答使用繁體中文。使用者已授權實驗三20秒雙模型顯示與CSV／壓力曲線匯出，配對 ESP32 `spp3_BLE_v4_model`；不得恢復舊五姿勢規則分數或PRED自動調整。提交前核對目前Git分支與遠端，不能只由資料夾名稱推定。
+
+實驗04新增 `occupancy-recorder.js`、`occupancy-experiment.js`、`occupancy-results.js`：固定先姿勢五高度再姿勢一高度，操作者標記五睡姿／離枕。按開始只啟用按鈕，按姿勢才開始計時，不設初始空枕段。分段CSV每段只取30秒；連續CSV保留等待時間及持續判定。每高度分開12／13欄CSV、PNG及SVG，檔名不放時間；接收時間轉電腦本機格式，計時用單調時鐘，規則／校正／精確按鈕時間保留在SVG metadata；兩組固定停留共10分鐘。門檻為有來源的全30人refit候選，按高度選LOAD基準並轉kPa；不得用本輪空枕調參或改寫校正。只修改本Web，保留實驗三及既有韌體協定。詳見README上方實驗04規格。
+
+實驗03緊湊版面僅重排 `rapid-experiment.js` 的呈現模板與實驗03專屬CSS：受測者／校正可手動收合，操作與即時資料常駐，曲線／逐秒表／比較表及說明可展開。不得因版面任務改動校正、事件處理、BLE、20秒計時、分類或匯出；應以修改前後控制項與匯出內容對照驗證。
 
 ## Goal and completion bar
 
