@@ -5,6 +5,7 @@
 Web：本目錄 web_pose_model_dual_exp3，基於 spp3_BLE_v4_pose_model。
 ESP32：ipillow / spp3_BLE_v4_model，已部署無歷史static6／有歷史history20。
 本次只改Web，不改韌體、壓力數值、氣囊控制或高度限制。需使用22欄CLASSIFY,DATA,V1配對韌體。
+2026-11-14清理：已移除tests/測試腳本與舊版spp3/；目前正式頁及預覽皆位於spp3_BLE/，操作與匯出功能維持原樣。
 
 不連線ESP32看畫面
 1. 雙擊「啟動預覽.command」，開啟 http://localhost:8083/spp3_BLE/preview.html。
@@ -56,5 +57,6 @@ ESP32：ipillow / spp3_BLE_v4_model，已部署無歷史static6／有歷史histo
 - 模擬CSV標記SIMULATED，正式資料為DEVICE。失敗可重試，已記錄資料暫留本頁記憶體。
 
 驗證
-已做Node流程／CSV回讀測試及Chrome離線兩輪20秒操作、真實下載CSV／PNG／SVG與320～1440px縮放。
-這是Web合成資料驗證，沒有連線ESP32或驗證真實模型準確率。詳細指令見README.md。
+清理前版本645ec40已完成160項Node測試及Chrome離線兩輪20秒操作、實際下載CSV／PNG／SVG。
+移除目錄後再檢查正式頁、預覽頁的資源載入與320～1440px縮放。歷史測試仍可從Git紀錄查閱，目前不再附tests/。
+這是Web合成資料驗證，沒有連線ESP32或驗證真實模型準確率。啟動方式與歷史版本連結見README.md。

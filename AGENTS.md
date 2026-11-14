@@ -8,7 +8,7 @@
 
 完成前確認：
 
-- 只修改明確指定的 `spp3_BLE/`；舊版 `spp3/` 不自動同步。
+- 主程式範圍為 `spp3_BLE/`；本分支已依使用者要求移除 `spp3/` 與 `tests/`，不要自行恢復。
 - 未被要求的 token、欄位順序、workflow、badge、schema 與高度限制不變。
 - 已做 render／smoke；可用 target firmware 時完成受影響 BLE workflow。
 - 協定變更已查 `pose_pre_v3.1` sender 與 Android parser，或列出 blocker。
@@ -17,7 +17,7 @@
 ## Scope and boundaries
 
 - 主介面：`spp3_BLE/index.html`、`styles.css`、`app.js`
-- 舊版：`spp3/`
+- 已移除：舊版 `spp3/` 與測試腳本 `tests/`；如需查閱請看清理前commit `645ec40`。
 - 其他：`Images/`、vendored `chart.umd.min.js`、`README.md`
 - 沒有 backend API、Node server、bundler 或 framework。
 - 此分支分類區搭配 `ipillow/spp3_BLE_v4_model`，22欄 `CLASSIFY,DATA,V1` 詳見README；舊五姿勢payload不可直接映射Group。
@@ -45,7 +45,9 @@
 
 ## Run, validation, and stop rules
 
-執行 `python -m http.server 8080`：主介面 `http://localhost:8080/spp3_BLE/`，舊版 `http://localhost:8080/spp3/`。
+執行 `python3 -m http.server 8080`：主介面 `http://localhost:8080/spp3_BLE/`，離線預覽 `http://localhost:8080/spp3_BLE/preview.html`。`/spp3/` 已移除，勿再作為操作入口。
+
+目前不附 `tests/`；必要的臨時驗證可放在repo外，或在獨立checkout查閱歷史測試，不能宣稱目前仍可直接執行已移除的測試指令。
 
 最低檢查頁面載入、console、layout；依變更檢查 BLE connect、`USER`、`INIT,NORM`、anchor、classify、PRED、feature、manual、badges、chart 與 export。無 Web Bluetooth／ESP32 時只回報 static／render，不宣稱實機通過。
 
@@ -53,6 +55,7 @@
 
 ## Changelog
 
+- 2026-11-14 依使用者指示移除 `tests/`（18檔）與 `spp3/`（3檔）；保留 `spp3_BLE/`、圖表函式庫與預覽入口，README區分目前目錄及歷史測試紀錄。
 - 2026-11-13 使用者授權雙模型分類狀態區。Anchor擷取操作保留並說明來源；原實驗三15秒表格及CSV/SVG尚未遷移，不能宣稱雙模型已納入匯出。本輪不改ESP32／Android或其他Web版本。
 - 2026-11-14 實驗三已遷移為20秒雙模型：逐秒CSV41欄、事件CSV40欄、每輪PNG與結果SVG，取代前述尚未匯出的限制。預覽標記SIMULATED，正式DEVICE；一般CSV與IndexedDB不變。驗證須涵蓋CSV回讀、離線20秒全流程、下載圖檔與窄視窗；未接ESP32不得宣稱實機通過。
 - 2026-07-15 依 GPT-5.6 guidance 重寫為 goal、completion、scope、constraints、validation 與 stop rules，保留 Web 主線不變式。

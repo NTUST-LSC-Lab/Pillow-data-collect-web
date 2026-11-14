@@ -2,6 +2,19 @@
 
 更新日期：**2026-11-14（Asia/Taipei）**。本分支基於 `spp3_BLE_v4_pose_model` 的 `3f7ba6483d8ef80b149e74d785f00bda83bd5680`，本次只修改 Web 實驗三的顯示、記錄、匯出及離線預覽。提交分支為 [web_pose_model_dual_exp3](https://github.com/NTUST-LSC-Lab/Pillow-data-collect-web/tree/web_pose_model_dual_exp3)。本頁上方說明目前功能，後方保留舊版本歷史供追溯。
 
+## 目前目錄與2026-11-14清理
+
+依使用者要求，已移除 `tests/`（18個測試腳本）及舊版Web Serial介面 `spp3/`（3個檔案）。目前使用 `spp3_BLE/`；正式網頁、離線預覽、20秒雙模型記錄與匯出功能皆保留。正式頁及預覽頁沒有依賴上述已移除目錄。
+
+| 保留項目 | 用途 |
+|---|---|
+| `spp3_BLE/` | 正式BLE網頁、實驗功能與離線預覽 |
+| `Images/`、`chart.umd.min.js` | 網頁圖片資源與Chart.js圖表函式庫 |
+| `啟動預覽.command` | 啟動本機預覽 |
+| `README.md`、`實驗三使用說明.txt`、`AGENTS.md` | 操作、版本配對與協作規範 |
+
+舊入口 `/spp3/` 已移除。測試原始碼及舊Web Serial介面仍可在 [清理前版本645ec40](https://github.com/NTUST-LSC-Lab/Pillow-data-collect-web/tree/645ec40126966af8fd7557b8fd21fbcc7cd7ece9) 查閱；本頁歷史章節中的 `tests/` 與 `spp3/` 路徑描述歷史版本，不代表目前仍有這些目錄。
+
 ## Web與ESP32配對
 
 | 元件 | 版本／分支 | 責任 |
@@ -93,14 +106,15 @@ CSV使用UTF-8 BOM、CRLF與雙引號跳脫，機率保留 **0～1**，畫面則
 
 **預覽分類與機率是合成示範，不能用來判定模型準確率或真實人體接觸。** 下載檔名前綴為 `DEMO_`，CSV明確標記 `SIMULATED`，結果圖標記模擬資料。正式頁不載入 `preview.js`。
 
-本次 **160項Node測試通過**，包括20秒定時、完整行與接收時間、暖機／無效／缺值、重複與亂序、跨工作、斷線／提前停止、匯出失敗重試、CSV回讀與欄位順序。Chrome完成兩輪離線20秒操作，實際匯出40列逐秒CSV、事件CSV、兩張1600×800曲線PNG及總覽SVG；每輪收到19筆分類（第一秒缺資料），其中歷史6筆暖機、13筆有效。主頁20-byte分包與接收時間轉交、兩頁320～1440px縮放亦通過。未連線ESP32，未驗證真實分類準確率或BLE時序。
+清理前版本 `645ec40` 已有 **160項Node測試通過**，包括20秒定時、完整行與接收時間、暖機／無效／缺值、重複與亂序、跨工作、斷線／提前停止、匯出失敗重試、CSV回讀與欄位順序。Chrome完成兩輪離線20秒操作，實際匯出40列逐秒CSV、事件CSV、兩張1600×800曲線PNG及總覽SVG；每輪收到19筆分類（第一秒缺資料），其中歷史6筆暖機、13筆有效。主頁20-byte分包與接收時間轉交亦已驗證。
+
+移除目錄後，再確認兩個頁面的本機資源引用、Chrome載入及320～1440px縮放，正式頁與預覽皆正常。測試腳本已不隨目前版本提供，前述160項是清理前的測試紀錄。未連線ESP32，未驗證真實分類準確率或BLE時序。
 
 ```sh
-node --test tests/*.test.cjs
-PLAYWRIGHT_MODULE_PATH=/已安裝的/playwright node tests/rapid-dual-browser-smoke.cjs
-PLAYWRIGHT_MODULE_PATH=/已安裝的/playwright node tests/rapid-browser-smoke.cjs
-PLAYWRIGHT_MODULE_PATH=/已安裝的/playwright node tests/pose-model-browser-smoke.cjs
+python3 -m http.server 8083 --bind 127.0.0.1
 ```
+
+正式頁：`http://localhost:8083/spp3_BLE/`；離線預覽：`http://localhost:8083/spp3_BLE/preview.html`。
 
 ## 2026-11-14修改檔案
 
@@ -111,7 +125,7 @@ PLAYWRIGHT_MODULE_PATH=/已安裝的/playwright node tests/pose-model-browser-sm
 | `spp3_BLE/app.js`、`experiment-hub.js` | 將完整BLE行的接收時間傳遞至實驗三；分類與P壓力仍保留各自時間 |
 | `spp3_BLE/index.html`、`styles.css` | 載入共用分類解析與結果匯出模組；查看輪次標籤不拆行，計時區集中排列並保留響應式 |
 | `spp3_BLE/preview.html`、`preview.js` | 不連BLE的20秒雙模型預覽、模擬躺下／離枕、暖機與檔案下載 |
-| `tests/rapid*`、`tests/experiment-hub.test.cjs`、`tests/pose-model-browser-smoke.cjs` | 流程、CSV、接收時間、去重／缺值與瀏覽器匯出驗證 |
+| 測試腳本（已於同日清理移除） | 清理前版本 `645ec40` 保留流程、CSV、接收時間、去重／缺值與瀏覽器匯出驗證腳本 |
 | `README.md`、`實驗三使用說明.txt`、`AGENTS.md` | 版本配對、校正前提、操作、欄位、累積匯出及驗證限制 |
 
 實驗一、二的控制、原感測讀值、一般IndexedDB／一般CSV與高度安全限制不變。本次提交不包含ESP32、其他Web版本、受試者資料、模擬匯出檔或截圖。
