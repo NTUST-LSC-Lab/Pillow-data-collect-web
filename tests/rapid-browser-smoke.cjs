@@ -43,11 +43,11 @@ const root = path.resolve(__dirname, '..');
                     window.__layoutFixtureFrozen = true;
                     const chart = Chart.getChart(document.querySelector('[data-rapid="chart"]'));
                     chart.data.datasets.forEach((dataset, i) => {
-                        dataset.data = Array.from({ length: 16 }, (_, x) => ({ x, y: 1800000 + i * 100000 + x * 1000 }));
+                        dataset.data = Array.from({ length: 21 }, (_, x) => ({ x, y: 1800000 + i * 100000 + x * 1000 }));
                     });
                     chart.update('none');
                     document.querySelector('[data-rapid="results"]').innerHTML = '<tr><td>姿勢五 · 第 10 輪</td>'
-                        + '<td>BLHL-2（BLHL-1）</td>'.repeat(4) + '<td>已完成</td></tr>';
+                        + '<td>Group2</td>'.repeat(5) + '<td>已完成</td></tr>';
                 });
                 for (const width of [1440, 1024, 768, 390, 320, 1440]) {
                     await page.setViewportSize({ width, height: 1000 });

@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 function fixture() {
  let clock = 100, controller, calOptions, connected = true, autoComplete = true;
- const commands = [], nodes = {}, intervals = [], timers = new Map();
+ const commands = [], nodes = {}, intervals = [], timers = new Map(), files = new Map();
  let timerId = 0;
  class Element {
    constructor(){this.children=[];this.handlers={};this.dataset={};this.disabled=false;this.checked=false;this.isConnected=true;}
@@ -18,7 +18,7 @@ function fixture() {
  const root=new Element(), view=new Element();
  const profile={gender:'male',age_years:25,body_height_cm:170,body_weight_kg:65};
  const rec={profile,anchors:{'1':{head:8,neck:11,pressure:{head_adc:1900000}},'5':{head:12,neck:13,pressure:{head_adc:2000000}}}};
- const c={subject:'S01',record:rec,valid:true,folder:{getFileHandle:async()=>({createWritable:async()=>({write:async()=>{},close:async()=>{}})})}};
+ const c={subject:'S01',record:rec,valid:true,folder:{getFileHandle:async name=>({createWritable:async()=>({write:async value=>files.set(name,value),close:async()=>{},abort:async()=>{}})})}};
  const state={ready:true,head:12,neck:13};
  const flush=async()=>{for(let i=0;i<30;i++)await Promise.resolve()};
  const context=vm.createContext({performance:{now:()=>clock},Date,Blob,
@@ -28,7 +28,8 @@ function fixture() {
    comfortProfileText:()=>'',saveComfortImage:async()=>true,
    createComfortExperiment:(_root,opts)=>{calOptions=opts;return {getCalibration:()=>c,refresh:()=>opts.onChange(),isBusy:()=>false,receivePressure(){},onDisconnected(){},needsLeaveProtection:()=>true}}
  });
- vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../spp3_BLE/rapid-experiment.js'),'utf8'),context);
+ for (const name of ['pose-model.js','rapid-results.js','rapid-experiment.js']) vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../spp3_BLE',name),'utf8'),context);
+ vm.runInContext("rapidPressurePng = async () => new Blob(['synthetic chart stub'], {type:'image/png'});",context);
  function transport(cmd){commands.push(cmd);const p=cmd.split(',');queueMicrotask(()=>{
    let line;
    if(p[0]==='EXP02' && p[1]==='DRAIN') { controller.receiveLine(`EXP02,ACK,${p[2]},DRAIN`); if (autoComplete) line=`EXP02,DRAINED,${p[2]}`; }
@@ -42,12 +43,13 @@ function fixture() {
    if(line)controller.receiveLine(line);
  });}
  controller=context.createRapidExperiment(root,{heightControl:{getState:()=>state,tick(){},prepare:async()=>state,adjust:async(ch,v)=>{state[ch==='HEAD'?'head':'neck']=v}},getSystemState:()=>({connected,autoHeightPossible:false}),getUserProfile:()=>profile,sendExperimentCommand:transport,sendRapidCommand:transport,sendRapidQuery:transport,onChange(){}});
- return {controller,nodes,commands,state,profile,c,poses,flush,
+ const pressure = () => controller.receivePressure({monitor_adc:1800000,neck_adc:2000000,head_adc:1900000,receivedMonotonicMs:clock,timestamp_iso:new Date().toISOString()});
+ return {controller,nodes,commands,state,profile,c,poses,flush,files,pressure,
    autoComplete: value=>{autoComplete=value}, cal:()=>calOptions, tick:async(ms)=>{clock+=ms;for(const [id,timer] of timers)if(timer.at<=clock){timers.delete(id);timer.fn()}intervals.forEach(f=>f());await flush()},
-   sample:(line)=>controller.receiveLine(line),
+   sample:(line, complete=true)=>controller.receiveLine(line,complete?{receivedMonotonicMs:clock,timestamp_iso:new Date().toISOString()}:null),
    setClock:t=>clock=t,
    disconnect:()=>{connected=false;controller.onDisconnected()},
-   async prepare(){await calOptions.beforeCalibrationSave({subject:'S01',pose:'1'});await calOptions.beforeCalibrationSave({subject:'S01',pose:'5'});calOptions.onCalibrationOverviewSaved();controller.refresh();nodes.drain.click();await flush();nodes.prepare.click();await flush();}
+   async prepare(){await calOptions.beforeCalibrationSave({subject:'S01',pose:'1'});await calOptions.beforeCalibrationSave({subject:'S01',pose:'5'});calOptions.onCalibrationOverviewSaved();controller.refresh();nodes.drain.click();await flush();nodes.prepare.click();await flush();pressure();}
  };
 }
 test('overview save gates fixed-height preparation; adjustment uses pose1 even when pose5 is selected',async()=>{
@@ -58,15 +60,62 @@ test('overview save gates fixed-height preparation; adjustment uses pose1 even w
  f.poses[1].click();f.nodes.empty.checked=true;f.controller.refresh();assert.equal(f.nodes.start.disabled,false);
  f.profile.age_years=26;f.controller.refresh();assert.equal(f.nodes.start.disabled,true);assert.equal(f.nodes.prepare.disabled,true);
 });
-test('15-second acquisition resets classifier, retains missing checkpoints, confirms, and permits another run',async()=>{
- const f=fixture();await f.prepare();f.nodes.empty.checked=true;f.nodes.start.click();await f.flush();
- assert(f.controller.isRunning());assert.equal(f.commands.at(-2),'CLASSIFY,START');
- f.setClock(3000);f.sample('CLASSIFY,OK,BSHS,BSHS,0.9,0.8,0.7,0.6');
- await f.tick(12200);assert(!f.controller.isRunning());assert(f.controller.isBusy());
- const row=f.nodes.results.children[0].children.map(c=>c.textContent);
- assert.equal(row[1],'BSHS（BSHS）');assert.equal(row[2],'缺資料');assert.equal(row.at(-1),'完整記錄');
- f.nodes.finish.click();assert(!f.controller.isBusy());
+const frame = (sequence, options={}) => {
+ const session = options.session ?? 1, invalid = options.invalid;
+ const status = invalid ? 'INVALID,UNKNOWN,NA,NA' : 'OK,GROUP1,0.8,0.2';
+ const history = invalid ? 'INVALID,UNKNOWN,NA,NA' : sequence<=6 ? 'WARMUP,UNKNOWN,NA,NA' : 'OK,GROUP2,0.2,0.8';
+ return `CLASSIFY,DATA,V1,${session},${sequence},${sequence*1000},${sequence},${sequence*1000-10},1800000,2000000,1900000,${status},${history},${sequence-1},0,1200`;
+};
+test('20-second acquisition retains every second, resets with STOP/START, warms history, exports and permits another run',async()=>{
+ const f=fixture();await f.prepare();f.nodes.empty.checked=true;await f.nodes.start.click();await f.flush();
+ assert(f.controller.isRunning());assert.deepEqual(f.commands.slice(-3),['CLASSIFY,STOP','CLASSIFY,START','CLASSIFY,GET']);
+ for(let second=1;second<=20;second++){f.setClock(100+second*1000);f.pressure();f.sample(frame(second));await f.tick(0);}
+ assert(!f.controller.isRunning());assert(f.controller.isBusy());
+ assert.equal(f.nodes.seconds.children.length,20);
+ assert.equal(f.nodes.seconds.children[0].children[1].textContent,'Group1');
+ assert.equal(f.nodes.seconds.children[0].children[4].textContent,'暖機 1/6');
+ assert.equal(f.nodes.seconds.children[6].children[4].textContent,'Group2');
+ assert.match(f.nodes.quality.textContent,/無歷史有效 20 秒，有歷史有效 14 秒/);
+ assert.equal(f.nodes.results.children[0].children.at(-1).textContent,'20秒結束');
+ f.nodes.finish.click();await f.nodes.export.click();await f.flush();
+ const csv=[...f.files].find(([name])=>name.endsWith('_逐秒分類.csv'))[1];
+ assert.equal(csv.split('\r\n').length,21);assert(csv.includes('"GROUP1"'));assert(csv.includes('"GROUP2"'));
+ assert([...f.files.keys()].some(name=>name.endsWith('_壓力曲線.png')));
+ assert(!csv.includes('score_supine'));assert(!csv.includes('"smooth"'));
  f.nodes.empty.checked=true;f.controller.refresh();assert.equal(f.nodes.start.disabled,false);
+ await f.nodes.start.click();await f.flush();f.setClock(21100);f.pressure();f.sample(frame(1,{session:2}));
+ assert.equal(f.nodes.seconds.children[0].children[4].textContent,'暖機 1/6');
+});
+test('missing, invalid, duplicate, partial and out-of-order frames are never fabricated or counted twice',async()=>{
+ const f=fixture();await f.prepare();f.nodes.empty.checked=true;await f.nodes.start.click();await f.flush();
+ f.setClock(1100);f.sample(frame(1),false); // Partial line is not a device event.
+ f.setClock(2100);f.sample(frame(2,{invalid:true}));
+ f.setClock(3100);f.sample(frame(3));f.sample(frame(3));f.sample(frame(2));
+ f.setClock(4100);f.sample('CLASSIFY,OK,BSHS,BSHS,0.9,0.8,0.7,0.6');
+ f.setClock(20100);await f.tick(0);f.nodes.finish.click();await f.nodes.export.click();
+ assert.equal(f.nodes.seconds.children[0].children[1].textContent,'缺資料');
+ assert.equal(f.nodes.seconds.children[1].children[1].textContent,'讀值無效');
+ assert.equal(f.nodes.seconds.children[2].children[1].textContent,'Group1');
+ assert.match(f.nodes.quality.textContent,/已有分類資料 2 秒；無歷史有效 1 秒，有歷史有效 0 秒/);
+ const events=[...f.files].find(([name])=>name.endsWith('_壓力與分類事件.csv'))[1];
+ assert.equal(events.split('\r\n').length,4); // header + run + two unique classification events
+ assert.equal(f.nodes.results.children[0].children.at(-1).textContent,'20秒結束');
+});
+test('stale pressure blocks starting; early stop retains unrecorded seconds and failed export can retry',async()=>{
+ const f=fixture();await f.prepare();f.nodes.empty.checked=true;f.setClock(5000);await f.tick(0);
+ assert(f.nodes.start.disabled);await f.nodes.start.click();assert(!f.controller.isRunning());
+ f.pressure();f.controller.refresh();await f.nodes.start.click();f.setClock(7500);f.nodes.stop.click();await f.flush();f.nodes.finish.click();
+ assert.equal(f.nodes.seconds.children[2].children[1].textContent,'缺資料');
+ assert.equal(f.nodes.seconds.children[3].children[1].textContent,'未記錄');
+ const original=f.c.folder.getFileHandle;f.c.folder.getFileHandle=async()=>{throw new Error('disk full')};
+ await f.nodes.export.click();assert.match(f.nodes.status.textContent,/儲存未完成.*disk full/);assert(!f.nodes.export.disabled);
+ f.c.folder.getFileHandle=original;await f.nodes.export.click();assert.match(f.nodes.status.textContent,/已儲存2份CSV/);
+});
+test('a different new session aborts the round; previous session frames cannot overwrite it',async()=>{
+ const f=fixture();await f.prepare();f.sample(frame(7,{session:4}));f.nodes.empty.checked=true;await f.nodes.start.click();
+ f.setClock(1100);f.sample(frame(8,{session:4}));assert.equal(f.nodes.seconds.children[0].children[1].textContent,'等待中');
+ f.setClock(2100);f.sample(frame(1,{session:5}));f.setClock(3100);f.sample(frame(2,{session:4}));assert(f.controller.isRunning());
+ f.sample(frame(1,{session:6}));assert(!f.controller.isRunning());assert.equal(f.nodes.results.children[0].children.at(-1).textContent,'分類工作變更');
 });
 test('disconnect aborts recording and requires new firmware calibration',async()=>{
  const f=fixture();await f.prepare();f.nodes.empty.checked=true;f.nodes.start.click();await f.flush();f.disconnect();

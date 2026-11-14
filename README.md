@@ -1,4 +1,126 @@
-# spp3_BLE_v4_pose_model：雙模型分類狀態
+# web_pose_model_dual_exp3：實驗三20秒雙模型記錄
+
+更新日期：**2026-11-14（Asia/Taipei）**。本分支基於 `spp3_BLE_v4_pose_model` 的 `3f7ba6483d8ef80b149e74d785f00bda83bd5680`，本次只修改 Web 實驗三的顯示、記錄、匯出及離線預覽。提交分支為 [web_pose_model_dual_exp3](https://github.com/NTUST-LSC-Lab/Pillow-data-collect-web/tree/web_pose_model_dual_exp3)。本頁上方說明目前功能，後方保留舊版本歷史供追溯。
+
+## Web與ESP32配對
+
+| 元件 | 版本／分支 | 責任 |
+|---|---|---|
+| Web | [Pillow-data-collect-web / web_pose_model_dual_exp3](https://github.com/NTUST-LSC-Lab/Pillow-data-collect-web/tree/web_pose_model_dual_exp3) | `spp3_BLE/index.html`；20秒記錄、逐秒雙模型顯示、CSV與曲線匯出 |
+| ESP32 | [ipillow / spp3_BLE_v4_model](https://github.com/NTUST-LSC-Lab/ipillow/tree/spp3_BLE_v4_model) | 每秒執行無歷史static6／有歷史history20，回傳既有22欄 `CLASSIFY,DATA,V1` |
+
+**本次不修改ESP32，也不需要因本次Web修改而重燒韌體。** 必須使用已部署雙模型的上述配對版本。Web不執行模型、不融合機率、不新增壓力平滑、不自動調整高度。舊 `CLASSIFY,OK` 五姿勢分數不能用來填入新表格。
+
+## 操作順序
+
+**姿勢一、姿勢五校正都是開始實驗三的必要條件。** 兩組基準必須屬於同一位受測者，且已由ESP32完成分類基準擷取；只有Web壓力快照或只校正一種姿勢都不能開始。無歷史static6也需要這兩組個人基準；「無歷史」僅表示不使用之前的量測歷史。校正提供既有模型的個人化輸入基準，不會在裝置上重新訓練模型。換人必須重新校正。
+
+1. 完整Web連接配對ESP32，等待正常開機完成，設定個人資料；實驗專區選03、受試者編號及儲存資料夾。
+2. 完成姿勢一、姿勢五校正。儲存各姿勢時仍同步擷取ESP32的分類校正基準；保持姿勢直到完成。
+3. 按「截圖並儲存校正總覽」。請受試者離枕，按「受試者已離枕，抽乾並恢復開機高度」。收到裝置完成訊息後，按「套用姿勢一高度，準備測試」。沿用原本的裝置確認與高度安全限制。
+4. 選本輪實際姿勢一或姿勢五，勾選離枕確認；確認Monitor、Neck、Head壓力持續更新，再請受試者躺下。
+5. **頭部接觸枕頭時由操作者按「開始記錄20秒」**。Web只要求近期收到完整三顆ADC，沒有自動判定躺下／離枕的壓力門檻。兩姿勢全程維持姿勢一校正設定高度。
+6. Web從按下開始計時並記壓力，先等待 `CLASSIFY,STOP` 回覆，再送 `CLASSIFY,START` 開啟新分類工作，確保不沿用上一輪歷史。收到開始回覆才接受分類資料。
+7. 20秒後停止分類。查看資料完整性，按「完成本輪」。受試者先離枕，再換姿勢或重測；重測增加新輪次。「查看輪次」可切回先前表格與曲線。
+8. 按「儲存CSV、結果總覽與壓力曲線」。資料在本頁記憶體中，重新整理或離開前務必儲存；寫入失敗會保留資料供重試。
+
+**可以完成一輪就儲存，不必等兩個姿勢都結束。** 每次匯出的是目前受測者在本頁累積的所有輪次，包含提前結束的部分記錄，不是只有「查看輪次」選中的那一輪。新的結果匯出使用新的時間戳檔名；例如第一次只存姿勢一，第二次在姿勢五完成後再存，第二批會同時包含姿勢一與姿勢五。分析時請選定一批，避免跨批重複計入同一個 `run_id`。
+
+正式頁的校正總覽、CSV、結果總覽及曲線都寫入原先選定的同一個資料夾；按儲存時不需要另外選資料夾。完成本輪不會自動寫檔，請等畫面顯示儲存成功再關閉。離線預覽則改用瀏覽器下載位置，見下方說明。
+
+## 每秒顯示與時間定義
+
+- 表格列出第1～20秒，兩模型各自顯示 **Group1／Group2、Group1機率、Group2機率**。Group1＝姿勢1、2；Group2＝姿勢3、4、5。實際姿勢由操作者選擇，與模型預測分開記錄。
+- 第n秒採用Web接收時間 `(n−1, n]` 秒內最後一筆新序號分類；同秒多筆保留在事件CSV。時間以按開始為零點，包含操作者與BLE啟動延遲；裝置取樣與推論時間也另存。
+- **20秒計時結束不代表收到20筆有效分類。** 啟動確認或傳輸延遲可能使第一秒缺資料；第20秒界線以後收到的結果不納入。本頁不補值、不沿用上一秒，也不將延遲結果挪到別秒。
+- 歷史模型前6筆有效樣本顯示「暖機n/6」，第7筆有效樣本才有結果。無效掃描不算有效暖機資料，暖機因此不一定恰好6秒。
+- `OK`＝有結果、`WARMUP`＝暖機、`INVALID`＝裝置讀值無效；CSV額外用 `MISSING`＝該秒沒分類、`NOT_RECORDED`＝提前停止後未記錄的秒。沒有有效結果時類別／機率留空，不能當0機率。
+- 重複GET回覆與相同序號不重複計入；舊序號／舊工作結果不覆蓋新資料。收到不同的新分類工作會中止本輪；斷線或高度／使用者狀態變更也會中止並保留部分資料。
+- 畫面顯示「有分類資料的秒數」及兩模型各自有效秒數；第3、5、10、15、20秒另列比較總覽。記錄中超過3秒沒有新分類會顯示等待新結果。
+- 「查看輪次」只切換先前記錄的表格與曲線，不重跑模型或改變氣囊。標籤固定單行；計時器與秒數標記集中排列，窄卡片保留換行以免溢出。
+
+## 匯出檔案與CSV欄位
+
+每次匯出使用 `<受試者>_03_<匯出時間戳>` 前綴：
+
+| 檔案後綴 | 內容 |
+|---|---|
+| `_逐秒分類.csv` | **41欄，每輪固定20列**，每秒兩模型結果、機率及該分類使用的ADC |
+| `_壓力與分類事件.csv` | **40欄**；每輪一列 `run` 資訊，加上每筆 `pressure` 與 `classification` 事件 |
+| `_輪次01_壓力曲線.png` 等 | 每輪一張1600×800 PNG，Monitor／Neck／Head三條ADC線，橫軸為開始後0～20秒 |
+| `_結果總覽.svg` | 各輪第3、5、10、15、20秒的兩模型類別與輪次狀態；完整機率看CSV |
+
+例如固定一種高度，姿勢一與姿勢五各記錄20秒，最後一起匯出：**2份CSV＋2張壓力曲線PNG＋1張結果總覽SVG**；加上實驗前的校正總覽SVG，共 **2份CSV＋4張圖片＝6個檔案**。逐秒CSV包含兩輪共40列；事件CSV的列數依實際收到的資料筆數而定。
+
+逐秒CSV方便逐秒比較實際姿勢與兩模型預測；事件CSV保留各筆壓力及分類的獨立接收時間，避免將非同步資料假裝成同一次量測。`expected_group` 是依操作者選擇的實際姿勢指定的預期組別；`static_group`／`history_group` 才是模型預測。未收到分類的秒，其分類及對應ADC留空，另外收到的P壓力仍保存在事件CSV。暖機只代表歷史模型尚未可用，不應當成該模型已判錯。
+
+CSV使用UTF-8 BOM、CRLF與雙引號跳脫，機率保留 **0～1**，畫面則顯示百分比。以下為實際欄位順序；兩份CSV均先放18個共同欄位，再放各自欄位，最後放21個結果欄位。
+
+| 18個共同欄位（依序） | 意義 |
+|---|---|
+| `schema_version`, `data_origin`, `run_id` | 固定 `EXP03_DUAL_V1`；`DEVICE`或`SIMULATED`；本輪識別碼 |
+| `subject`, `gender`, `age_years`, `height_cm`, `weight_kg` | 受試者編號、性別、年齡、身高、體重 |
+| `actual_pose`, `expected_group` | 操作者選擇的1或5；對應GROUP1或GROUP2，並非模型結果 |
+| `fixed_head_cm`, `fixed_neck_cm` | 本輪設定高度，並非新增的實測高度 |
+| `run_started_at`, `run_status`, `run_duration_ms` | 開始ISO時間、輪次狀態、實際記錄時長（最多20000ms） |
+| `classification_start_ack_elapsed_ms` | 按開始到收到分類START回覆的時間差 |
+| `calibration_json`, `firmware_calibration_json` | Web各姿勢校正快照JSON；裝置BSHS／BLHL基準JSON |
+
+裝置基準JSON每組陣列順序固定為 `[MonitorADC, NeckADC, HeadADC, Head設定cm, Neck設定cm]`，其中ADC是裝置擷取的8筆平均；Web校正JSON保留當時單筆壓力快照，兩者不可混用。
+
+| 各自欄位 | 意義 |
+|---|---|
+| 逐秒CSV：`second`, `classification_count_in_second` | 第1～20秒、該接收區間內的唯一分類筆數；多筆時本列取最後一筆 |
+| 事件CSV：`event_type` | `run`／`pressure`／`classification` |
+
+| 21個結果欄位（依序） | 意義 |
+|---|---|
+| `elapsed_ms`, `received_at` | Web接收時相對開始的毫秒、ISO時間 |
+| `session`, `sequence` | 裝置分類工作與結果序號，用來追蹤去重 |
+| `tick_ms`, `sample_sequence`, `sample_ms` | 裝置推論tick、壓力取樣序號、裝置取樣時間；裝置時間不是Web時鐘 |
+| `monitor_adc`, `neck_adc`, `head_adc` | 分類列＝該次模型輸入ADC；壓力列＝P訊息的ADC，兩者保留各自時間 |
+| `static_status`, `static_group`, `static_p_group1`, `static_p_group2` | 無歷史狀態、預測組別與兩組機率 |
+| `history_status`, `history_group`, `history_p_group1`, `history_p_group2` | 有歷史狀態、預測組別與兩組機率 |
+| `history_count`, `dropped`, `inference_us` | 裝置推論前有效歷史筆數、裝置累計丟棄tick數、推論耗時微秒 |
+
+事件CSV的壓力列不填分類欄位，分類列不拿別的P快照替換模型ADC。曲線由P事件繪製，保留原ADC值；相鄰壓力接收超過3秒則斷線顯示，CSV仍保留所有已收到的P資料。
+
+## 不連接ESP32的離線預覽與驗證
+
+雙擊本目錄 `啟動預覽.command`，或執行 `python3 -m http.server 8083 --bind 127.0.0.1`，開啟 `http://localhost:8083/spp3_BLE/preview.html`。預覽使用本機Chart.js，不需BLE、GitHub或CDN。
+
+預覽仍可走兩姿勢校正→儲存校正總覽→抽乾→套用高度→勾選確認的完整流程。「模擬躺下／離枕」只改變模擬壓力，按開始才記錄。兩模型每秒產生合成訊息，前6筆歷史暖機；按匯出會下載檔案，瀏覽器詢問時允許本頁多個下載。
+
+**預覽分類與機率是合成示範，不能用來判定模型準確率或真實人體接觸。** 下載檔名前綴為 `DEMO_`，CSV明確標記 `SIMULATED`，結果圖標記模擬資料。正式頁不載入 `preview.js`。
+
+本次 **160項Node測試通過**，包括20秒定時、完整行與接收時間、暖機／無效／缺值、重複與亂序、跨工作、斷線／提前停止、匯出失敗重試、CSV回讀與欄位順序。Chrome完成兩輪離線20秒操作，實際匯出40列逐秒CSV、事件CSV、兩張1600×800曲線PNG及總覽SVG；每輪收到19筆分類（第一秒缺資料），其中歷史6筆暖機、13筆有效。主頁20-byte分包與接收時間轉交、兩頁320～1440px縮放亦通過。未連線ESP32，未驗證真實分類準確率或BLE時序。
+
+```sh
+node --test tests/*.test.cjs
+PLAYWRIGHT_MODULE_PATH=/已安裝的/playwright node tests/rapid-dual-browser-smoke.cjs
+PLAYWRIGHT_MODULE_PATH=/已安裝的/playwright node tests/rapid-browser-smoke.cjs
+PLAYWRIGHT_MODULE_PATH=/已安裝的/playwright node tests/pose-model-browser-smoke.cjs
+```
+
+## 2026-11-14修改檔案
+
+| 檔案 | 本次變更 |
+|---|---|
+| `spp3_BLE/rapid-experiment.js` | 15秒改20秒；接收雙模型結果、逐秒表格、暖機／缺值標記、輪次切換、匯出及兩姿勢校正要求說明 |
+| `spp3_BLE/rapid-results.js`（新增） | 每秒分組、41／40欄CSV、原ADC曲線與每輪PNG儲存 |
+| `spp3_BLE/app.js`、`experiment-hub.js` | 將完整BLE行的接收時間傳遞至實驗三；分類與P壓力仍保留各自時間 |
+| `spp3_BLE/index.html`、`styles.css` | 載入共用分類解析與結果匯出模組；查看輪次標籤不拆行，計時區集中排列並保留響應式 |
+| `spp3_BLE/preview.html`、`preview.js` | 不連BLE的20秒雙模型預覽、模擬躺下／離枕、暖機與檔案下載 |
+| `tests/rapid*`、`tests/experiment-hub.test.cjs`、`tests/pose-model-browser-smoke.cjs` | 流程、CSV、接收時間、去重／缺值與瀏覽器匯出驗證 |
+| `README.md`、`實驗三使用說明.txt`、`AGENTS.md` | 版本配對、校正前提、操作、欄位、累積匯出及驗證限制 |
+
+實驗一、二的控制、原感測讀值、一般IndexedDB／一般CSV與高度安全限制不變。本次提交不包含ESP32、其他Web版本、受試者資料、模擬匯出檔或截圖。
+
+---
+
+以下為 **2026-11-13及更早的歷史說明**；其中「實驗三15秒／尚未加入雙模型匯出」已被本頁上方2026-11-14實作取代。
+
+# spp3_BLE_v4_pose_model：雙模型分類狀態（歷史版本）
 
 更新日期：**2026-11-13（Asia/Taipei）**。畫面用語統一為「校正基準」。本分支從 `spp3_BLE_v4.3` 的 `14a20b9d90bada97719df481e64397a27c0b5cb9` 建立。本次修改主頁「校正與分類狀態」區塊，配對 ESP32 `spp3_BLE_v4_model` 的 `CLASSIFY,DATA,V1` 協定。
 

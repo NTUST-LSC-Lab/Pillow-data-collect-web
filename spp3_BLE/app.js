@@ -2276,12 +2276,12 @@
 
 			function parseProtocolMessage(dataString, receipt = null) {
 				const parts = dataString.split(',').map(v => v.trim());
-                if (parts[0] !== 'EXP02' && typeof experimentHubModule !== 'undefined') experimentHubModule?.receiveLine?.(dataString);
+                if (parts[0] !== 'EXP02' && typeof experimentHubModule !== 'undefined') experimentHubModule?.receiveLine?.(dataString, receipt);
 				if (parts.length < 2) {
 					return;
 				}
 				if (parts[0] === 'EXP02') {
-					experimentHubModule?.receiveLine?.(dataString);
+					experimentHubModule?.receiveLine?.(dataString, receipt);
 					return;
 				}
 

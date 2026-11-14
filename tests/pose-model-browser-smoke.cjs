@@ -103,6 +103,19 @@ const root = path.resolve(__dirname, '..');
         const commands = await page.evaluate(() => window.__commands);
         assert.ok(commands.includes('ANCHOR,START,BSHS') && commands.includes('ANCHOR,START,BLHL'));
         assert.ok(!commands.some(c => /^(PRED,START|PRED,GET|FEATURE,PRED,ON)$/.test(c)));
+        // Verify the actual BLE parser carries completed-line timing to the experiment hub.
+        const receipts = await page.evaluate(line => {
+            const received = [], original = experimentHubModule.receiveLine;
+            experimentHubModule.receiveLine = (message, receipt) => { received.push({ message, receipt }); original(message, receipt); };
+            __notify(line);
+            serial_message(line, LOG_SUCCESS_GREEN, false);
+            experimentHubModule.receiveLine = original;
+            return received.filter(r => r.message === line);
+        }, frame(2002, 'OK,GROUP1,0.8,0.2', 7));
+        assert.equal(receipts.length, 2);
+        assert.ok(Number.isFinite(receipts[0].receipt.receivedMonotonicMs));
+        assert.ok(!Number.isNaN(Date.parse(receipts[0].receipt.timestamp_iso)));
+        assert.equal(receipts[1].receipt, null, 'partial/log-only message must not become an experiment sample');
         await page.evaluate(() => onDisconnected({ target: bluetoothDevice }));
         assert.match(await page.textContent(selector('notice')), /BLE 已斷線/);
         assert.equal(await page.textContent('#anchorBshsValue'), '尚未取得');

@@ -205,7 +205,7 @@ function createExperimentHub(root, options = {}) {
             comfortExperiment?.receivePressure(sample);
             rapidExperiment?.receivePressure(sample);
         },
-        receiveLine: line => { comfortExperiment?.receiveLine(line); rapidExperiment?.receiveLine(line); },
+        receiveLine: (line, receipt) => { comfortExperiment?.receiveLine(line); rapidExperiment?.receiveLine(line, receipt); },
         onDisconnected: () => {
             pressureExperiment?.onDisconnected();
             comfortExperiment?.onDisconnected();

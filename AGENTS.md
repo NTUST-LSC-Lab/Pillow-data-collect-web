@@ -1,6 +1,6 @@
 # Pillow-data-collect-web agent instructions
 
-適用於 `NTUST-LSC-Lab/Pillow-data-collect-web` 的 `spp3_BLE_v4_pose_model`，基於 v4.3。先讀 organization shared contract `NTUST-LSC-Lab/lab-docs/AGENTS.md` 與 version matrix；本檔補充本分支差異。回答使用繁體中文。使用者已授權把分類狀態區改為無歷史／有歷史兩組Group1/Group2，配對 ESP32 `spp3_BLE_v4_model`；不得恢復舊五姿勢規則分數或PRED自動調整。
+適用於 `NTUST-LSC-Lab/Pillow-data-collect-web` 的 `web_pose_model_dual_exp3`，基於 `spp3_BLE_v4_pose_model`。先讀 organization shared contract `NTUST-LSC-Lab/lab-docs/AGENTS.md` 與 version matrix；本檔補充本分支差異。回答使用繁體中文。使用者已授權實驗三20秒雙模型顯示與CSV／壓力曲線匯出，配對 ESP32 `spp3_BLE_v4_model`；不得恢復舊五姿勢規則分數或PRED自動調整。提交前核對目前Git分支與遠端，不能只由資料夾名稱推定。
 
 ## Goal and completion bar
 
@@ -22,6 +22,8 @@
 - 沒有 backend API、Node server、bundler 或 framework。
 - 此分支分類區搭配 `ipillow/spp3_BLE_v4_model`，22欄 `CLASSIFY,DATA,V1` 詳見README；舊五姿勢payload不可直接映射Group。
 - `pose-model.js` 只解析／顯示裝置結果，不在Web重新分類或融合模型。完整BLE行、缺值狀態、session/sequence去重與過期顯示必須保留。
+- `rapid-experiment.js` 記錄從按開始起20秒；`rapid-results.js` 管理逐秒、事件CSV與每輪PNG。起點不是自動偵測接觸，也不因等待分類而延長20秒。暖機／無效／缺資料不得補上舊結果或0機率。
+- 實驗三透過已確認STOP→START建立新分類工作；既有抽乾、恢復開機高度及HEIGHT_DRY流程保持獨立。壓力事件與分類使用ADC有各自時間，不得拿P快照替代分類ADC。
 
 回答／診斷只讀；修改／修復可做此 repo 內必要編輯與非破壞性驗證。刪除資料、發布、替換 vendored dependency、改 branch 歷史或擴到其他 repo 前需確認。
 
@@ -52,4 +54,5 @@
 ## Changelog
 
 - 2026-11-13 使用者授權雙模型分類狀態區。Anchor擷取操作保留並說明來源；原實驗三15秒表格及CSV/SVG尚未遷移，不能宣稱雙模型已納入匯出。本輪不改ESP32／Android或其他Web版本。
+- 2026-11-14 實驗三已遷移為20秒雙模型：逐秒CSV41欄、事件CSV40欄、每輪PNG與結果SVG，取代前述尚未匯出的限制。預覽標記SIMULATED，正式DEVICE；一般CSV與IndexedDB不變。驗證須涵蓋CSV回讀、離線20秒全流程、下載圖檔與窄視窗；未接ESP32不得宣稱實機通過。
 - 2026-07-15 依 GPT-5.6 guidance 重寫為 goal、completion、scope、constraints、validation 與 stop rules，保留 Web 主線不變式。

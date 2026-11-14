@@ -19,7 +19,7 @@ const configLiteral = appSource.match(/pressureConfig:\s*(\{[\s\S]*?\}),\s*getSy
 assert.ok(configLiteral, 'extract the actual app configuration rather than duplicate its labels');
 const pressureConfig = vm.runInNewContext(`(${configLiteral[1]})`);
 
-function fixture(savedSelection = null) {
+function fixture(savedSelection = null, createRapidExperiment) {
     const nodes = {};
     const pressureInstances = [];
     const windowListeners = new Map();
@@ -91,7 +91,7 @@ function fixture(savedSelection = null) {
             if (!windowListeners.has(type)) windowListeners.set(type, []);
             windowListeners.get(type).push(callback);
         } },
-        createPressureCollectionExperiment
+        createPressureCollectionExperiment, createRapidExperiment
     });
     vm.runInContext(profileGetterSource + '\n' + source('experiment-hub.js'), context);
     const hub = context.createExperimentHub({ querySelector: selector => nodes[selector.slice(1)] }, {
@@ -127,6 +127,16 @@ test('actual app config selects Experiment 01 and keeps confirmed numerical post
     assert.equal(f.pressureInstances[0].options.gapTimeoutMs, 3000);
     assert.equal(f.pressureInstances[0].options.conditions, pressureConfig.conditions);
     assert.equal(f.beforeUnload().prevented, false);
+});
+
+test('hub forwards complete BLE receipt metadata unchanged to experiment03', () => {
+    const received = [];
+    const f = fixture(null, () => ({ isBusy: () => false, receiveLine: (...args) => received.push(args) }));
+    const receipt = { receivedMonotonicMs: 1300, timestamp_iso: '2026-11-14T12:00:01.300Z' };
+    f.hub.receiveLine('CLASSIFY,DATA,V1,...', receipt);
+    f.hub.receiveLine('CLASSIFY,DATA,V1,...');
+    assert.equal(received[0][1], receipt);
+    assert.equal(received[1][1], undefined, 'no fake receipt for partial/log-only messages');
 });
 
 test('nine-item dropdown and previous/next share one selection; eight placeholders cannot run', () => {
