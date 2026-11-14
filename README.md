@@ -2,20 +2,7 @@
 
 本版以 GitHub `web_pose_model_dual_exp3` 的 `6832264661f873745ef19550c6fc0f5ac3694f8c` 為基底，新增實驗04，保留實驗一至三。配對韌體為 `spp3_BLE_v4_model`，沿用既有 BLE queue、`EXP02,DRAIN`、`HEIGHT_DRY` 與高度 interlock；本次只改 Web。本分支為 [web_pose_model_dual_exp4](https://github.com/NTUST-LSC-Lab/Pillow-data-collect-web/tree/web_pose_model_dual_exp4)。下載的本機目錄沒有 `.git`；提交使用獨立checkout，版本以此分支的commit為準。
 
-## 實驗03版面調整（本分支）
-
-本次僅重排實驗03的HTML與限定於實驗03的CSS。原控制項、文字、屬性、事件處理、校正、BLE指令、20秒計時、雙模型分類、缺資料處理、輪次管理及匯出內容保持不變；實驗03仍輸出原本的41欄逐秒CSV、40欄事件CSV、每輪PNG與總覽SVG。
-
-- 「受測者與校正」預設展開，可手動收合；受測者編號、資料夾與個人資訊採較緊湊排列。校正視窗及按鈕行為保持原樣。
-- 固定高度與計時放在區塊頂部；抽乾／套用高度、睡姿／完成進度集中排列；開始、提前結束、完成本輪及儲存放在同一操作列。
-- 計時節點、操作狀態、最新壓力、雙模型最近結果及資料品質持續顯示。
-- 「壓力曲線、逐秒結果與各輪比較」及「操作與儲存說明」預設收合，展開即可查看原有全部內容；表格可捲動，查看輪次仍控制同一份既有記錄。收合不暫停20秒記錄、判定或匯出，也不自動改變操作狀態。
-
-離線預覽：`spp3_BLE/preview.html`。正式頁：`spp3_BLE/index.html` → 實驗專區選03。保持既有配對韌體 `spp3_BLE_v4_model`，此版面調整不需重燒韌體。
-
-版面核對：1440px視窗下，預覽實驗區初始高度約2112px降為906px（約57%）；校正收合後主要操作更集中。檢查桌面、780px與320px，頁面無水平溢出，表格保留自身捲動。
-
-驗證方式：在相同模擬時鐘與資料下，分別執行修改前／後的兩姿勢校正、抽乾中止與重試、套用高度、兩姿勢20秒記錄、暖機、提前結束、完成、切換輪次與匯出，比對控制項狀態及CSV／SVG內容；並核對事件處理程式與 `rapid-results.js` 逐字未改。另測正式頁導覽及展開圖表、實驗04完整流程與匯出。臨時腳本和模擬資料在 `/tmp/ipillow-exp03-layout/`、`/tmp/ipillow-exp04-verification/`，不隨程式提交。此為離線／模擬BLE驗證，沒有宣稱ESP32實機驗收。
+操作手冊：[實驗四使用說明.txt](實驗四使用說明.txt)。雙擊 `啟動預覽.command` 會開啟EXP4；EXP3仍可由實驗專區選03使用，說明列於本頁後方。
 
 ## 實驗04操作
 
@@ -103,6 +90,23 @@ S01_EXP04_姿勢一高度_結果總覽.svg
 
 尚未接ESP32與實體氣囊驗證。實機需確認：兩組基準保留、DRAIN確實逐顆抽乾並恢復開機高度、HEIGHT_DRY到達保存高度、失敗／STOP行為，以及BLE壓力接收時序與有效性。Web中的高度核對是韌體時間估計值，不是物理高度量測。
 
+## 保留功能：實驗03緊湊版面
+
+本次僅重排實驗03的HTML與限定於實驗03的CSS。原控制項、文字、屬性、事件處理、校正、BLE指令、20秒計時、雙模型分類、缺資料處理、輪次管理及匯出內容保持不變；實驗03仍輸出原本的41欄逐秒CSV、40欄事件CSV、每輪PNG與總覽SVG。
+
+- 「受測者與校正」預設展開，可手動收合；受測者編號、資料夾與個人資訊採較緊湊排列。校正視窗及按鈕行為保持原樣。
+- 固定高度與計時放在區塊頂部；抽乾／套用高度、睡姿／完成進度集中排列；開始、提前結束、完成本輪及儲存放在同一操作列。
+- 計時節點、操作狀態、最新壓力、雙模型最近結果及資料品質持續顯示。
+- 「壓力曲線、逐秒結果與各輪比較」及「操作與儲存說明」預設收合，展開即可查看原有全部內容；表格可捲動，查看輪次仍控制同一份既有記錄。收合不暫停20秒記錄、判定或匯出，也不自動改變操作狀態。
+
+EXP3從按下「開始記錄20秒」起計時，滿20秒自動停止本輪壓力與分類記錄，並送出 `CLASSIFY,STOP`；20秒後的資料不加入本輪CSV。「完成本輪」只確認已結束的輪次，不是停止記錄的觸發點。
+
+離線預覽：`spp3_BLE/preview.html`。正式頁：`spp3_BLE/index.html` → 實驗專區選03。保持既有配對韌體 `spp3_BLE_v4_model`，此版面調整不需重燒韌體。
+
+版面核對：1440px視窗下，預覽實驗區初始高度約2112px降為906px（約57%）；校正收合後主要操作更集中。檢查桌面、780px與320px，頁面無水平溢出，表格保留自身捲動。
+
+驗證方式：在相同模擬時鐘與資料下，分別執行修改前／後的兩姿勢校正、抽乾中止與重試、套用高度、兩姿勢20秒記錄、暖機、提前結束、完成、切換輪次與匯出，比對控制項狀態及CSV／SVG內容；並核對事件處理程式與 `rapid-results.js` 逐字未改。另測正式頁導覽及展開圖表、實驗04完整流程與匯出。臨時腳本和模擬資料在 `/tmp/ipillow-exp03-layout/`、`/tmp/ipillow-exp04-verification/`，不隨程式提交。此為離線／模擬BLE驗證，沒有宣稱ESP32實機驗收。
+
 ---
 
 以下保留實驗三及更早版本文件供操作與追溯；其中「本次／目前」指該歷史版本，不代替上方實驗04規格。
@@ -111,7 +115,7 @@ S01_EXP04_姿勢一高度_結果總覽.svg
 
 更新日期：**2026-11-14（Asia/Taipei）**。本分支基於 `spp3_BLE_v4_pose_model` 的 `3f7ba6483d8ef80b149e74d785f00bda83bd5680`，本次只修改 Web 實驗三的顯示、記錄、匯出及離線預覽。提交分支為 [web_pose_model_dual_exp3](https://github.com/NTUST-LSC-Lab/Pillow-data-collect-web/tree/web_pose_model_dual_exp3)。本頁上方說明目前功能，後方保留舊版本歷史供追溯。
 
-## 目前目錄與2026-11-14清理
+## 歷史紀錄：EXP3目錄與2026-11-14清理
 
 依使用者要求，已移除 `tests/`（18個測試腳本）及舊版Web Serial介面 `spp3/`（3個檔案）。目前使用 `spp3_BLE/`；正式網頁、離線預覽、20秒雙模型記錄與匯出功能皆保留。正式頁及預覽頁沒有依賴上述已移除目錄。
 
@@ -120,7 +124,7 @@ S01_EXP04_姿勢一高度_結果總覽.svg
 | `spp3_BLE/` | 正式BLE網頁、實驗功能與離線預覽 |
 | `Images/`、`chart.umd.min.js` | 網頁圖片資源與Chart.js圖表函式庫 |
 | `啟動預覽.command` | 啟動本機預覽 |
-| `README.md`、`實驗三使用說明.txt`、`AGENTS.md` | 操作、版本配對與協作規範 |
+| `README.md`、[實驗三歷史使用說明](https://github.com/NTUST-LSC-Lab/Pillow-data-collect-web/blob/6832264661f873745ef19550c6fc0f5ac3694f8c/實驗三使用說明.txt)、`AGENTS.md` | 操作、版本配對與協作規範 |
 
 舊入口 `/spp3/` 已移除。測試原始碼及舊Web Serial介面仍可在 [清理前版本645ec40](https://github.com/NTUST-LSC-Lab/Pillow-data-collect-web/tree/645ec40126966af8fd7557b8fd21fbcc7cd7ece9) 查閱；本頁歷史章節中的 `tests/` 與 `spp3/` 路徑描述歷史版本，不代表目前仍有這些目錄。
 
@@ -235,7 +239,7 @@ python3 -m http.server 8083 --bind 127.0.0.1
 | `spp3_BLE/index.html`、`styles.css` | 載入共用分類解析與結果匯出模組；查看輪次標籤不拆行，計時區集中排列並保留響應式 |
 | `spp3_BLE/preview.html`、`preview.js` | 不連BLE的20秒雙模型預覽、模擬躺下／離枕、暖機與檔案下載 |
 | 測試腳本（已於同日清理移除） | 清理前版本 `645ec40` 保留流程、CSV、接收時間、去重／缺值與瀏覽器匯出驗證腳本 |
-| `README.md`、`實驗三使用說明.txt`、`AGENTS.md` | 版本配對、校正前提、操作、欄位、累積匯出及驗證限制 |
+| `README.md`、[實驗三歷史使用說明](https://github.com/NTUST-LSC-Lab/Pillow-data-collect-web/blob/6832264661f873745ef19550c6fc0f5ac3694f8c/實驗三使用說明.txt)、`AGENTS.md` | 版本配對、校正前提、操作、欄位、累積匯出及驗證限制 |
 
 實驗一、二的控制、原感測讀值、一般IndexedDB／一般CSV與高度安全限制不變。本次提交不包含ESP32、其他Web版本、受試者資料、模擬匯出檔或截圖。
 
@@ -344,7 +348,7 @@ PLAYWRIGHT_MODULE_PATH=/已安裝的/playwright node tests/pose-model-browser-sm
 
 - 完整 Web：[`spp3_BLE/index.html`](spp3_BLE/index.html)，實驗專區選擇實驗 03。
 - 無硬體模擬預覽：[`spp3_BLE/preview.html`](spp3_BLE/preview.html)。預覽不會連線或控制硬體，所有讀值與建議高度均為模擬資料。
-- 操作與記錄定義：[`實驗三使用說明.txt`](實驗三使用說明.txt)。可雙擊 `啟動預覽.command` 啟動 localhost 預覽。
+- 後續20秒版操作與記錄定義：[實驗三歷史使用說明](https://github.com/NTUST-LSC-Lab/Pillow-data-collect-web/blob/6832264661f873745ef19550c6fc0f5ac3694f8c/實驗三使用說明.txt)。本分支的 `啟動預覽.command` 已改為開啟實驗04；實驗03預覽請使用 `spp3_BLE/preview.html`。
 - **實驗三需要配對的新韌體**：支援 `EXP02,DRAIN,<id>`、`EXP02,DRAINED,<id>` 與 `EXP02,START,<id>,HEIGHT_DRY,<head_cm>,<neck_cm>,<drain_id>`。舊韌體不支援時維持按鈕停用；不以 Web 倒數認定抽乾完成。韌體原始碼不包含在此 Web repository。
 - 壓力與分類分別保存接收時間；缺資料不補值，重測保留各輪。
 
