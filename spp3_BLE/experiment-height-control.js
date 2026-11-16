@@ -325,7 +325,7 @@ function createExperimentHeightControl(options) {
     function allowCommand(command, owned = false, experiment02 = false, experiment03 = false) {
         if (experiment03) {
             const next = String(command).trim();
-            return connected() && !pending && /^(USER,[^\r\n]+|FEATURE,POSE,ON|ANCHOR,(START,(BSHS|BLHL)|CANCEL)|CLASSIFY,(START|STOP))$/.test(next);
+            return connected() && !pending && /^(USER,[^\r\n]+|FEATURE,POSE,ON|ANCHOR,(START,(BSHS|BLHL)(,5)?|CANCEL)|CLASSIFY,(START|STOP))$/.test(next);
         }
         if (experiment02) {
             if (!connected()) return false;
@@ -361,7 +361,7 @@ function createExperimentHeightControl(options) {
             return true;
         }
         const commands = String(command).trim().toUpperCase().split(/[\r\n]+/);
-        const readOnly = /^(P|I|DEBUG|FEATURE,STATUS|GET,INFT,ALL|ANCHOR,(STATUS|GET)(,.*)?|CLASSIFY,GET|PRED,GET|SYNCTIME,.*|RGB,.*)$/;
+        const readOnly = /^(P|I|DEBUG|FEATURE,STATUS|GET,INFT,ALL|ANCHOR,(STATUS|GET)(,.*)?|CLASSIFY,GET(,\d+,\d+)?|PRED,GET|SYNCTIME,.*|RGB,.*)$/;
         const stopOnly = /^(PRED,STOP|CLASSIFY,STOP|FEATURE,(PRED|LEGACY),OFF|MANUAL,STOP)$/;
         if (commands.every(value => readOnly.test(value))) return true;
         if (commands.every(value => stopOnly.test(value))) {
@@ -369,6 +369,8 @@ function createExperimentHeightControl(options) {
             return true;
         }
         if (pending || options.isHolding?.()) return false;
+        // The paired dual-model firmware treats these as classification-only controls (MODE,NORM is an acknowledgement-only command).
+        if (commands.every(value => /^(FEATURE,POSE,ON|CLASSIFY,START|MODE,NORM)$/.test(value))) return true;
         if (prepared) invalidate('其他控制指令已送出，請重新準備實驗高度控制');
         lastOwnedTargets = null;
         return true;

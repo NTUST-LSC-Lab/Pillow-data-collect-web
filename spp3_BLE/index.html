@@ -743,101 +743,265 @@ https://fustyles.github.io/webduino/WebSerial.html
 
 	<template id="pressureExperimentTemplate">
 		<div class="pressure-experiment">
-			<fieldset class="pressure-run-settings" id="pressureCalibrationPanel">
-				<legend>姿勢一／姿勢五獨立校正</legend>
-				<div class="pressure-field pressure-field-wide">
-					<label for="pressureSubject">受試者編號</label>
-					<input id="pressureSubject" name="subject_id" form="pressureRunForm" type="text" pattern="S\d{2}" maxlength="3" placeholder="例如 S01" title="請輸入 S 加上兩位數字，例如 S01" autocomplete="off" required>
+			<div id="pressureCalibrationOverview" class="comfort-experiment">
+			<section class="comfort-section">
+				<h4>受測者</h4>
+				<label for="pressureSubject">受測者編號</label>
+				<select id="pressureSubject" name="subject_id" form="pressureRunForm" required>
+							<option value="">請選擇受測者</option>
+							<option value="S01">S01</option>
+							<option value="S02">S02</option>
+							<option value="S03">S03</option>
+							<option value="S04">S04</option>
+							<option value="S05">S05</option>
+							<option value="S06">S06</option>
+							<option value="S07">S07</option>
+							<option value="S08">S08</option>
+							<option value="S09">S09</option>
+							<option value="S10">S10</option>
+						</select>
+				<p id="pressureUserProfile" class="pressure-field-hint" aria-live="polite"></p>
+				<button id="pressureFolder" type="button" aria-describedby="pressureFolderStatus">選擇儲存資料夾</button>
+				<p id="pressureFolderStatus" class="pressure-field-hint" role="status">尚未選擇儲存資料夾</p>
+			</section>
+			<section id="pressureCalibrationPanel" class="comfort-section">
+				<h4>兩姿勢校正</h4>
+				<div class="pressure-calibration-saved">
+					<section><h4>姿勢一 · 仰躺</h4><output id="pressureCalibrationPose1Saved">尚未校正</output><button type="button" data-pressure-calibrate="pose1">校正姿勢一</button></section>
+					<section><h4>姿勢五 · 正側躺</h4><output id="pressureCalibrationPose5Saved">尚未校正</output><button type="button" data-pressure-calibrate="pose5">校正姿勢五</button></section>
 				</div>
-				<p id="pressureUserProfile" class="pressure-field-wide pressure-field-hint" aria-live="polite">受試者資料：等待帶入上方目前輸入值。</p>
-				<p class="pressure-field-wide pressure-field-hint">先填受試者編號再校正。姿勢五依上方已設定的性別、年齡、身高、體重，帶入裝置建議高度供微調；裝置以整數身高／體重估算。按「套用」才會調整高度，待受試者姿勢穩定後保存快照。</p>
-				<button id="pressureCalibrationPrepare" class="pressure-field-wide" type="button">準備微調（停止自動調整並讀取高度）</button>
-				<div class="pressure-field pressure-field-wide">
-					<label for="pressureCalibrationPose">目前校正姿勢</label>
-					<select id="pressureCalibrationPose"><option value="pose1">姿勢一（pose1／height1）</option><option value="pose5">姿勢五（pose5／height5）</option></select>
-				</div>
-				<div class="pressure-field">
-					<label for="pressureCalibrationHead">Head 目標高度（7–16 cm）</label>
-					<div class="pressure-height-stepper">
-						<button id="pressureCalibrationHeadMinus" type="button" aria-label="Head 目標減少 0.5 cm">−</button>
-						<input id="pressureCalibrationHead" type="number" min="7" max="16" step="0.5" aria-describedby="pressureCalibrationStepHint">
-						<button id="pressureCalibrationHeadPlus" type="button" aria-label="Head 目標增加 0.5 cm">＋</button>
+				<button id="pressureAnchorShot" type="button" disabled>截圖並儲存校正總覽</button>
+				<p id="pressureCalibrationStatus" class="pressure-field-hint" role="status" aria-live="polite" hidden></p>
+				<dialog id="pressureCalibrationDialog" class="comfort-dialog" aria-labelledby="pressureCalibrationTitle">
+					<div class="comfort-dialog-heading">
+						<h3 id="pressureCalibrationTitle">姿勢校正</h3>
+						<button id="pressureCalibrationClose" type="button" aria-label="關閉校正">×</button>
 					</div>
-					<button id="pressureCalibrationHeadApply" type="button">套用 Head 高度</button>
-				</div>
-				<div class="pressure-field">
-					<label for="pressureCalibrationNeck">Neck 目標高度（10–14 cm）</label>
-					<div class="pressure-height-stepper">
-						<button id="pressureCalibrationNeckMinus" type="button" aria-label="Neck 目標減少 0.5 cm">−</button>
-						<input id="pressureCalibrationNeck" type="number" min="10" max="14" step="0.5" aria-describedby="pressureCalibrationStepHint">
-						<button id="pressureCalibrationNeckPlus" type="button" aria-label="Neck 目標增加 0.5 cm">＋</button>
+					<p id="pressureCalibrationDialogStatus" class="pressure-field-hint" role="status" aria-live="polite"></p>
+					<div class="comfort-height-fields">
+						<div class="pressure-field">
+							<label for="pressureCalibrationHead">Head 目標高度（7–16 cm）</label>
+							<div class="pressure-height-stepper">
+								<button id="pressureCalibrationHeadMinus" type="button" aria-label="Head 目標減少 0.5 cm">−</button>
+								<input id="pressureCalibrationHead" type="number" min="7" max="16" step="0.5" aria-describedby="pressureCalibrationStepHint">
+								<button id="pressureCalibrationHeadPlus" type="button" aria-label="Head 目標增加 0.5 cm">＋</button>
+							</div>
+						</div>
+						<div class="pressure-field">
+							<label for="pressureCalibrationNeck">Neck 目標高度（10–14 cm）</label>
+							<div class="pressure-height-stepper">
+								<button id="pressureCalibrationNeckMinus" type="button" aria-label="Neck 目標減少 0.5 cm">−</button>
+								<input id="pressureCalibrationNeck" type="number" min="10" max="14" step="0.5" aria-describedby="pressureCalibrationStepHint">
+								<button id="pressureCalibrationNeckPlus" type="button" aria-label="Neck 目標增加 0.5 cm">＋</button>
+							</div>
+						</div>
 					</div>
-					<button id="pressureCalibrationNeckApply" type="button">套用 Neck 高度</button>
-				</div>
-				<button id="pressureCalibrationBothApply" class="pressure-field-wide" type="button" aria-describedby="pressureCalibrationStepHint">同步套用 Head／Neck</button>
-				<p id="pressureCalibrationStepHint" class="pressure-field-wide pressure-field-hint">每次 0.5 cm；輸入與 ± 僅修改待套用值，按「套用」才會控制裝置。可單獨套用，或按一次「同步套用」：先等 Head 到位，再套用 Neck 並等待到位，無需再按第二次；任一步失敗即停止。</p>
-				<p id="pressureCalibrationCurrent" class="pressure-field-wide pressure-run-summary">裝置高度：尚未讀取</p>
-				<p id="pressureCalibrationStatus" class="pressure-field-wide pressure-field-hint" role="status" aria-live="polite">請先連線並填入受試者編號，再準備微調。</p>
-				<label class="pressure-setup-confirm pressure-field-wide" for="pressureCalibrationStable">
-					<input id="pressureCalibrationStable" type="checkbox">
-					<span>已確認目前受試者維持選定姿勢、自然呼吸且已穩定</span>
+					<p id="pressureCalibrationLive" class="pressure-field-hint"></p>
+					<button id="pressureCalibrationBothApply" type="button" aria-describedby="pressureCalibrationStepHint">套用高度</button>
+					<p id="pressureCalibrationStepHint" class="pressure-field-hint">± 每次 0.5 cm；按「套用高度」才會調整裝置，依序等待 Head、Neck 到位。</p>
+					<label class="pressure-setup-confirm" for="pressureCalibrationStable">
+						<input id="pressureCalibrationStable" type="checkbox">
+						<span>已確認指定姿勢、自然呼吸、壓力穩定且滿意度 10 分</span>
+					</label>
+					<button id="pressureCalibrationCapture" class="primary" type="button">校正完成</button>
+					<button id="pressureCalibrationPrepare" type="button" aria-describedby="pressureCalibrationPrepareHint">重新準備校正</button>
+					<p id="pressureCalibrationPrepareHint" class="pressure-field-hint">取消未完成的擷取、停止自動調整並重新讀取高度；確認到位後，請重新勾選再校正。</p>
+					<details class="pressure-notes">
+						<summary>單獨套用高度</summary>
+						<div class="pressure-detail-body">
+							<div class="button-row">
+								<button id="pressureCalibrationHeadApply" type="button">套用 Head 高度</button>
+								<button id="pressureCalibrationNeckApply" type="button">套用 Neck 高度</button>
+							</div>
+						</div>
+					</details>
+					<p class="pressure-field-hint">姿勢五帶入裝置對目前受試者的建議高度供微調。按「校正完成」後請保持姿勢，裝置收取接下來五筆有效新讀值並平均。畫面與校正總覽直接顯示模型使用的同一組基準；波動較大會提示，不再因此重新等候取樣。校正資料不併入每輪 CSV／線圖。</p>
+				</dialog>
+			</section>
+			</div>
+			<p class="pressure-purpose">依序測試：姿勢五穩定 → 姿勢五微動 → 抽乾並設定姿勢一高度 → 姿勢一穩定 → 姿勢一微動。每輪收集 35 秒同步壓力與分類，並各自儲存結果。</p>
+			<p id="pressureWorkflowStatus" class="pressure-field-hint" role="status"></p>
+			<section class="pressure-section" aria-label="切換姿勢一高度">
+				<label class="pressure-setup-confirm" for="pressureSwitchEmpty">
+					<input id="pressureSwitchEmpty" type="checkbox" disabled>
+					<span>姿勢五兩輪結果已儲存，受測者已完全離枕，並會保持離枕直到高度設定完成</span>
 				</label>
-				<button id="pressureCalibrationCapture" class="pressure-field-wide" type="button">保存此姿勢校正快照</button>
-				<div class="pressure-calibration-saved pressure-field-wide" aria-label="兩姿勢校正數據，可供截圖">
-					<section><h4>姿勢一（pose1／height1）</h4><output id="pressureCalibrationPose1Saved">尚未保存</output></section>
-					<section><h4>姿勢五（pose5／height5）</h4><output id="pressureCalibrationPose5Saved">尚未保存</output></section>
+				<div class="button-row">
+					<button id="pressureRestorePose1" type="button" disabled>抽乾並設定姿勢一高度</button>
+					<button id="pressureRestoreCancel" type="button" disabled>中止高度切換</button>
 				</div>
-				<p class="pressure-field-wide pressure-field-hint">快照保存最新一筆完整 P 訊息（非平均值），兩姿勢依受試者分開暫存於本頁。高度為裝置依充放氣時間估計，並非感測器實測。請在重新整理前截圖；這些快照不寫入 ESP32 校正基準，也不併入每輪的 CSV／線圖。</p>
-			</fieldset>
-			<p class="pressure-purpose">每輪記錄 30 秒 Monitor、Neck、Head 原始 ADC，供匯出後離線分類分析；本區不提供即時分類結果。</p>
+				<p class="pressure-field-hint">逐顆吸乾 → 恢復開機高度 → 套用剛才保存的姿勢一高度；兩組校正基準保留，完成後才開放姿勢一記錄。</p>
+			</section>
 			<form id="pressureRunForm">
 				<fieldset id="pressureRunSettings" class="pressure-run-settings">
 					<legend>本輪設定</legend>
 					<div class="pressure-field pressure-field-wide">
 						<label for="pressureCondition">實驗條件</label>
-						<select id="pressureCondition" name="condition_id" aria-describedby="pressureConditionDescription" required>
-							<option value="01">01｜睡姿一・對應高度・穩定／自然呼吸</option>
-							<option value="02">02｜睡姿一・對應高度・微動／自然呼吸</option>
-							<option value="03">03｜睡姿五・對應高度・穩定／自然呼吸</option>
-							<option value="04">04｜睡姿五・對應高度・微動／自然呼吸</option>
+						<select id="pressureCondition" name="condition_id" aria-describedby="pressureConditionDescription" required="">
+							<option value="03">第 1 輪｜睡姿五・穩定／自然呼吸（條件 03）</option>
+							<option value="04">第 2 輪｜睡姿五・微動／自然呼吸（條件 04）</option>
+							<option value="01">第 3 輪｜睡姿一・穩定／自然呼吸（條件 01）</option>
+							<option value="02">第 4 輪｜睡姿一・微動／自然呼吸（條件 02）</option>
 						</select>
 					</div>
 					<p id="pressureConditionDescription" class="pressure-field-wide pressure-field-hint">請確認本輪實際睡姿、對應高度及動作情境。</p>
 					<div class="pressure-field">
 						<label for="pressureHeadHeight">Head 設定高度（cm）</label>
-						<input id="pressureHeadHeight" name="head_height_cm" type="number" min="7" max="16" step="0.5" aria-describedby="pressureHeightHint" required>
+						<input id="pressureHeadHeight" name="head_height_cm" type="number" min="7" max="16" step="0.5" aria-describedby="pressureHeightHint" readonly required="">
 					</div>
 					<div class="pressure-field">
 						<label for="pressureNeckHeight">Neck 設定高度（cm）</label>
-						<input id="pressureNeckHeight" name="neck_height_cm" type="number" min="10" max="14" step="0.5" aria-describedby="pressureHeightHint" required>
+						<input id="pressureNeckHeight" name="neck_height_cm" type="number" min="10" max="14" step="0.5" aria-describedby="pressureHeightHint" readonly required="">
 					</div>
-					<p id="pressureHeightHint" class="pressure-field-wide pressure-field-hint">請填入本輪實際使用的高度（cm）。使用獨立校正後，這兩欄須與上方「裝置估計」的目前高度一致；修改後請重新勾選本輪確認。這些欄位只供記錄，不下達高度控制指令，也不會由校正快照自動回填。</p>
-					<p class="pressure-field-wide pressure-field-hint">全程維持選定睡姿並自然呼吸；微動僅為同一睡姿的小幅調整，不包含翻身或切換睡姿。</p>
+					<details class="pressure-notes pressure-field-wide">
+						<summary>高度填寫與本輪操作說明</summary>
+						<div class="pressure-detail-body">
+							<p id="pressureHeightHint" class="pressure-field-wide pressure-field-hint">自動帶入本條件對應的校正高度，供核對，不能手動改填。完成姿勢五校正後從姿勢五穩定開始；兩輪皆儲存後，用上方按鈕抽乾並設定姿勢一高度，再測姿勢一的兩輪。</p>
+							<p class="pressure-field-wide pressure-field-hint">全程維持選定睡姿並自然呼吸；微動僅為同一睡姿的小幅調整，不包含翻身或切換睡姿。</p>
+						</div>
+					</details>
 					<label class="pressure-setup-confirm pressure-field-wide" for="pressureSetupConfirmed">
-						<input id="pressureSetupConfirmed" name="setup_confirmed" type="checkbox" required>
+						<input id="pressureSetupConfirmed" name="setup_confirmed" type="checkbox" required="">
 						<span>已確認本輪受試者資料、姿勢、對應高度與動作情境，並已等待受試者穩定（全程自然呼吸）</span>
 					</label>
 				</fieldset>
 			</form>
 			<p id="pressureControlWarning" class="pressure-warning" role="status" aria-live="polite">請確認裝置控制狀態；自動模式或 PRED 可能在收集期間改變高度。</p>
-			<dl class="pressure-live-grid" aria-label="本輪收集狀態與原始 ADC">
-				<div><dt>BLE 連線</dt><dd><output id="pressureBleStatus">尚未確認</output></dd></div>
-				<div><dt>本輪狀態</dt><dd><output id="pressureRunStatus">尚未開始</output></dd></div>
-				<div><dt>經過時間（秒，總長 30 秒）</dt><dd><output id="pressureElapsed">0.0</output></dd></div>
-				<div><dt>有效樣本數</dt><dd><output id="pressureSampleCount">0</output></dd></div>
-				<div><dt>最近接收時間</dt><dd><output id="pressureLastReceived">-</output></dd></div>
-				<div><dt>觀察接收間隔（ms）</dt><dd><output id="pressureObservedInterval">-</output></dd></div>
-				<div><dt>Monitor（raw ADC）</dt><dd><output id="pressureLiveMonitor">-</output></dd></div>
-				<div><dt>Neck（raw ADC）</dt><dd><output id="pressureLiveNeck">-</output></dd></div>
-				<div><dt>Head（raw ADC）</dt><dd><output id="pressureLiveHead">-</output></dd></div>
-			</dl>
-			<p id="pressureGapPolicy" class="pressure-field-hint">資料接收間隔的品質門檻待確認，設定後將顯示於此。</p>
-			<div class="pressure-chart-wrap">
-				<canvas id="pressureRunChart" role="img" aria-label="本輪 Monitor、Neck、Head 壓力 ADC；時間 0 至 30 秒" aria-describedby="pressureChartDescription">本輪 Monitor、Neck、Head 原始 ADC 時序圖。</canvas>
-			</div>
-			<p id="pressureChartDescription" class="pressure-field-hint">橫軸為本輪經過時間 0–30 秒，縱軸為 ADC；曲線為 Monitor、Neck、Head。切換條件會顯示該條件的上輪曲線，沒有紀錄時顯示空圖；其他條件的結果仍暫存在本頁。</p>
-			<p id="pressureRunSummary" class="pressure-run-summary" role="status" aria-live="polite">尚無本輪收集結果。</p>
-			<p class="pressure-field-hint">「匯出 CSV＋線圖」會下載同名的 CSV 與 PNG，請確認兩個檔案都已保存。各條件只保留最後一輪於本頁記憶體，離開或重新整理會遺失；瀏覽器若詢問多個檔案下載，請允許。</p>
+			<section class="pressure-live-section">
+				<h4>即時壓力與記錄狀態</h4>
+				<dl class="pressure-live-grid" aria-label="本輪收集狀態與原始 ADC">
+					<div>
+						<dt>BLE 連線</dt>
+						<dd>
+							<output id="pressureBleStatus">尚未確認</output>
+						</dd>
+					</div>
+					<div>
+						<dt>本輪狀態</dt>
+						<dd>
+							<output id="pressureRunStatus">尚未開始</output>
+						</dd>
+					</div>
+					<div class="pressure-timer">
+						<dt>經過時間（秒，總長 35 秒）</dt>
+						<dd>
+							<output id="pressureElapsed">0.0</output>
+						</dd>
+					</div>
+					<div>
+						<dt>已收到的秒數</dt>
+						<dd>
+							<output id="pressureSampleCount">0</output>
+						</dd>
+					</div>
+					<div>
+						<dt>最近接收時間</dt>
+						<dd>
+							<output id="pressureLastReceived">-</output>
+						</dd>
+					</div>
+					<div>
+						<dt>觀察接收間隔（ms）</dt>
+						<dd>
+							<output id="pressureObservedInterval">-</output>
+						</dd>
+					</div>
+					<div class="pressure-reading">
+						<dt>Monitor（raw ADC）</dt>
+						<dd>
+							<output id="pressureLiveMonitor">-</output>
+						</dd>
+					</div>
+					<div class="pressure-reading">
+						<dt>Neck（raw ADC）</dt>
+						<dd>
+							<output id="pressureLiveNeck">-</output>
+						</dd>
+					</div>
+					<div class="pressure-reading">
+						<dt>Head（raw ADC）</dt>
+						<dd>
+							<output id="pressureLiveHead">-</output>
+						</dd>
+					</div>
+				</dl>
+				<details class="pressure-notes">
+					<summary>資料接收品質說明</summary>
+					<div class="pressure-detail-body">
+						<p id="pressureGapPolicy" class="pressure-field-hint">資料接收間隔的品質門檻待確認，設定後將顯示於此。</p>
+					</div>
+				</details>
+			</section>
+			<section id="pressurePosePanel" aria-label="實驗一即時雙模型分類" class="pressure-section">
+				<h4>目前睡姿分類</h4>
+				<div class="button-row" role="group" aria-label="即時睡姿辨識控制">
+					<button id="pressureClassificationStart" type="button" class="primary" aria-describedby="pressureClassificationControlStatus" disabled>開始辨識</button>
+					<button id="pressureClassificationStop" type="button" aria-describedby="pressureClassificationControlStatus" disabled>停止辨識</button>
+				</div>
+				<p id="pressureClassificationControlStatus" class="pressure-field-hint" role="status" aria-live="polite">請先連接 ESP32，再開始辨識。</p>
+				<p class="pressure-field-hint">完成兩姿勢校正後，按「開始辨識」只進入準備狀態，不顯示或累積結果。勾選本輪確認並按「開始記錄」，先啟動分類，確認後才開始本輪 35 秒；每輪有歷史模型前 6 筆有效資料為暖機。</p>
+				<div class="pose-pred-row">
+					<div class="info-block pose-model-result">
+						<div class="info-title">無歷史</div>
+						<div class="pose-model-group" data-pose-model="static-group">—</div>
+						<div class="pose-model-status" data-pose-model="static-status">尚未開始</div>
+						<div class="kv">
+							<span>Group1 機率</span>
+							<span data-pose-model="static-p1">—</span>
+						</div>
+						<div class="kv">
+							<span>Group2 機率</span>
+							<span data-pose-model="static-p2">—</span>
+						</div>
+					</div>
+					<div class="info-block pose-model-result">
+						<div class="info-title">有歷史</div>
+						<div class="pose-model-group" data-pose-model="history-group">—</div>
+						<div class="pose-model-status" data-pose-model="history-status">尚未開始</div>
+						<div class="kv">
+							<span>Group1 機率</span>
+							<span data-pose-model="history-p1">—</span>
+						</div>
+						<div class="kv">
+							<span>Group2 機率</span>
+							<span data-pose-model="history-p2">—</span>
+						</div>
+					</div>
+				</div>
+				<div class="pose-model-meta">
+					<span>
+						上次接收：
+						<span data-pose-model="updated">—</span>
+					</span>
+					<span>
+							本輪辨識有效資料：
+						<span data-pose-model="count">—</span>
+					</span>
+				</div>
+				<p class="calib-hint" data-pose-model="notice" role="status">尚未開始</p>
+				<p id="pressureClassificationStatus" class="pressure-field-hint" role="status"></p>
+				<details class="pressure-notes">
+					<summary>分類規則與記錄說明</summary>
+					<div class="pressure-detail-body">
+						<p class="pressure-field-hint">Group1＝姿勢1、2；Group2＝姿勢3、4、5。兩個模型分別判定，不合併結果，也不代表躺枕／離枕偵測。</p>
+						<p class="pressure-field-hint">直接在實驗一完成兩組裝置校正。每輪按「開始記錄」才重啟分類歷史，啟動確認後收集第 1～35 秒的裝置結果，缺筆最多額外等待 3 秒補取。35 秒內至少 30 筆有效無歷史結果即可完成，按「儲存本輪 CSV＋線圖」後再做下一條件。缺筆或無效資料照實保留於 CSV；有效不足 30 筆才需重測；等待期間不累積下一輪資料。</p>
+					</div>
+				</details>
+			</section>
+			<section class="pressure-results-section">
+				<h4>本輪壓力曲線</h4>
+				<div class="pressure-chart-wrap">
+					<canvas id="pressureRunChart" role="img" aria-label="本輪 Monitor、Neck、Head 壓力 ADC；時間 0 至 35 秒" aria-describedby="pressureChartDescription">本輪 Monitor、Neck、Head 原始 ADC 時序圖。</canvas>
+				</div>
+				<p id="pressureRunSummary" class="pressure-run-summary" role="status" aria-live="polite">尚無本輪收集結果。</p>
+				<details class="pressure-notes">
+					<summary>曲線與匯出說明</summary>
+					<div class="pressure-detail-body">
+						<p id="pressureChartDescription" class="pressure-field-hint">橫軸為裝置第 1～35 秒（位置 0～34），縱軸為 ADC；曲線為 Monitor、Neck、Head。切換條件會顯示該條件的上輪曲線，沒有紀錄時顯示空圖；其他條件的結果仍暫存在本頁。</p>
+						<p class="pressure-field-hint">「匯出 CSV＋線圖」會下載同名的 CSV 與 PNG；CSV 的 event_type 區分壓力與分類事件，兩者各保留自己的接收時間，請確認兩個檔案都已保存。各條件只保留最後一輪於本頁記憶體，離開或重新整理會遺失；瀏覽器若詢問多個檔案下載，請允許。</p>
+					</div>
+				</details>
+			</section>
 		</div>
 	</template>
 

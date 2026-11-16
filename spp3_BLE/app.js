@@ -69,7 +69,12 @@
 		const bleQueue = {
 			queue: [],
 			isProcessing: false,
-			add: function (fn) {
+			generation: 0,
+			currentKey: null,
+			clear: function () { this.queue = []; this.generation++; this.isProcessing = false; this.currentKey = null; },
+			add: function (fn, key = null) {
+				if (key && (this.currentKey === key || this.queue.some(task => task.key === key))) return;
+				fn.key = key;
 				this.queue.push(fn);
 				this.process();
 			},
@@ -78,14 +83,20 @@
 
 				this.isProcessing = true;
 				const task = this.queue.shift();
+				const generation = this.generation;
+				this.currentKey = task.key;
 
 				try {
 					await task();
 				} catch (error) {
-					console.error("BLE Queue Error:", error);
-					serial_message("Queue Error: " + error.message, "red");
+					if (generation === this.generation) {
+						console.error("BLE Queue Error:", error);
+						serial_message("Queue Error: " + error.message, "red");
+					}
 				} finally {
+					if (generation !== this.generation) return;
 					this.isProcessing = false;
+					this.currentKey = null;
 					if (this.queue.length > 0) {
 						this.process();
 					}
@@ -735,16 +746,8 @@
 						}
 					}
 				}
-			} else {
-				// Optional: Timeout to print partial data if no newline comes for a while
-				clearTimeout(serial_timer);
-				serial_timer = setTimeout(function () {
-					if (serial_readSting != "") {
-						serial_message(serial_readSting, LOG_SUCCESS_GREEN, !suppressSilentDebugResponse);
-						serial_readSting = "";
-					}
-				}, 100);
 			}
+			// BLE notification chunks may be delayed >100 ms. Only a newline ends a frame.
 		}
 
 		var chart_data_count = 0;
@@ -810,6 +813,10 @@
 			const device = event.target;
 			serial_message(`Device ${device.name} is disconnected.`, "red");
 			serial_ready = false;
+			bleQueue.clear();
+			rxCharacteristic = null;
+			serial_readSting = "";
+			clearTimeout(serial_timer);
 			resetAutoControlStartState("BLE 已斷線");
 			clearAnchorDisplay();
 			setModeAck("BLE 已斷線", "error");
@@ -2782,15 +2789,18 @@
 				return;
 			}
 			const encoder = new TextEncoder();
+			const characteristic = rxCharacteristic, generation = bleQueue.generation;
+			const key = /^(P|I|DEBUG|ANCHOR,(STATUS|GET)(,.*)?|CLASSIFY,GET(,\d+,\d+)?)$/.test(message.trim()) ? message.trim() : null;
 			bleQueue.add(async () => {
+				if (characteristic !== rxCharacteristic || generation !== bleQueue.generation) return;
 				if (!allowExperimentHeightCommand(message, options.experimentHeight === true, options.experiment02 === true, options.experiment03 === true)) return;
 				try {
-					await rxCharacteristic.writeValue(encoder.encode(message));
+					await characteristic.writeValue(encoder.encode(message));
 				} catch (error) {
-					if (experimentHeightControl) experimentHeightControl.onTransportError(error);
+					if (generation === bleQueue.generation && experimentHeightControl) experimentHeightControl.onTransportError(error);
 					throw error;
 				}
-			});
+			}, key);
 		}
 
 		function normalizeCommand(command) {
@@ -2827,7 +2837,8 @@
 				return;
 			}
 
-			sendSilentCommand("P");
+			const synchronizedTrial = experimentHubModule?.isSynchronizedRecording?.();
+			if (!synchronizedTrial) sendSilentCommand("P");
 			if (func_count++ % 2 === 0) {
 				sendSilentCommand("I");
 			}
@@ -2839,7 +2850,7 @@
 				}
 			}
 
-			if (classifyStarted) {
+			if (classifyStarted && !synchronizedTrial) {
 				sendSilentCommand("CLASSIFY,GET");
 			}
 
@@ -2956,6 +2967,8 @@
 					autoHeightPossible: predEnabled || legacyEnabled
 				}),
 				sendRapidCommand: command => sendCommand(command, { experiment03: true }),
+                setClassificationEnabled: enabled => sendModeCommands(enabled ? CONTROL_MODE.AUTO : CONTROL_MODE.MANUAL),
+                getClassificationStatus: () => controlModeAck?.textContent || '',
                 sendRapidQuery: command => sendSilentCommand(command),
                 comfortConfig: { experimentId: '02', title: '壓力補償與高度控制之舒適度比較' },
 				getComfortProfile: () => ({

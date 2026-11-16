@@ -46,7 +46,7 @@ function createExperimentHub(root, options = {}) {
         nodes.finish.hidden = Boolean(comfortSelected || rapidSelected || occupancySelected);
         nodes.export.hidden = !selected;
         nodes.export.disabled = !state || state.exportDisabled;
-        setText(nodes.export, '匯出 CSV＋線圖');
+        setText(nodes.export, '儲存本輪 CSV＋線圖');
         setText(nodes.hint, state?.hint || '實驗流程尚未設定，暫時無法開始或結束實驗。');
     }
 
@@ -158,9 +158,15 @@ function createExperimentHub(root, options = {}) {
             pressureView = template.content.firstElementChild.cloneNode(true);
             pressureExperiment = createPressureCollectionExperiment(pressureView, {
                 gapTimeoutMs: pressureConfig.gapTimeoutMs, conditions: pressureConfig.conditions,
+                sendClassificationCommand: options.sendRapidCommand,
+                sendExperimentCommand: options.sendExperimentCommand,
+                sendCalibrationQuery: options.sendRapidQuery,
+                setClassificationEnabled: options.setClassificationEnabled,
+                getClassificationStatus: options.getClassificationStatus,
                 getSystemState: options.getSystemState,
                 heightControl: options.heightControl,
                 getUserProfile: options.getUserProfile,
+                getCalibrationProfile: options.getComfortProfile,
                 getPose5Suggestion: options.getPose5Suggestion,
                 onChange: state => { if (currentExperiment === pressureId) updateControls(state); }
             });
@@ -211,7 +217,8 @@ function createExperimentHub(root, options = {}) {
     return {
         init,
         isRunning: () => pressureExperiment?.isRunning() || rapidExperiment?.isRunning() || occupancyExperiment?.isRunning() || false,
-        isComfortHolding: () => comfortExperiment?.isHolding() || rapidExperiment?.isBusy() || occupancyExperiment?.isBusy() || false,
+        isSynchronizedRecording: () => pressureExperiment?.isRunning() || false,
+        isComfortHolding: () => pressureExperiment?.isHeightSwitching() || comfortExperiment?.isHolding() || rapidExperiment?.isBusy() || occupancyExperiment?.isBusy() || false,
         receivePressure: sample => {
             pressureExperiment?.receivePressure(sample);
             comfortExperiment?.receivePressure(sample);
@@ -219,7 +226,7 @@ function createExperimentHub(root, options = {}) {
             occupancyExperiment?.receivePressure(sample);
         },
         receiveInvalidPressure: sample => occupancyExperiment?.receivePressure(sample),
-        receiveLine: (line, receipt) => { comfortExperiment?.receiveLine(line); rapidExperiment?.receiveLine(line, receipt); occupancyExperiment?.receiveLine(line); },
+        receiveLine: (line, receipt) => { pressureExperiment?.receiveLine(line, receipt); comfortExperiment?.receiveLine(line); rapidExperiment?.receiveLine(line, receipt); occupancyExperiment?.receiveLine(line); },
         onDisconnected: () => {
             pressureExperiment?.onDisconnected();
             comfortExperiment?.onDisconnected();

@@ -3012,3 +3012,83 @@ button.full {
   .rapid-calibration .rapid-subject { grid-template-columns: auto minmax(0, 1fr); }
   .rapid-subject #comfortProfile, .rapid-subject #comfortFolder, .rapid-subject #comfortFolderStatus { grid-column: 1 / -1; grid-row: auto; }
 }
+
+/* EXP01 mirrors independent device model results above the pressure chart. */
+#pressurePosePanel .pose-pred-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#pressurePosePanel .info-block { min-width: 0; }
+#pressurePosePanel .pose-model-group { font-size: 2rem; font-weight: 700; color: #183560; margin: 8px 0; }
+#pressurePosePanel .pose-model-status { margin-bottom: 12px; }
+#pressurePosePanel .pose-model-meta { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 12px; }
+@media (max-width: 780px) {
+  #pressurePosePanel .pose-pred-row { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* EXP01 presentation only; retain all existing controls and recorder behavior. */
+.pressure-experiment { gap: 16px; }
+.pressure-experiment > *,
+.pressure-experiment .pressure-detail-body > * { min-width: 0; }
+.pressure-experiment .pressure-run-settings {
+  gap: 12px;
+  padding: 12px 14px 14px;
+  background: var(--panel);
+}
+.pressure-experiment .pressure-field { gap: 6px; }
+.pressure-experiment #pressureCalibrationOverview > .comfort-section > h4 { color: inherit; }
+.pressure-experiment #pressureCalibrationOverview > .comfort-section > .pressure-field-hint {
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+.pressure-experiment #pressureCalibrationOverview .pressure-calibration-saved h4 { margin: 0 0 6px; }
+.pressure-experiment .pressure-disclosure,
+.pressure-experiment .pressure-notes {
+  min-width: 0;
+  border-top: 1px solid var(--line);
+}
+.pressure-experiment summary {
+  padding: 10px 0;
+  color: #183560;
+  cursor: pointer;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.pressure-experiment .pressure-disclosure > summary { font-weight: 600; }
+.pressure-experiment .pressure-notes > summary {
+  color: var(--muted);
+  font-size: calc(13px + var(--font-size-adjust));
+}
+.pressure-experiment summary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.pressure-experiment .pressure-detail-body {
+  display: grid;
+  gap: 12px;
+  padding: 2px 0 8px;
+  min-width: 0;
+}
+.pressure-experiment .pressure-live-section,
+.pressure-experiment .pressure-section,
+.pressure-experiment .pressure-results-section {
+  display: grid;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+.pressure-experiment h4 { margin: 0; color: #183560; }
+.pressure-experiment .pressure-live-grid { gap: 10px; }
+.pressure-experiment .pressure-live-grid > div { padding: 10px; }
+.pressure-experiment .pressure-reading dd,
+.pressure-experiment .pressure-timer dd { font-size: calc(18px + var(--font-size-adjust)); }
+.pressure-experiment #pressurePosePanel .pose-pred-row { gap: 12px; }
+.pressure-experiment #pressurePosePanel .pose-model-group { font-size: 1.5rem; }
+.pressure-experiment #pressurePosePanel .pose-model-meta { margin-top: 0; }
+.pressure-experiment #pressureClassificationStatus:empty { display: none; }
+
+@container experiment-hub (max-width: 420px) {
+  .pressure-experiment .pressure-run-settings { padding: 10px; }
+  .pressure-experiment .pressure-live-grid { gap: 8px; }
+  .pressure-experiment #pressurePosePanel .pose-pred-row { grid-template-columns: minmax(0, 1fr); }
+}

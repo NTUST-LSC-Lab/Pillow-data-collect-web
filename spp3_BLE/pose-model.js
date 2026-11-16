@@ -32,6 +32,15 @@ function parseDualPoseResult(line) {
     };
 }
 
+function parseDualPoseDiagnostic(line) {
+    const a = line.split(',').map(value => value.trim());
+    if (a.length !== 11 || a.slice(0, 3).join(',') !== 'CLASSIFY,DIAG,V1' ||
+        ![3, 4, 7, 8, 9, 10].every(i => /^\d+$/.test(a[i]) && Number(a[i]) <= 0xffffffff) ||
+        Number(a[4]) < 1 || !['0', '1'].includes(a[6]) ||
+        !['MISSED_TICK', 'NO_VALID_SCAN', 'SCAN_ALREADY_USED', 'SAMPLE_NOT_FRESH', 'SCAN_NOT_FRESH'].includes(a[5])) return null;
+    return { session: Number(a[3]), sequence: Number(a[4]), reason: a[5], line: a.join(',') };
+}
+
 function createPoseModelPanel(root, now = () => performance.now()) {
     let latest = null, receivedMs = null;
     const set = (name, text) => { const node = root.querySelector(`[data-pose-model="${name}"]`); if (node) node.textContent = text; };
@@ -77,4 +86,4 @@ function createPoseModelPanel(root, now = () => performance.now()) {
     return { receive, reset, tick };
 }
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { parseDualPoseResult, createPoseModelPanel };
+if (typeof module !== 'undefined' && module.exports) module.exports = { parseDualPoseResult, parseDualPoseDiagnostic, createPoseModelPanel };
