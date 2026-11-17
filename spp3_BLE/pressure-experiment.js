@@ -46,7 +46,6 @@ function createPressureCollectionExperiment(root, options) {
     let heightSwitch = null;
     let pose1HeightKey = '';
     const conditionOrder = ['03', '04', '01', '02'];
-    const runCalibrationKeys = new Map();
     let previousUserProfile = null;
     let pose5SuggestionKey = null;
     const calibrationDialog = field('pressureCalibrationDialog');
@@ -128,11 +127,26 @@ function createPressureCollectionExperiment(root, options) {
         delete firmwareAnchors[target];
         await requestCalibration('FEATURE,POSE,ON', parts => parts[0] === 'FEATURE' && parts[1] === 'STATUS' &&
             ['POSE', 'PRED', 'LEGACY'].every((name, i) => parts.indexOf(name) >= 0 && parts[parts.indexOf(name) + 1] === (i === 0 ? '1' : '0')));
-        let started = false, done = false, quality = null, receivedAt = null;
+        let started = false, done = false, quality = null, receivedAt = null, progress = null;
+        const progressText = () => progress
+            ? `已收到 ${progress.collected}/5 筆有效新讀值；本次已掃描 ${progress.scans} 次，讀取失敗累計：Monitor ${progress.failures[0]}、Neck ${progress.failures[1]}、Head ${progress.failures[2]} 次。`
+            : '裝置尚未提供逐通道校正進度；請確認燒錄的是 calibration_v2 配對版。';
         const anchor = await requestCalibration(`ANCHOR,START,${target},5`, (parts, receipt) => {
             if (parts.join(',') === `ANCHOR,OK,START,${target}`) throw new Error('目前韌體不支援五筆校正，請先更新 ESP32 韌體。');
             if (parts.join(',') === `ANCHOR,OK,START,${target},5`) started = true;
-            if (started && parts.join(',') === `ANCHOR,STATUS,TIMEOUT,${target}`) throw new Error('裝置校正逾時，未能在 20 秒內取得五筆有效新讀值；請確認高度已到位與壓力資料持續更新。');
+            if (started && parts.length === 11 && parts.slice(0,4).join(',') === `ANCHOR,PROGRESS,V1,${target}` &&
+                parts[5] === '5' && ['WAIT_SETTLE', 'COLLECTING', 'DONE', 'TIMEOUT'].includes(parts[6]) &&
+                [4,7,8,9,10].every(i => /^\d+$/.test(parts[i]) && Number.isSafeInteger(Number(parts[i])))) {
+                const collected = Number(parts[4]), scans = Number(parts[7]), failures = parts.slice(8).map(Number);
+                if (collected <= 5 && failures.every(count => count <= scans)) {
+                    progress = { collected, scans, failures };
+                    calibrationFeedback = progressText() + ' 請保持目前姿勢，完成後會自動關閉。';
+                    refresh();
+                }
+            }
+            if (started && parts.join(',') === `ANCHOR,STATUS,TIMEOUT,${target}`) {
+                throw new Error(`裝置校正逾時（20 秒）。${progressText()} 未保存新的校正基準。`);
+            }
             if (started && !done && parts.join(',') === `ANCHOR,STATUS,DONE,${target}`) {
                 done = true;
                 options.sendCalibrationQuery(`ANCHOR,GET,${target}`);
@@ -331,7 +345,8 @@ function createPressureCollectionExperiment(root, options) {
 
     function savedCondition(id) {
         const state = recorders.get(id).getState();
-        return state.status === 'completed' && state.exportRequested && runCalibrationKeys.get(id) === calibrationKey();
+        // Recalibration does not invalidate a saved run for the same participant/profile.
+        return state.status === 'completed' && state.exportRequested && state.metadata?.profileKey === firmwareProfileKey();
     }
 
     function unsavedCondition() {
@@ -350,7 +365,7 @@ function createPressureCollectionExperiment(root, options) {
             if (prior.exportRequested && prior.status !== 'completed') return `條件 ${previous} 已儲存，但本輪未完成：有效分類 ${prior.validSampleCount} 筆，至少需 ${prior.minimumValidSamples} 筆且完整記錄 35 秒。請切回條件 ${previous} 重測。`;
             return `請先完成並儲存條件 ${previous}；順序為姿勢五穩定 → 姿勢五微動 → 姿勢一穩定 → 姿勢一微動。`;
         }
-        if (['01', '02'].includes(selectedConditionId) && pose1HeightKey !== calibrationKey()) return '請先確認受測者離枕，按「抽乾並設定姿勢一高度」，等待裝置確認到位。';
+        if (['01', '02'].includes(selectedConditionId) && pose1HeightKey !== calibrationKey()) return '請先確認受測者離枕，按「重新執行開機流程並套用姿勢一滿分高度」，等待裝置確認到位。';
         if (!classificationArmed) return '請先按「開始辨識」準備本實驗，再勾選本輪確認並按「開始記錄」。';
         return '';
     }
@@ -369,40 +384,34 @@ function createPressureCollectionExperiment(root, options) {
         field('pressureSwitchEmpty').checked = false;
         const assertCurrent = () => {
             if (operation.cancelled || !getSystemState().connected || operation.key !== calibrationKey() || classificationCalibrationIssue()) {
-                throw new Error('高度切換已中止或校正狀態已變更，請確認後重新抽乾。');
+                throw new Error('高度切換已中止或校正狀態已變更，請確認後重新執行開機流程。');
             }
         };
-        feedback = '正在逐顆吸乾並恢復開機高度；受測者請全程保持離枕。';
+        feedback = '正在重新執行開機流程（逐顆抽氣及充氣），完成後套用姿勢一滿分高度；受測者請全程保持離枕。';
         modelPanel.reset('高度切換中；尚未記錄');
         refresh();
         try {
             await heightControl.prepare();
             assertCurrent();
-            const dryId = 'D01' + Date.now().toString(36).toUpperCase();
-            operation.id = dryId;
-            let acknowledged = false;
-            await requestCalibration(`EXP02,DRAIN,${dryId}`, parts => {
-                if (parts.join(',') === `EXP02,ACK,${dryId},DRAIN`) acknowledged = true;
-                return acknowledged && parts.join(',') === `EXP02,DRAINED,${dryId}`;
-            }, 660000);
-            assertCurrent();
-            const saved = calibrations.get(subjectId()).pose1;
-            operation.id = 'F01' + Date.now().toString(36).toUpperCase();
+            const saved = { ...calibrations.get(subjectId()).pose1 };
+            operation.id = 'B01' + Date.now().toString(36).toUpperCase();
             const id = operation.id;
-            acknowledged = false;
-            feedback = '已恢復開機高度，正在設定保存的姿勢一校正高度；請保持離枕。';
-            refresh();
-            await requestCalibration(`EXP02,START,${id},HEIGHT_DRY,${saved.head.toFixed(1)},${saved.neck.toFixed(1)},${dryId}`, parts => {
-                if (parts.join(',') === `EXP02,ACK,${id},HEIGHT_DRY`) acknowledged = true;
+            let acknowledged = false;
+            await requestCalibration(`EXP02,START,${id},STARTUP_HEIGHT,${saved.head.toFixed(1)},${saved.neck.toFixed(1)}`, parts => {
+                if (parts.join(',') === `EXP02,ACK,${id},STARTUP_HEIGHT`) acknowledged = true;
+                if (acknowledged && parts[0] === 'EXP02' && parts[1] === 'STATE' && parts[2] === id && ['NECK', 'HEAD', 'SETTLE'].includes(parts[3])) {
+                    feedback = '開機流程已完成，正在套用姿勢一滿分高度並確認到位；請保持離枕。';
+                    refresh();
+                }
                 if (!acknowledged || parts[0] !== 'EXP02' || parts[1] !== 'DONE' || parts[2] !== id) return false;
                 if (parts.length !== 7 || !parts.slice(3).every(value => value !== '' && Number.isFinite(Number(value))) ||
                     Number(parts[5]) !== saved.head || Number(parts[6]) !== saved.neck) throw new Error('裝置完成高度與姿勢一校正高度不符。');
                 return true;
-            }, 660000);
+            }, 660000, `EXP02,STATUS,${id}`);
             assertCurrent();
             const height = await heightControl.prepare();
             assertCurrent();
-            if (!height.ready || height.head !== saved.head || height.neck !== saved.neck) throw new Error('姿勢一高度核對失敗，請重新抽乾設定。');
+            if (!height.ready || height.head !== saved.head || height.neck !== saved.neck) throw new Error('姿勢一高度核對失敗，請重新執行開機流程。');
             for (const target of ['BSHS', 'BLHL']) {
                 const anchor = await requestCalibration(`ANCHOR,GET,${target}`, parts => parts[0] === 'ANCHOR' && parts[1] === 'OK' && parts[2] === target);
                 if (anchor.slice(3).join(',') !== firmwareAnchors[target]) throw new Error('高度切換後校正基準不符，請重新校正。');
@@ -525,7 +534,7 @@ function createPressureCollectionExperiment(root, options) {
             return [`${channel} 本輪設定 ${entered}，裝置目前 ${actual}`];
         });
         return mismatches.length
-            ? `本輪高度與裝置回報不一致：${mismatches.join('；')}。請確認所選條件及對應校正高度；姿勢一請使用「抽乾並設定姿勢一高度」，不要改填數字代替裝置調整。`
+            ? `本輪高度與裝置回報不一致：${mismatches.join('；')}。請確認所選條件及對應校正高度；姿勢一請使用「重新執行開機流程並套用姿勢一滿分高度」，不要改填數字代替裝置調整。`
             : '';
     }
 
@@ -603,14 +612,15 @@ function createPressureCollectionExperiment(root, options) {
     }
 
     function calibrationAnchorText(saved) {
+        const displaySample = saved.displaySample || saved.sample;
         return [
             `控制高度：Head ${saved.head.toFixed(1)} cm / Neck ${saved.neck.toFixed(1)} cm`,
-            '模型校正基準：五筆有效新讀值平均（ESP32 讀回）',
+            saved.displaySample ? '校正當下壓力：按下「校正完成」時的即時讀值' : '模型校正基準：五筆有效新讀值平均（ESP32 讀回）',
             ...Object.keys(COMFORT_CHANNELS).map(channel => {
-                const adc = saved.sample[channel + '_adc'], spec = COMFORT_CHANNELS[channel];
-                return `${spec.label}：${adc.toLocaleString('en-US', { maximumSignificantDigits: 21 })} ADC / ${(spec.slope * adc + spec.offset).toFixed(4)} kPa`;
+                const adc = displaySample[channel + '_adc'], spec = COMFORT_CHANNELS[channel];
+                return `${spec.label}：${adc} ADC / ${(spec.slope * adc + spec.offset).toFixed(4)} kPa`;
             }),
-            saved.quality === 'HIGH_VARIATION' ? '提示：五筆間壓力波動較大；已保存此平均值，可確認姿勢後重測。' : '五筆間壓力波動在原穩定範圍內。'
+            saved.quality === 'HIGH_VARIATION' ? '提示：裝置五筆模型基準波動較大，可確認姿勢後重測。' : '裝置五筆模型基準波動在原穩定範圍內。'
         ];
     }
 
@@ -689,7 +699,8 @@ function createPressureCollectionExperiment(root, options) {
         const snapshot = {
             subject: subjectId(), head: height.head, neck: height.neck,
             targetHead: height.targetHead, targetNeck: height.targetNeck,
-            profile: readCalibrationProfile()
+            profile: readCalibrationProfile(),
+            displaySample: { ...latestSample }
         };
         calibrationPending = true;
         calibrationFeedback = '正在收取按鈕後五筆有效新讀值並計算平均，請維持目前姿勢並自然呼吸，完成後會自動關閉。';
@@ -701,11 +712,18 @@ function createPressureCollectionExperiment(root, options) {
             records[pose] = { ...snapshot, ...anchor };
             calibrations.set(subjectId(), records);
             firmwareAnchors[anchorTarget(pose)] = anchor.firmwareAnchor;
+            if (pose === 'pose1' && savedCondition('03') && savedCondition('04') && !classificationCalibrationIssue()) {
+                // Capture already verified the new pose1 height against the device.
+                pose1HeightKey = calibrationKey();
+            }
             if (conditions.find(item => item.id === selectedConditionId)?.actual_pose === pose) fillRunHeightsFromCalibration();
-            storageFeedback = classificationCalibrationIssue() || '兩姿勢裝置辨識基準已完成。先做姿勢五穩定；按「開始辨識」準備，再按「開始記錄」開始 35 秒。';
+            const hasProgress = conditionOrder.some(savedCondition);
+            storageFeedback = classificationCalibrationIssue() || (hasProgress
+                ? '校正基準已更新，先前完成並儲存的進度保留。請選擇要繼續或重測的條件，重新準備辨識並確認本輪高度。'
+                : '兩姿勢裝置辨識基準已完成。先做姿勢五穩定；按「開始辨識」準備，再按「開始記錄」開始 35 秒。');
             calibrationPending = false;
             closeCalibration();
-            if (pose === 'pose5' && !classificationCalibrationIssue()) selectCondition('03');
+            if (pose === 'pose5' && !classificationCalibrationIssue() && !hasProgress) selectCondition('03');
         } catch (error) {
             resetCalibrationConfirmation();
             calibrationAfter = Infinity;
@@ -747,11 +765,11 @@ function createPressureCollectionExperiment(root, options) {
         const name = `${subjectId()}_01_00_校正總覽.svg`;
         const report = {
             title: `${subjectId()}｜實驗 01 校正總覽`,
-            details: ['校正值為 ESP32 保存並供模型使用的五筆有效新讀值平均；ADC 保留裝置精度，kPa 顯示至小數四位。',
+            details: ['以下壓力為按下「校正完成」時的即時讀值，與校正視窗相同；模型另外使用 ESP32 保存的五筆平均。',
                 ...['pose1', 'pose5'].flatMap(pose => {
                     const saved = records[pose];
                     return [pose === 'pose1' ? '姿勢一 · 仰躺' : '姿勢五 · 正側躺',
-                        calibrationProfileText(saved.profile), `裝置基準讀回時間：${saved.sample.timestamp_iso}`,
+                        calibrationProfileText(saved.profile), `壓力讀值時間：${(saved.displaySample || saved.sample).timestamp_iso}`,
                         `目標高度：Head ${saved.targetHead.toFixed(1)} cm / Neck ${saved.targetNeck.toFixed(1)} cm`,
                         ...calibrationAnchorText(saved)];
                 })], sections: []
@@ -884,7 +902,7 @@ function createPressureCollectionExperiment(root, options) {
         setText('pressureWorkflowStatus', `完成並儲存 ${completed} / 4。` + (heightSwitch ? '正在切換高度，請保持離枕。'
             : completed === 4 ? '四個條件皆已完成並儲存。'
             : savedCondition('03') && savedCondition('04') && pose1HeightKey !== calibrationKey()
-                ? '下一步：離枕，抽乾並設定姿勢一高度。'
+                ? '下一步：離枕，重新執行開機流程並套用姿勢一滿分高度。'
                 : '每輪記錄完整 35 秒，至少 30 筆有效分類；儲存本輪後再進行下一條件。'));
         if (priorStatus === 'recording' && !running) confirmed.checked = false;
         priorStatus = state.status;
@@ -930,6 +948,8 @@ function createPressureCollectionExperiment(root, options) {
             running, hint,
             startDisabled: running || Boolean(calibrationIssue) || !system.connected || !freshStream() || !form.checkValidity() ||
                 (state.samples.length > 0 && !state.exportRequested) || typeof Chart !== 'function',
+            retryDisabled: running || calibrationBusy() || calibrationDialog.open || !state.runId ||
+                (state.samples.length > 0 && !state.exportRequested),
             finishDisabled: !running, exportDisabled: running || calibrationBusy() || calibrationDialog.open || state.samples.length === 0
         };
         onChange(lastUiState);
@@ -956,9 +976,14 @@ function createPressureCollectionExperiment(root, options) {
                 head_height_cm: Number(field('pressureHeadHeight').value),
                 neck_height_cm: Number(field('pressureNeckHeight').value),
                 test_condition: condition.test_condition, height_source: 'operator',
-                notes: ''
+                profileKey: firmwareProfileKey(),
+                notes: 'EXP01 calibration=' + JSON.stringify({
+                    profile: readCalibrationProfile(),
+                    BSHS: firmwareAnchors.BSHS, BLHL: firmwareAnchors.BLHL,
+                    pose1CapturedAt: calibrations.get(subjectId())?.pose1?.sample.timestamp_iso,
+                    pose5CapturedAt: calibrations.get(subjectId())?.pose5?.sample.timestamp_iso
+                })
             });
-            runCalibrationKeys.set(condition.id, calibrationKey());
             startClassification();
         } catch (error) { feedback = error.message; }
         refresh();
@@ -967,6 +992,18 @@ function createPressureCollectionExperiment(root, options) {
     function endEarly() {
         feedback = '';
         recorder.endEarly();
+        refresh();
+    }
+
+    function retryCurrent() {
+        if (refresh().retryDisabled) return;
+        if (!window.confirm(`重新測試條件 ${selectedConditionId}：請確認原本的 CSV 與 PNG 已保存。本頁只會清空此條件的結果與完成狀態，其他條件保留。是否繼續？`)) return;
+        if (refresh().retryDisabled) return;
+        recorder = createPressureRecorder({ durationMs, minimumValidSamples, gapTimeoutMs });
+        recorders.set(selectedConditionId, recorder);
+        fillRunHeightsFromCalibration();
+        modelPanel.reset('已準備重測；按「開始記錄」後才開始新一輪');
+        feedback = '';
         refresh();
     }
 
@@ -1002,7 +1039,7 @@ function createPressureCollectionExperiment(root, options) {
             storagePending = false;
             const next = { '03': '04', '01': '02' }[m.condition_id];
             if (next && savedCondition(m.condition_id) && !savedCondition(next)) selectCondition(next);
-            if (m.condition_id === '04' && savedCondition('04')) feedback += ' 請先離枕，再抽乾並設定姿勢一高度。';
+            if (m.condition_id === '04' && savedCondition('04')) feedback += ' 請先離枕，再重新執行開機流程並套用姿勢一滿分高度。';
         } catch (error) { feedback = `匯出失敗，原資料仍保留：${error.message}`; }
         finally { storagePending = false; }
         refresh();
@@ -1127,7 +1164,7 @@ function createPressureCollectionExperiment(root, options) {
     refresh();
 
     return {
-        start, endEarly, exportCsv, receivePressure, receiveLine, onDisconnected, refresh,
+        start, retryCurrent, endEarly, exportCsv, receivePressure, receiveLine, onDisconnected, refresh,
         isRunning: () => recorder.getState().status === 'recording',
         isHeightSwitching: () => Boolean(heightSwitch),
         isBusy: () => recorder.getState().status === 'recording' || calibrationDialog.open || calibrationBusy(),

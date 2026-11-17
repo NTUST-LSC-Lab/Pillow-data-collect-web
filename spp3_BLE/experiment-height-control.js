@@ -361,7 +361,7 @@ function createExperimentHeightControl(options) {
             return true;
         }
         const commands = String(command).trim().toUpperCase().split(/[\r\n]+/);
-        const readOnly = /^(P|I|DEBUG|FEATURE,STATUS|GET,INFT,ALL|ANCHOR,(STATUS|GET)(,.*)?|CLASSIFY,GET(,\d+,\d+)?|PRED,GET|SYNCTIME,.*|RGB,.*)$/;
+        const readOnly = /^(P|I|DEBUG|FEATURE,STATUS|GET,INFT,ALL|ANCHOR,(STATUS|GET)(,.*)?|CLASSIFY,GET(,\d+,\d+)?|PRED,GET|EXP02,STATUS,[A-Z0-9_-]{1,16}|SYNCTIME,.*|RGB,.*)$/;
         const stopOnly = /^(PRED,STOP|CLASSIFY,STOP|FEATURE,(PRED|LEGACY),OFF|MANUAL,STOP)$/;
         if (commands.every(value => readOnly.test(value))) return true;
         if (commands.every(value => stopOnly.test(value))) {

@@ -46,6 +46,8 @@ function createExperimentHub(root, options = {}) {
         nodes.finish.hidden = Boolean(comfortSelected || rapidSelected || occupancySelected);
         nodes.export.hidden = !selected;
         nodes.export.disabled = !state || state.exportDisabled;
+        nodes.retry.hidden = !selected;
+        nodes.retry.disabled = !selected || !state || state.retryDisabled;
         setText(nodes.export, '儲存本輪 CSV＋線圖');
         setText(nodes.hint, state?.hint || '實驗流程尚未設定，暫時無法開始或結束實驗。');
     }
@@ -130,6 +132,7 @@ function createExperimentHub(root, options = {}) {
             hint: root.querySelector('#experimentHint'),
             start: root.querySelector('#experimentStart'),
             finish: root.querySelector('#experimentFinish'),
+            retry: root.querySelector('#experimentRetry'),
             export: root.querySelector('#experimentExport')
         };
         if (Object.values(nodes).some(node => !node)) {
@@ -202,6 +205,9 @@ function createExperimentHub(root, options = {}) {
         });
         nodes.export.addEventListener('click', () => {
             if (currentExperiment === pressureId) pressureExperiment?.exportCsv();
+        });
+        nodes.retry.addEventListener('click', () => {
+            if (currentExperiment === pressureId) pressureExperiment?.retryCurrent();
         });
         window.addEventListener('beforeunload', event => {
             if (pressureExperiment?.needsLeaveProtection() || comfortExperiment?.needsLeaveProtection() || rapidExperiment?.needsLeaveProtection() || occupancyExperiment?.needsLeaveProtection()) {
