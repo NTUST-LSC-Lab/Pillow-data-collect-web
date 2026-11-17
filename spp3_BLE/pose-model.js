@@ -41,8 +41,9 @@ function parseDualPoseDiagnostic(line) {
     return { session: Number(a[3]), sequence: Number(a[4]), reason: a[5], line: a.join(',') };
 }
 
-function createPoseModelPanel(root, now = () => performance.now()) {
+function createPoseModelPanel(root, now = () => performance.now(), options = {}) {
     let latest = null, receivedMs = null;
+    let previousValid = {};
     const set = (name, text) => { const node = root.querySelector(`[data-pose-model="${name}"]`); if (node) node.textContent = text; };
     function blank(status) {
         for (const prefix of ['static','history']) {
@@ -50,28 +51,36 @@ function createPoseModelPanel(root, now = () => performance.now()) {
         }
     }
     function reset(message = '尚未開始') {
-        latest = null; receivedMs = null; blank(message);
+        latest = null; receivedMs = null; previousValid = {}; blank(message);
         set('updated', '—'); set('count', '—'); set('notice', message);
     }
     function receive(line) {
         const result = parseDualPoseResult(line);
-        if (!result) { blank('資料格式不符'); set('notice', '分類資料格式不符，請確認使用 spp3_BLE_v4_model 韌體。'); return false; }
+        if (!result) { previousValid = {}; blank('資料格式不符'); set('notice', '分類資料格式不符，請確認使用 spp3_BLE_v4_model 韌體。'); return false; }
         if (latest) {
             const difference = result.session === latest.session
                 ? (result.sequence - latest.sequence) >>> 0 : (result.session - latest.session) >>> 0;
             if (!difference || difference >= 0x80000000) return false;
         }
+        if (latest && result.session !== latest.session) previousValid = {};
         latest = result; receivedMs = now();
         for (const [prefix, model] of [['static', result.staticModel], ['history', result.historyModel]]) {
-            set(`${prefix}-group`, model.group === 'GROUP1' ? 'Group1' : model.group === 'GROUP2' ? 'Group2' : '—');
-            set(`${prefix}-p1`, model.p1 === null ? '—' : `${(model.p1 * 100).toFixed(2)}%`);
-            set(`${prefix}-p2`, model.p2 === null ? '—' : `${(model.p2 * 100).toFixed(2)}%`);
-            set(`${prefix}-status`, model.status === 'OK' ? '有效結果' : model.status === 'WARMUP'
-                ? `暖機中（${result.historyCount + 1}/6）` : '本秒讀值無效');
+            if (options.holdInvalid && model.status === 'OK') previousValid[prefix] = { model, sequence: result.sequence };
+            const held = options.holdInvalid && model.status === 'INVALID' ? previousValid[prefix] : null;
+            const displayed = held ? held.model : model;
+            set(`${prefix}-group`, displayed.group === 'GROUP1' ? 'Group1' : displayed.group === 'GROUP2' ? 'Group2' : '—');
+            set(`${prefix}-p1`, displayed.p1 === null ? '—' : `${(displayed.p1 * 100).toFixed(2)}%`);
+            set(`${prefix}-p2`, displayed.p2 === null ? '—' : `${(displayed.p2 * 100).toFixed(2)}%`);
+            set(`${prefix}-status`, held ? `沿用第 ${held.sequence} 秒有效結果（${(result.sequence - held.sequence) >>> 0} 秒前）`
+                : model.status === 'OK' ? '有效結果' : model.status === 'WARMUP'
+                ? `暖機中（${result.historyCount + 1}/6）`
+                : options.holdInvalid ? '本秒讀值無效；等待第一筆有效結果' : '本秒讀值無效');
         }
         set('updated', new Date().toLocaleTimeString());
         set('count', `${result.historyCount + (result.staticModel.status === 'OK' ? 1 : 0)} 筆`);
-        set('notice', result.staticModel.status === 'INVALID' ? '本秒未取得有效掃描；保留先前歷史，不沿用上次分類。'
+        set('notice', result.staticModel.status === 'INVALID' ? options.holdInvalid
+                ? previousValid.static ? '本秒未取得有效掃描；畫面沿用先前有效結果，不增加有效筆數或模型歷史。' : '本秒未取得有效掃描；尚無可沿用結果，等待第一筆有效分類。'
+                : '本秒未取得有效掃描；保留先前歷史，不沿用上次分類。'
             : result.historyModel.status === 'WARMUP' ? '前 6 筆有效資料供歷史暖機，第 7 筆開始輸出有歷史結果。'
             : '兩模型使用同一筆壓力，分別顯示結果。');
         if (result.dropped) set('notice', `裝置累積未送達 ${result.dropped} 筆結果；目前顯示最新收到的一筆。`);

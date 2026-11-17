@@ -58,7 +58,7 @@ function createPressureCollectionExperiment(root, options) {
     let storageFeedback = '';
     const canPickFolder = typeof window.showDirectoryPicker === 'function';
 
-    const modelPanel = createPoseModelPanel(field('pressurePosePanel'));
+    const modelPanel = createPoseModelPanel(field('pressurePosePanel'), () => performance.now(), { holdInvalid: true });
     let classificationRequest = null, classificationRun = null, lastModelSession = null;
 
     const firmwareProfileKey = () => JSON.stringify([subjectId(), readCalibrationProfile()]);

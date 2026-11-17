@@ -940,6 +940,7 @@ https://fustyles.github.io/webduino/WebSerial.html
 				</div>
 				<p id="pressureClassificationControlStatus" class="pressure-field-hint" role="status" aria-live="polite">請先連接 ESP32，再開始辨識。</p>
 				<p class="pressure-field-hint">完成兩姿勢校正後，按「開始辨識」只進入準備狀態，不顯示或累積結果。勾選本輪確認並按「開始記錄」，先啟動分類，確認後才開始本輪 35 秒；每輪有歷史模型前 6 筆有效資料為暖機。</p>
+				<p class="pressure-field-hint">本秒讀值無效時，畫面沿用本輪上一筆有效分類與機率，並標示來源秒數；尚無有效結果時繼續等待。CSV 保留原始無效狀態，沿用顯示不增加有效筆數或模型歷史。</p>
 				<div class="pose-pred-row">
 					<div class="info-block pose-model-result">
 						<div class="info-title">無歷史</div>
