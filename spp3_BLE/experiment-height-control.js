@@ -113,6 +113,10 @@ function createExperimentHeightControl(options) {
         };
     }
     function poll() {
+        if (options.isPollingPaused?.()) {
+            lastPollMs = -Infinity; // Refresh immediately after the synchronized trial ends.
+            return;
+        }
         if (!connected() || (!prepared && !pending) || now() - lastPollMs < pollMs) return;
         lastPollMs = now();
         options.sendQuery('DEBUG');

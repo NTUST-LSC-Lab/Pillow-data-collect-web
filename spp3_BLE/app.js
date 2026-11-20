@@ -2793,6 +2793,7 @@
 			const key = /^(P|I|DEBUG|ANCHOR,(STATUS|GET)(,.*)?|CLASSIFY,GET(,\d+,\d+)?)$/.test(message.trim()) ? message.trim() : null;
 			bleQueue.add(async () => {
 				if (characteristic !== rxCharacteristic || generation !== bleQueue.generation) return;
+				if (options.backgroundStatus && experimentHubModule?.isSynchronizedRecording?.()) return;
 				if (!allowExperimentHeightCommand(message, options.experimentHeight === true, options.experiment02 === true, options.experiment03 === true)) return;
 				try {
 					await characteristic.writeValue(encoder.encode(message));
@@ -2827,7 +2828,9 @@
 			if (!rxCharacteristic || !serial_ready) {
 				return;
 			}
-			sendCommand(cmdStr, { track: false, show: false });
+			const backgroundStatus = /^(DEBUG|I)$/.test(cmdStr.trim());
+			if (backgroundStatus && experimentHubModule?.isSynchronizedRecording?.()) return;
+			sendCommand(cmdStr, { track: false, show: false, backgroundStatus });
 		}
 
 		var func_count = 0;
@@ -2839,7 +2842,7 @@
 
 			const synchronizedTrial = experimentHubModule?.isSynchronizedRecording?.();
 			if (!synchronizedTrial) sendSilentCommand("P");
-			if (func_count++ % 2 === 0) {
+			if (!synchronizedTrial && func_count++ % 2 === 0) {
 				sendSilentCommand("I");
 			}
 
@@ -2855,7 +2858,7 @@
 			}
 
 			const nowMs = Date.now();
-			if (nowMs - lastHeightDebugPollMs >= HEIGHT_DEBUG_POLL_MS) {
+			if (!synchronizedTrial && nowMs - lastHeightDebugPollMs >= HEIGHT_DEBUG_POLL_MS) {
 				lastHeightDebugPollMs = nowMs;
 				requestSilentDebugSnapshot();
 			}
@@ -2939,6 +2942,7 @@
 			experimentHeightControl = createExperimentHeightControl({
 				isConnected: () => Boolean(serial_ready && bluetoothDevice?.gatt?.connected),
 				isRecording: () => Boolean(experimentHubModule?.isRunning()),
+				isPollingPaused: () => Boolean(experimentHubModule?.isSynchronizedRecording()),
 				isHolding: () => Boolean(experimentHubModule?.isComfortHolding()),
 				sendCommand: command => sendCommand(command, { experimentHeight: true }),
 				sendQuery: command => command === 'DEBUG' ? requestSilentDebugSnapshot() : sendSilentCommand(command),

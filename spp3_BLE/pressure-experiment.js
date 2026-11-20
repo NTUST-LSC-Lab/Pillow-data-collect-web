@@ -612,12 +612,11 @@ function createPressureCollectionExperiment(root, options) {
     }
 
     function calibrationAnchorText(saved) {
-        const displaySample = saved.displaySample || saved.sample;
         return [
             `控制高度：Head ${saved.head.toFixed(1)} cm / Neck ${saved.neck.toFixed(1)} cm`,
-            saved.displaySample ? '校正當下壓力：按下「校正完成」時的即時讀值' : '模型校正基準：五筆有效新讀值平均（ESP32 讀回）',
+            '模型校正基準：各通道五筆有效新讀值平均（ESP32 讀回）',
             ...Object.keys(COMFORT_CHANNELS).map(channel => {
-                const adc = displaySample[channel + '_adc'], spec = COMFORT_CHANNELS[channel];
+                const adc = saved.sample[channel + '_adc'], spec = COMFORT_CHANNELS[channel];
                 return `${spec.label}：${adc} ADC / ${(spec.slope * adc + spec.offset).toFixed(4)} kPa`;
             }),
             saved.quality === 'HIGH_VARIATION' ? '提示：裝置五筆模型基準波動較大，可確認姿勢後重測。' : '裝置五筆模型基準波動在原穩定範圍內。'
@@ -699,8 +698,7 @@ function createPressureCollectionExperiment(root, options) {
         const snapshot = {
             subject: subjectId(), head: height.head, neck: height.neck,
             targetHead: height.targetHead, targetNeck: height.targetNeck,
-            profile: readCalibrationProfile(),
-            displaySample: { ...latestSample }
+            profile: readCalibrationProfile()
         };
         calibrationPending = true;
         calibrationFeedback = '正在收取按鈕後五筆有效新讀值並計算平均，請維持目前姿勢並自然呼吸，完成後會自動關閉。';
@@ -765,11 +763,11 @@ function createPressureCollectionExperiment(root, options) {
         const name = `${subjectId()}_01_00_校正總覽.svg`;
         const report = {
             title: `${subjectId()}｜實驗 01 校正總覽`,
-            details: ['以下壓力為按下「校正完成」時的即時讀值，與校正視窗相同；模型另外使用 ESP32 保存的五筆平均。',
+            details: ['以下壓力為 ESP32 實際保存並供模型使用的各通道五筆有效新讀值平均。',
                 ...['pose1', 'pose5'].flatMap(pose => {
                     const saved = records[pose];
                     return [pose === 'pose1' ? '姿勢一 · 仰躺' : '姿勢五 · 正側躺',
-                        calibrationProfileText(saved.profile), `壓力讀值時間：${(saved.displaySample || saved.sample).timestamp_iso}`,
+                        calibrationProfileText(saved.profile), `壓力讀值時間：${saved.sample.timestamp_iso}`,
                         `目標高度：Head ${saved.targetHead.toFixed(1)} cm / Neck ${saved.targetNeck.toFixed(1)} cm`,
                         ...calibrationAnchorText(saved)];
                 })], sections: []
