@@ -86,7 +86,11 @@ function comfortProfileText(profile) {
 function comfortAnchorText(anchor) {
     return anchor ? [
         `控制高度：Head ${anchor.head.toFixed(1)} cm / Neck ${anchor.neck.toFixed(1)} cm`,
-        ...Object.keys(COMFORT_CHANNELS).map(ch => `${COMFORT_CHANNELS[ch].label}：${comfortPressure(ch, anchor.pressure[ch + '_adc'])}`)
+        ...Object.keys(COMFORT_CHANNELS).map(ch => {
+            const adc = anchor.pressure[ch + '_adc'], spec = COMFORT_CHANNELS[ch];
+            return `${spec.label}：${anchor.sampleCount === 5 ? `${adc} ADC / ${(spec.slope * adc + spec.offset).toFixed(4)} kPa` : comfortPressure(ch, adc)}`;
+        }),
+        ...(anchor.sampleCount === 5 ? ['ESP32 五筆模型平均', anchor.quality === 'HIGH_VARIATION' ? '提示：五筆波動較大，可確認姿勢後重測。' : '五筆波動在原穩定範圍內。'] : [])
     ] : ['尚未校正'];
 }
 
@@ -236,6 +240,10 @@ function createComfortExperiment(root, options) {
     const height = options.heightControl;
     const records = new Map();
     const dialog = node('Calibration');
+    if (options.calibrationDescription) {
+        const note = document.createElement('p'); note.className = 'pressure-field-hint';
+        note.textContent = options.calibrationDescription; dialog.append(note);
+    }
     const canPickFolder = typeof window.showDirectoryPicker === 'function';
     let folder = null;
     let pose = '1', calibration = null, trial = null, latest = null, busy = false;
@@ -592,18 +600,21 @@ function createComfortExperiment(root, options) {
         if (node('CalSave').disabled || JSON.stringify(profile()) !== JSON.stringify(calibration.profile)) {
             calStatus = '基本資料已變更，請關閉並重新開啟校正。'; refresh(); return;
         }
+        let capturedAnchor = null;
         if (options.beforeCalibrationSave) {
             let captured = false;
             calStatus = '正在同步分類校正基準，請維持目前姿勢並自然呼吸…';
             await operate(async () => {
-                await options.beforeCalibrationSave(calibration);
+                capturedAnchor = await options.beforeCalibrationSave(calibration, text => { calStatus = text; refresh(); });
+                if (!capturedAnchor || calibration.subject !== node('Subject').value ||
+                    JSON.stringify(profile()) !== JSON.stringify(calibration.profile)) throw new Error('校正基準或受測者資料已變更，請重新開啟校正。');
                 captured = true;
-            }, message => { calStatus = message; });
+            }, message => { calStatus = message; node('CalStable').checked = false; });
             if (!captured || !sameProfile()) return;
         }
         const state = height.getState();
         const rec = selection() || { anchors: {}, trials: {}, profile: calibration.profile };
-        rec.anchors[calibration.pose] = { head: state.head, neck: state.neck, pressure: { ...latest } };
+        rec.anchors[calibration.pose] = capturedAnchor || { head: state.head, neck: state.neck, pressure: { ...latest } };
         records.set(calibration.subject, rec);
         options.onCalibrationChanged?.();
         status = bothAnchors() ? (options.calibrationOnly ? '兩個基準已保存，請截圖並儲存校正總覽。' : '兩個基準已保存。選好儲存資料夾後即可截圖，並可開始方法測試。') : '基準已保存，請完成另一個姿勢。';
@@ -626,7 +637,7 @@ function createComfortExperiment(root, options) {
         operate(async () => {
             const saved = await saveComfortImage(folder, name, {
                 title: `${id}｜實驗 ${options.experimentId || '02'} 校正總覽`,
-                details: [comfortProfileText(rec.profile), 'Monitor 固定 14.5 秒。校正值為滿意度 10 分時的單筆快照。',
+                details: [comfortProfileText(rec.profile), options.calibrationDescription || 'Monitor 固定 14.5 秒。校正值為滿意度 10 分時的單筆快照。',
                     ...['1', '5'].flatMap(p => [`${COMFORT_POSES[p].label}｜${options.formatTimestamp ? options.formatTimestamp(rec.anchors[p].pressure.timestamp_iso) : rec.anchors[p].pressure.timestamp_iso}`, ...comfortAnchorText(rec.anchors[p])])],
                 sections: []
             });

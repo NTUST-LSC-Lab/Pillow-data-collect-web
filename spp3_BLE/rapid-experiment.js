@@ -57,10 +57,10 @@ function createRapidExperiment(root, options) {
           <div class="rapid-detail-body">
             <label class="rapid-run-picker">查看輪次 <select data-rapid="view-run" aria-label="查看記錄輪次"></select></label>
             <div class="pressure-chart-wrap"><canvas data-rapid="chart" aria-label="20 秒 Monitor、Neck、Head ADC 曲線"></canvas></div>
-            <h4>第1～20秒分類結果</h4>
-            <div class="comfort-trial-table"><table><thead><tr><th>秒</th><th>無歷史</th><th>Group1機率</th><th>Group2機率</th><th>有歷史</th><th>Group1機率</th><th>Group2機率</th></tr></thead><tbody data-rapid="seconds"></tbody></table></div>
-            <p class="pressure-field-hint">Group1＝姿勢1、2；Group2＝姿勢3、4、5。每秒採該接收區間最後一筆新序號結果；歷史前6筆有效資料暖機，缺資料不補值。實際睡姿由操作者選擇，模型不細分五種姿勢。</p>
-            <h4>各輪第3、5、10、15、20秒比較</h4>
+            <h4 class="rapid-seconds-title">第1～20秒分類結果</h4>
+            <div class="comfort-trial-table rapid-seconds-table"><table><thead><tr><th>秒</th><th>無歷史</th><th>Group1機率</th><th>Group2機率</th><th>有歷史</th><th>Group1機率</th><th>Group2機率</th></tr></thead><tbody data-rapid="seconds"></tbody></table></div>
+            <p class="pressure-field-hint">Group1＝姿勢1、2；Group2＝姿勢3、4、5。每秒採接收區間最後一筆新序號結果。收到 INVALID 時，畫面沿用同輪、同分類工作各模型最近的有效分類與機率，並標示來源秒數；暖機、缺訊息或尚無有效結果時不補值。壓力、CSV及結果SVG仍保留原始資料，沿用不計有效筆數。實際睡姿由操作者選擇，模型不細分五種姿勢。</p>
+            <h4>各輪第3、5、10、15、20秒比較（畫面沿用會標示）</h4>
             <div class="comfort-trial-table"><table><thead><tr><th>實際睡姿／輪次／模型</th><th>3 秒</th><th>5 秒</th><th>10 秒</th><th>15 秒</th><th>20 秒</th><th>狀態</th></tr></thead><tbody data-rapid="results"></tbody></table></div>
           </div>
         </details>
@@ -71,14 +71,19 @@ function createRapidExperiment(root, options) {
             <p class="pressure-field-hint">儲存逐秒分類CSV、壓力與分類事件CSV、結果總覽SVG及每輪壓力曲線PNG。壓力與分類保留各自時間；兩模型使用的ADC保存在分類列。重測新增輪次，離開或重新整理前請先儲存。</p>
           </div>
         </details>`;
-    root.append(setup, section);
-    const n = id => section.querySelector(`[data-rapid="${id}"]`);
+    const records = section.querySelector('[data-rapid-disclosure="records"]');
+    records.classList.add('rapid-records');
+    root.append(setup, section, records);
+    const n = id => root.querySelector(`[data-rapid="${id}"]`);
     const info = () => calibration?.getCalibration();
     const key = () => { const c = info(); return c?.valid ? JSON.stringify([c.subject, c.record.profile, c.record.anchors]) : ''; };
     const profileKey = c => JSON.stringify([c.subject, c.record?.profile || options.getUserProfile()]);
     const active = () => Boolean(current?.recording || current?.awaitingConfirmation);
     const locked = () => busy || active();
-    const cell = (run, second, kind) => rapidModelValues(rapidSecondRows(run)[second - 1].event, kind)[0];
+    const cell = (run, second, kind, display = false) => {
+        const event = rapidSecondRows(run)[second - 1].event;
+        return (display ? rapidDisplayModelValues(run, event, kind) : rapidModelValues(event, kind))[0];
+    };
     const pressureFresh = () => latest && Number.isFinite(latest.receivedMonotonicMs) && now() >= latest.receivedMonotonicMs && now() - latest.receivedMonotonicMs < 3000;
     const viewedRun = () => subjectRuns().find(r => r.id === viewedRunId) || subjectRuns().at(-1);
     function request(command, accept, timeout = 15000, poll) {
@@ -87,7 +92,7 @@ function createRapidExperiment(root, options) {
             const timer = setTimeout(() => {
                 if (pending?.id) options.sendExperimentCommand(`EXP02,STOP,${pending.id}`);
                 drained = null;
-                fail('等待裝置回覆逾時，已送出停止指令；請確認裝置狀態後重新抽乾。');
+                fail(pending?.id ? '等待裝置回覆逾時，已送出停止指令；請確認裝置狀態後重新抽乾。' : '等待裝置回覆逾時，請重新確認連線與裝置狀態。');
             }, timeout);
             pending = { accept, resolve, reject, timer, poll, family: command.split(',')[0], id: command.startsWith('EXP02,') ? command.split(',')[2] : null };
             try { if (command.startsWith('EXP02,')) options.sendExperimentCommand(command); else if (/^ANCHOR,GET,/.test(command)) query(command); else send(command); } catch (e) { fail(e.message); }
@@ -105,25 +110,65 @@ function createRapidExperiment(root, options) {
             firmwareProfile = pk; firmwareAnchors = {};
         }
     }
-    async function captureFirmwareAnchor(cal) {
+    async function captureFirmwareAnchor(cal, report) {
         preparedKey = overviewKey = '';
+        drained = null;
         await syncFirmwareProfile(cal);
         const target = cal.pose === '1' ? 'BSHS' : 'BLHL';
-        // POSE enable does not enable PRED. prepare() already disabled PRED/legacy.
-        await request('FEATURE,POSE,ON', a => a[0] === 'FEATURE' && a[1] === 'STATUS' && a[a.indexOf('POSE') + 1] === '1' && a[a.indexOf('PRED') + 1] === '0' && a[a.indexOf('LEGACY') + 1] === '0');
-        let started = false, done = false;
-        let anchor;
-        try { anchor = await request(`ANCHOR,START,${target}`, a => {
-            if (a.join(',') === `ANCHOR,OK,START,${target}`) started = true;
-            if (started && a.join(',') === `ANCHOR,STATUS,DONE,${target}`) { done = true; query(`ANCHOR,GET,${target}`); }
-            return done && a[0] === 'ANCHOR' && a[1] === 'OK' && a[2] === target && a.length === 8;
-        }, 90000, () => query('ANCHOR,STATUS'));
-        } catch (error) { send('ANCHOR,CANCEL'); throw error; }
-        firmwareAnchors[target] = anchor.slice(3).join(',');
-        await height.prepare();
+        const expected = { ...height.getState() }, profile = firmwareProfile;
+        delete firmwareAnchors[target];
+        let started = false, done = false, quality = null, receivedAt = null, progress = '';
+        try {
+            await request('FEATURE,POSE,ON', a => a[0] === 'FEATURE' && a[1] === 'STATUS' &&
+                ['POSE', 'PRED', 'LEGACY'].every((name, i) => a.indexOf(name) >= 0 && a[a.indexOf(name) + 1] === (i === 0 ? '1' : '0')));
+            report('正在收取按鈕後五筆有效新讀值並計算平均，請保持姿勢並自然呼吸。');
+            const anchor = await request(`ANCHOR,START,${target},5`, (a, receipt) => {
+                if (a.join(',') === `ANCHOR,OK,START,${target}`) throw new Error('目前韌體不支援五筆校正，請使用與實驗01相同的五筆校正版韌體。');
+                if (a.join(',') === `ANCHOR,OK,START,${target},5`) started = true;
+                if (started && a.length === 11 && a.slice(0, 4).join(',') === `ANCHOR,PROGRESS,V1,${target}` &&
+                    a[5] === '5' && ['WAIT_SETTLE', 'COLLECTING', 'DONE', 'TIMEOUT'].includes(a[6]) &&
+                    [4, 7, 8, 9, 10].every(i => /^\d+$/.test(a[i]) && Number.isSafeInteger(Number(a[i]))) &&
+                    Number(a[4]) <= 5 && a.slice(8).every(n => Number(n) <= Number(a[7]))) {
+                    progress = `已收到 ${a[4]}/5 筆；掃描 ${a[7]} 次，讀取失敗：Monitor ${a[8]}、Neck ${a[9]}、Head ${a[10]} 次。`;
+                    report(progress + ' 請保持姿勢。');
+                }
+                if (started && a.join(',') === `ANCHOR,STATUS,TIMEOUT,${target}`) throw new Error(`裝置校正逾時（20 秒）。${progress} 未保存新的校正基準。`);
+                if (started && !done && a.join(',') === `ANCHOR,STATUS,DONE,${target}`) {
+                    done = true; query(`ANCHOR,GET,${target}`);
+                }
+                if (done && a[0] === 'ANCHOR' && a[1] === 'QUALITY' && a[2] === target) {
+                    if (a.length !== 5 || a[3] !== '5' || !['STABLE', 'HIGH_VARIATION'].includes(a[4])) throw new Error('裝置未確認五筆校正資料，請重新校正。');
+                    quality = a[4];
+                }
+                if (!done || a[0] !== 'ANCHOR' || a[1] !== 'OK' || a[2] !== target) return false;
+                if (!quality || a.length !== 8 || !a.slice(3).every(v => v !== '' && Number.isFinite(Number(v))) ||
+                    a.slice(3, 6).some(v => Number(v) <= 0) ||
+                    Number(a[6]) !== expected.head || Number(a[7]) !== expected.neck) throw new Error('裝置校正基準的壓力或高度不符，請重新校正。');
+                receivedAt = receipt?.timestamp_iso || new Date().toISOString();
+                return true;
+            }, 90000, () => query('ANCHOR,STATUS'));
+            await height.prepare();
+            const state = height.getState();
+            if (!connected() || !state.ready || state.head !== expected.head || state.neck !== expected.neck) throw new Error('校正期間裝置高度或連線狀態已變更，請重新校正。');
+            if (firmwareProfile !== profile || profileKey(cal) !== profile) throw new Error('受測者資料已變更，請關閉並重新開啟校正。');
+            firmwareAnchors[target] = anchor.slice(3).join(',');
+            return { head: state.head, neck: state.neck, sampleCount: 5, quality,
+                pressure: { monitor_adc: Number(anchor[3]), neck_adc: Number(anchor[4]), head_adc: Number(anchor[5]), timestamp_iso: receivedAt } };
+        } catch (error) {
+            cal.after = Infinity;
+            report(error.message + ' 正在取消擷取並重新確認裝置狀態。');
+            try {
+                if (!connected()) throw new Error('BLE 已斷線，請重新連線並開啟校正。');
+                await request('ANCHOR,CANCEL', a => a.join(',') === 'ANCHOR,OK,CANCEL');
+                await height.prepare();
+                cal.after = now();
+            } catch (recovery) { throw new Error(`${error.message} 恢復失敗：${recovery.message}`); }
+            throw new Error(error.message + ' 已重新確認裝置狀態；請等待新壓力，重新勾選後再校正。');
+        }
     }
     calibration = createComfortExperiment(view, {
         ...options, calibrationOnly: true, experimentId: '03', folderId: 'ipillow-experiment-03',
+        calibrationDescription: '校正值為按下「校正完成」後，ESP32 收取五筆有效新讀值的模型平均；卡片、總覽與模型使用相同基準。時間為基準讀回時間。',
         isLocked: locked, beforeCalibrationPrepare: syncFirmwareProfile, beforeCalibrationSave: captureFirmwareAnchor,
         onCalibrationChanged: () => { overviewKey = preparedKey = ''; drained = null; n('empty').checked = false; },
         onCalibrationOverviewSaved: () => { overviewKey = key(); preparedKey = ''; drained = null; n('empty').checked = false; message = '校正總覽已儲存。請受試者離枕，再按「受試者已離枕，抽乾並恢復開機高度」。'; },
@@ -276,7 +321,7 @@ function createRapidExperiment(root, options) {
         const body = n('results'); body.replaceChildren();
         subjectRuns().forEach((r, i) => ['staticModel', 'historyModel'].forEach(kind => {
             const tr = document.createElement('tr');
-            [`姿勢${r.pose}／${i + 1}／${kind === 'staticModel' ? '無歷史' : '有歷史'}`, ...RAPID_CHECKPOINTS.map(second => cell(r, second, kind)), r.status]
+            [`姿勢${r.pose}／${i + 1}／${kind === 'staticModel' ? '無歷史' : '有歷史'}`, ...RAPID_CHECKPOINTS.map(second => cell(r, second, kind, true)), r.status]
                 .forEach(value => { const td = document.createElement('td'); td.textContent = value; tr.append(td); }); body.append(tr);
         }));
         const viewing = viewedRun();
@@ -289,14 +334,14 @@ function createRapidExperiment(root, options) {
             for (const row of rapidSecondRows(viewing)) {
                 const missing = viewing.recording && passed < row.second * 1000 ? '等待中' : row.status === 'NOT_RECORDED' ? '未記錄' : '缺資料';
                 const tr = document.createElement('tr'); tr.dataset.second = String(row.second);
-                [row.second, ...rapidModelValues(row.event, 'staticModel', missing), ...rapidModelValues(row.event, 'historyModel', missing)]
+                [row.second, ...rapidDisplayModelValues(viewing, row.event, 'staticModel', missing), ...rapidDisplayModelValues(viewing, row.event, 'historyModel', missing)]
                     .forEach(value => { const td = document.createElement('td'); td.textContent = value; tr.append(td); }); secondsBody.append(tr);
             }
             const q = rapidCompleteness(viewing);
-            n('quality').textContent = `20秒中已有分類資料 ${q.received} 秒；無歷史有效 ${q.staticValid} 秒，有歷史有效 ${q.historyValid} 秒。暖機與讀值無效不計入有效分類。`;
+            n('quality').textContent = `20秒中已有分類資料 ${q.received} 秒；無歷史有效 ${q.staticValid} 秒，有歷史有效 ${q.historyValid} 秒。暖機、讀值無效與沿用顯示不計入有效分類。`;
             const last = viewing.events.filter(e => e.type === 'classification').at(-1);
-            const fresh = last && (!viewing.recording || now() - viewing.start - last.elapsed_ms < 3000);
-            n('model-live').textContent = fresh ? `最近結果｜無歷史：${rapidModelValues(last, 'staticModel')[0]}；有歷史：${rapidModelValues(last, 'historyModel')[0]}` : '等待新的模型結果';
+            const fresh = last && connected() && ready && (!viewing.recording || now() - viewing.start - last.elapsed_ms < 3000);
+            n('model-live').textContent = fresh ? `最近結果｜無歷史：${rapidDisplayModelValues(viewing, last, 'staticModel')[0]}；有歷史：${rapidDisplayModelValues(viewing, last, 'historyModel')[0]}` : '等待新的模型結果';
         } else { n('quality').textContent = ''; n('model-live').textContent = '等待模型結果'; }
         if (root.isConnected && typeof Chart === 'function') {
             chart ||= new Chart(n('chart'), { type: 'line', data: { datasets: [] }, options: rapidChartOptions() });
@@ -309,7 +354,7 @@ function createRapidExperiment(root, options) {
         if (pending) {
             if (a[1] === 'ERR' && a[0] === pending.family && (!pending.id || a[2] === pending.id || a.length === 3)) fail(a[0] === 'EXP02' && a[2] === 'BAD_COMMAND' ? '目前韌體不支援分段抽乾流程，請使用 spp3_BLE_v4_model 配對韌體；準備測試仍保持停用。' : `裝置回覆：${line}`);
             else {
-                try { if (pending.accept(a)) { const p = pending; pending = null; clearTimeout(p.timer); p.resolve(a); } }
+                try { if (pending.accept(a, receipt)) { const p = pending; pending = null; clearTimeout(p.timer); p.resolve(a); } }
                 catch (e) { fail(e.message); }
             }
         }

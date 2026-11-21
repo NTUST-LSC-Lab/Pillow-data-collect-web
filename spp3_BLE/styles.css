@@ -3013,6 +3013,127 @@ button.full {
   .rapid-subject #comfortProfile, .rapid-subject #comfortFolder, .rapid-subject #comfortFolderStatus { grid-column: 1 / -1; grid-row: auto; }
 }
 
+/* EXP02–04 use the available experiment width, including a resized left panel. */
+main:has(> #previewHost) {
+  container: experiment-hub / inline-size;
+  width: 100%;
+  max-width: 1600px;
+}
+
+@container experiment-hub (min-width: 1000px) {
+  .comfort-experiment:has(> .comfort-section:not([hidden]) > #comfortTrial),
+  div:has(> .occupancy-setup[open]) {
+    display: grid;
+    grid-template-columns: minmax(340px, 0.9fr) minmax(0, 1.6fr);
+    gap: 12px;
+    align-items: start;
+    align-content: start;
+  }
+
+  .comfort-experiment:has(> .comfort-section:not([hidden]) > #comfortTrial) {
+    grid-template-rows: auto 1fr;
+  }
+  .comfort-experiment > .comfort-section:has(> #comfortSubject) {
+    grid-column: 1;
+    grid-row: 1;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+  }
+  .comfort-experiment > .comfort-section:has(> #comfortAnchorShot) {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .comfort-experiment > .comfort-section:has(> #comfortTrial):not([hidden]) {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .comfort-section:has(> #comfortSubject) > h4,
+  .comfort-section:has(> #comfortSubject) > :is(#comfortProfile, #comfortFolder, #comfortFolderStatus) {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+  .comfort-section:has(> #comfortTrial) > * {
+    grid-column: 1 / -1;
+  }
+  .comfort-section:has(> #comfortTrial) > h4 {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .comfort-section:has(> #comfortTrial) > #comfortProgress {
+    grid-column: 2;
+    grid-row: 1;
+    text-align: right;
+    align-self: center;
+  }
+  div:has(> .occupancy-setup[open]) > .occupancy-test {
+    margin-top: 0;
+  }
+  .rapid-setup, .occupancy-setup {
+    min-width: 0;
+  }
+}
+
+/* Record tables scroll within their panel; instructions stay with the controls. */
+.rapid-records, .occupancy-records {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  overflow-wrap: anywhere;
+}
+:is(.rapid-records, .occupancy-records) :is(p, h4) { margin: 0; }
+.rapid-records .rapid-run-picker { display: flex; align-items: center; gap: 8px; }
+:is(.rapid-records, .occupancy-records) .pressure-chart-wrap {
+  position: relative;
+  min-width: 0;
+  height: 220px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+:is(.rapid-records, .occupancy-records) canvas { max-width: 100%; }
+:is(.rapid-records, .occupancy-records) .comfort-trial-table { margin: 0; max-height: 320px; overflow: auto; }
+:is(.rapid-records, .occupancy-records) :is(th, td) { padding: 4px 6px; }
+:is(.rapid-records, .occupancy-records) th { position: sticky; top: 0; z-index: 1; }
+.rapid-records table { min-width: 700px; }
+.rapid-records td { white-space: normal; }
+.occupancy-records table { min-width: 500px; }
+:is(.rapid-records, .occupancy-records) summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+@container experiment-hub (min-width: 1000px) {
+  div:has(> .occupancy-setup[open]) > .occupancy-records { margin-top: 0; }
+  .occupancy-records .occupancy-detail-body {
+    grid-template-columns: minmax(0, 0.9fr) minmax(500px, 1.1fr);
+    align-items: start;
+  }
+  .occupancy-records .occupancy-detail-body > * { grid-column: 1 / -1; }
+  .occupancy-records .pressure-chart-wrap { grid-column: 1; grid-row: 2; height: 280px; }
+  .occupancy-records .comfort-trial-table { grid-column: 2; grid-row: 2; max-height: 280px; }
+}
+
+/* EXP03: calibration across the top, controls beside the recorded results. */
+@container experiment-hub (min-width: 1000px) {
+  div:has(> .rapid-setup),
+  .rapid-setup > .rapid-calibration {
+    display: grid;
+    grid-template-columns: minmax(300px, 0.8fr) minmax(0, 1.7fr);
+    gap: 12px;
+    align-items: start;
+    align-content: start;
+  }
+  .rapid-setup { grid-column: 1 / -1; }
+  .rapid-calibration > .comfort-section:has(> #comfortAnchorShot) {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  div:has(> .rapid-setup) > .rapid-test { grid-column: 1; margin-top: 0; }
+  div:has(> .rapid-setup) > .rapid-records { grid-column: 2; margin-top: 0; }
+}
+
 /* EXP01 mirrors independent device model results above the pressure chart. */
 #pressurePosePanel .pose-pred-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 #pressurePosePanel .info-block { min-width: 0; }

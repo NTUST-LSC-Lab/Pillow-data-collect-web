@@ -9,6 +9,8 @@ if (demoExp04) {
 const demoProfile = () => ({ gender: document.getElementById('demoGender').value,
     age_years: Number(document.getElementById('demoAge').value), body_height_cm: Number(document.getElementById('demoHeight').value), body_weight_kg: Number(document.getElementById('demoWeight').value) });
 const demoOperations = new Map();
+const demoAnchors = new Map();
+let demoAnchorTimer = null, demoAnchorStage = 'IDLE';
 let demoTarget = 'BSHS', demoLoaded = false, demoSession = 0, demoSequence = 0, demoClassifierTimer = null, demoLastFrame = null;
 function demoReceipt() { return { receivedMonotonicMs: performance.now(), timestamp_iso: new Date().toISOString() }; }
 function demoPressure() {
@@ -57,9 +59,26 @@ function demoReply(command) {
     if (p[0] === 'USER') response = 'USER,OK';
     if (p[0] === 'FEATURE') response = 'FEATURE,STATUS,LEGACY,0,POSE,1,PRED,0';
     if (p[0] === 'ANCHOR') {
-        if (p[1] === 'START') { demoTarget = p[2]; response = `ANCHOR,OK,START,${demoTarget}`; }
-        if (p[1] === 'STATUS') response = `ANCHOR,STATUS,DONE,${demoTarget}`;
-        if (p[1] === 'GET') response = `ANCHOR,OK,${p[2]},1800000.0,2000000.0,1900000.0,7.0,10.0`;
+        if (p[1] === 'START' && p[3] === '5') {
+            clearInterval(demoAnchorTimer);
+            demoTarget = p[2]; demoAnchorStage = 'COLLECTING';
+            response = `ANCHOR,OK,START,${demoTarget},5`;
+            const samples = [], head = demoState.head, neck = demoState.neck;
+            demoAnchorTimer = setInterval(() => {
+                samples.push(demoPressure());
+                window.demoExperiment.receiveLine(`ANCHOR,PROGRESS,V1,${demoTarget},${samples.length},5,COLLECTING,${samples.length},0,0,0`, demoReceipt());
+                if (samples.length < 5) return;
+                clearInterval(demoAnchorTimer); demoAnchorStage = 'DONE';
+                demoAnchors.set(demoTarget, [...[0, 1, 2].map(i => samples.reduce((sum, s) => sum + s[i], 0) / 5), head, neck]);
+                window.demoExperiment.receiveLine(`ANCHOR,STATUS,DONE,${demoTarget}`, demoReceipt());
+            }, 250);
+        }
+        if (p[1] === 'CANCEL') { clearInterval(demoAnchorTimer); demoAnchorStage = 'IDLE'; response = 'ANCHOR,OK,CANCEL'; }
+        if (p[1] === 'STATUS') response = `ANCHOR,STATUS,${demoAnchorStage},${demoTarget}`;
+        if (p[1] === 'GET') {
+            if (demoAnchors.has(p[2])) setTimeout(() => window.demoExperiment.receiveLine(`ANCHOR,QUALITY,${p[2]},5,STABLE`, demoReceipt()), 20);
+            response = demoAnchors.has(p[2]) ? `ANCHOR,OK,${p[2]},${demoAnchors.get(p[2]).join(',')}` : 'ANCHOR,ERR,NOT_READY';
+        }
     }
     if (p[0] === 'CLASSIFY') {
         if (p[1] === 'STOP') { clearInterval(demoClassifierTimer); demoClassifierTimer = null; demoLastFrame = null; response = 'CLASSIFY,OK,STOP'; }

@@ -67,8 +67,10 @@ function createOccupancyExperiment(root, options) {
           </div>
         </details>
         <button type="button" data-occ="reset" hidden>重新建立此受測者校正</button>`;
-    root.append(setup, section);
-    const n = id => section.querySelector(`[data-occ="${id}"]`);
+    const records = section.querySelector('[data-occ="records"]');
+    records.classList.add('occupancy-records');
+    root.append(setup, section, records);
+    const n = id => root.querySelector(`[data-occ="${id}"]`);
     const info = () => calibration?.getCalibration();
     const key = () => { const c = info(); return c?.valid ? JSON.stringify([c.subject, c.record.profile, c.record.anchors]) : ''; };
     const session = () => sessions.get(key());

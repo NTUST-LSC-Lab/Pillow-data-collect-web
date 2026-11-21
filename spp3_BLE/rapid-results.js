@@ -19,6 +19,24 @@ function rapidModelValues(event, kind, missing = '缺資料') {
     return [model.group === 'GROUP1' ? 'Group1' : 'Group2', (model.p1 * 100).toFixed(1) + '%', (model.p2 * 100).toFixed(1) + '%'];
 }
 
+// Display-only hold: raw events, validity counts and exports remain unchanged.
+function rapidDisplayModelValues(run, event, kind, missing = '缺資料') {
+    const values = rapidModelValues(event, kind, missing);
+    if (event?.result?.[kind]?.status !== 'INVALID') return values;
+    for (let i = run.events.indexOf(event) - 1; i >= 0; i--) {
+        const previous = run.events[i];
+        if (previous.type !== 'classification') continue;
+        if (previous.result.session !== event.result.session) break;
+        if (previous.result[kind].status !== 'OK') continue;
+        const held = rapidModelValues(previous, kind);
+        const second = Math.ceil(previous.elapsed_ms / 1000);
+        const age = ((event.elapsed_ms - previous.elapsed_ms) / 1000).toFixed(1);
+        held[0] += `（沿用第 ${second} 秒，${age} 秒前）`;
+        return held;
+    }
+    return values;
+}
+
 function rapidCompleteness(run) {
     const rows = rapidSecondRows(run);
     const count = kind => rows.filter(r => r.event?.result[kind].status === 'OK').length;
@@ -116,5 +134,5 @@ async function writeRapidFile(folder, name, content) {
 
 if (typeof module !== 'undefined' && module.exports) module.exports = {
     RAPID_DURATION_MS, RAPID_CHECKPOINTS, RAPID_BASE_COLUMNS, RAPID_RESULT_COLUMNS,
-    rapidSecondRows, rapidModelValues, rapidCompleteness, rapidCsvFiles, rapidPressureDatasets, writeRapidFile
+    rapidSecondRows, rapidModelValues, rapidDisplayModelValues, rapidCompleteness, rapidCsvFiles, rapidPressureDatasets, writeRapidFile
 };
