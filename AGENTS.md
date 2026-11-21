@@ -1,6 +1,8 @@
 # 目前分支：web_pose_model_dual_exp02_2_04_ui_fix
 
-使用者指定以 `Pillow-data-collect-web-Pillow-data-collect-web-web_pose_model_dual_exp3-fix`／`685f099995af414c0c23b62664cf828646dfc61e` 為基底另建此分支，保存本機已驗證的2026-11-21修改。來源分支保留；本機資料夾仍為 `Pillow-data-collect-web-web_pose_model_dual_exp3-fix`，是沒有.git的下載副本。下列較舊分支名稱僅供歷史追溯，後續仍須核對實際遠端。
+使用者指定以 `Pillow-data-collect-web-Pillow-data-collect-web-web_pose_model_dual_exp3-fix`／`685f099995af414c0c23b62664cf828646dfc61e` 為基底另建此分支，保存本機已驗證的2026-11-21修改。來源分支保留；本機目錄為 `Pillow-data-collect-web-web_pose_model_dual_exp02_2_04_ui_fix`，是沒有.git的下載副本。下列較舊分支名稱僅供歷史追溯，後續仍須核對實際遠端。
+
+文件維護：現行操作統一更新 [README.md](README.md) 對應段落，重要版本僅在 [CHANGELOG.md](CHANGELOG.md) 簡短記錄；不再逐次往 README 頂端疊加報告。[README-history.md](README-history.md) 完整封存整理前內容，不再追加。下方歷史授權若提到舊版 README 頂端或章節，請到歷史封存追溯；現行行為以程式與新版 README 為準。
 
 # 最新授權：2026-11-21 實驗03校正獨立一列、操作與紀錄並排
 

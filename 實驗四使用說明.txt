@@ -1,9 +1,10 @@
 實驗四：兩組高度、五種睡姿的躺枕／離枕偵測
-更新：2026-11-14（Asia/Taipei）
+文件更新：2026-11-21（Asia/Taipei）；本次僅修正文檔版本與引用，實驗流程不變。
 
 版本與入口
-Web：本目錄 web_pose_model_dual_exp4，基於 web_pose_model_dual_exp3。
-ESP32：ipillow / spp3_BLE_v4_model，沿用既有韌體與高度控制指令。
+Web：本目錄 web_pose_model_dual_exp02_2_04_ui_fix，程式版本89405b7。
+ESP32：本Web已核對 ipillow / ipillow-ipillow-spp3_BLE_v4_model_m-fix3（5d00902）。
+實際燒錄版本須另行確認；本次文件整理未修改韌體，沿用既有高度控制指令。
 正式頁：spp3_BLE/index.html → 實驗專區選04。
 離線預覽：雙擊「啟動預覽.command」，開啟
 http://localhost:8083/spp3_BLE/preview.html?experiment=04。
@@ -110,4 +111,4 @@ S01_EXP04_姿勢一高度_結果總覽.svg
 
 保留的實驗三
 實驗專區選03仍可使用EXP3。EXP3從按開始起滿20秒會自動停止本輪壓力與分類記錄，
-並送出CLASSIFY,STOP；「完成本輪」只確認這輪已結束。EXP3操作與輸出定義另見README後方章節。
+並送出CLASSIFY,STOP；「完成本輪」只確認這輪已結束。EXP3操作與輸出定義見README的「實驗03：固定高度20秒雙模型」及「輸出檔案與時間」。
