@@ -20,6 +20,8 @@
 		let manualStartupNeck = document.getElementById('manualStartupNeck');
 		let appLayout = document.getElementById('appLayout');
 		let appLayoutSplitter = document.getElementById('appLayoutSplitter');
+		let chartSidebarToggle = document.getElementById('chartSidebarToggle');
+		let chartPanel = document.getElementById('chartPanel');
 		let chartPanelBody = document.getElementById('chartPanelBody');
 		let chartPanelToggle = document.getElementById('chartPanelToggle');
 		let chartPanelStateBadge = document.getElementById('chartPanelStateBadge');
@@ -283,6 +285,8 @@
 		});
 
 		let chartPanelExpanded = true;
+		let chartSidebarExpanded = true;
+		let chartSidebarRestoreWidth = null;
 		let activeChartMode = "pressure";
 
 		function setNodeText(node, text) {
@@ -348,7 +352,7 @@
 		}
 
 		function applyAppLayoutWidth(leftWidth, persist = true) {
-			if (!appLayout || !isDesktopTwoPanelLayout()) {
+			if (!appLayout || !chartSidebarExpanded || !isDesktopTwoPanelLayout()) {
 				clearAppLayoutCustomWidth();
 				return;
 			}
@@ -370,7 +374,7 @@
 			if (!appLayout) {
 				return;
 			}
-			if (!isDesktopTwoPanelLayout()) {
+			if (!chartSidebarExpanded || !isDesktopTwoPanelLayout()) {
 				clearAppLayoutCustomWidth();
 				return;
 			}
@@ -411,7 +415,7 @@
 			};
 
 			appLayoutSplitter.addEventListener('pointerdown', (event) => {
-				if (!isDesktopTwoPanelLayout()) {
+				if (!chartSidebarExpanded || !isDesktopTwoPanelLayout()) {
 					return;
 				}
 				isDragging = true;
@@ -444,7 +448,26 @@
 		}
 
 		function isChartSectionVisible(section) {
-			return chartPanelExpanded && Boolean(section?.open);
+			return chartSidebarExpanded && chartPanelExpanded && Boolean(section?.open);
+		}
+
+		function setChartSidebarExpanded(expanded, persist = true) {
+			if (!expanded && chartSidebarExpanded && persist && isDesktopTwoPanelLayout()) {
+				chartSidebarRestoreWidth = appLayout.querySelector('.left-panel').getBoundingClientRect().width;
+			}
+			chartSidebarExpanded = expanded;
+			chartPanel.hidden = !expanded;
+			appLayout.classList.toggle('chart-sidebar-collapsed', !expanded);
+			const label = expanded ? '收合線圖監測側欄' : '展開線圖監測側欄';
+			chartSidebarToggle.setAttribute('aria-expanded', String(expanded));
+			chartSidebarToggle.setAttribute('aria-label', label);
+			chartSidebarToggle.title = label;
+			if (persist) saveChartSetting('chartSidebarExpanded', expanded ? '1' : '0');
+			syncAppLayoutWidth();
+			if (expanded) {
+				if (chartSidebarRestoreWidth !== null) applyAppLayoutWidth(chartSidebarRestoreWidth, false);
+				refreshVisibleCharts();
+			}
 		}
 
 		function updateChartIfVisible(chartInstance, section) {
@@ -559,6 +582,7 @@
 			const restoreMode = activeChartMode === "summary" ? "pressure" : activeChartMode;
 			setChartMode(restoreMode);
 		});
+		chartSidebarToggle?.addEventListener('click', () => setChartSidebarExpanded(!chartSidebarExpanded));
 
 		chartPanelInfoToggle?.addEventListener('click', function () {
 			const expanded = chartPanelInfoToggle.getAttribute('aria-expanded') !== 'true';
@@ -581,6 +605,7 @@
 			setChartMode("summary", false);
 		}
 		setChartInfoExpanded(savedChartInfoExpanded !== '0', false);
+		setChartSidebarExpanded(getSavedChartSetting('chartSidebarExpanded') !== '0', false);
 
 		// indexeddb
 		// indexedDB操作模組

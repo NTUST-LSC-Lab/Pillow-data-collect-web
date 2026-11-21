@@ -1,16 +1,21 @@
 實驗四：兩組高度、五種睡姿的躺枕／離枕偵測
-文件更新：2026-11-21（Asia/Taipei）；本次僅修正文檔版本與引用，實驗流程不變。
+文件更新：2026-11-21（Asia/Taipei）。
 
 版本與入口
-Web：本目錄 web_pose_model_dual_exp02_2_04_ui_fix，程式版本89405b7。
-ESP32：本Web已核對 ipillow / ipillow-ipillow-spp3_BLE_v4_model_m-fix3（5d00902）。
-實際燒錄版本須另行確認；本次文件整理未修改韌體，沿用既有高度控制指令。
+Web：web_pose_model_dual_exp02_2_04_ui_fix。最新變更見 CHANGELOG.md。
+ESP32：本Web已核對 ipillow / spp3_BLE_v4_model_m-fix3（5d00902）。
+實際燒錄版本須另行確認。實驗04沿用既有高度控制指令。
 正式頁：spp3_BLE/index.html → 實驗專區選04。
 離線預覽：雙擊「啟動預覽.command」，開啟
 http://localhost:8083/spp3_BLE/preview.html?experiment=04。
 也可在本目錄執行 python3 -m http.server 8083 --bind 127.0.0.1；
 正式頁位址為 http://localhost:8083/spp3_BLE/。
 預覽不連線BLE，壓力、高度與裝置回覆均為合成示範，不能用來驗證偵測準確率。
+
+畫面配置
+寬版在上方並排受測者與校正，測試和紀錄依序在下方。窄版改為上下排列。
+正式頁頂端的「線圖監測」可收合整個監測區，讓實驗操作區使用完整可用寬度。
+壓力接收及實驗記錄仍會持續，重新展開會恢復欄寬。
 
 固定操作順序
 姿勢一校正 → 姿勢五校正 → 姿勢五高度測試 → 抽乾並設定姿勢一高度 → 姿勢一高度測試 → 儲存。

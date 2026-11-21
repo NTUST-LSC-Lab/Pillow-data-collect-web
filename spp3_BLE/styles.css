@@ -56,6 +56,10 @@ body {
 }
 
 #title {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
   background: linear-gradient(120deg, #0b4fd4 0%, #173f9f 55%, #0e2a68 100%);
   color: #fff;
   font-size: clamp(calc(18px + var(--font-size-adjust)), 1.7vw, calc(32px + var(--font-size-adjust)));
@@ -67,6 +71,8 @@ body {
   box-shadow: var(--shadow);
   letter-spacing: 0.04em;
 }
+
+#title > span { grid-column: 2; }
 
 .app-layout {
   margin-top: 0;
@@ -2819,10 +2825,13 @@ button.full {
   }
 
   #title {
+    grid-template-columns: minmax(0, 1fr) auto;
     font-size: calc(20px + var(--font-size-adjust));
     padding: 8px 10px;
     letter-spacing: 0.02em;
   }
+
+  #title > span { grid-column: 1; }
 
   .app-layout {
     grid-template-columns: 1fr;
@@ -2899,6 +2908,43 @@ button.full {
   .chart-section > summary span:last-child {
     text-align: left;
   }
+}
+
+/* Sidebar visibility is independent of chart mode and incoming data. */
+.chart-sidebar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+.chart-sidebar-toggle {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.chart-sidebar-toggle::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-bottom: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  transform: rotate(-135deg);
+}
+.chart-sidebar-toggle[aria-expanded="false"]::after {
+  transform: rotate(45deg);
+}
+.chart-sidebar-toggle:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.chart-sidebar #chartPanel[hidden] { display: none; }
+.app-layout.chart-sidebar-collapsed { grid-template-columns: minmax(0, 1fr); }
+.app-layout.chart-sidebar-collapsed > :is(.app-layout-splitter, .chart-sidebar) { display: none; }
+@media (max-width: 780px) {
+  .chart-sidebar { height: auto; }
 }
 
 /* Experiment 03 follows the existing calibration and experiment cards. */

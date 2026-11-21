@@ -26,7 +26,10 @@ https://fustyles.github.io/webduino/WebSerial.html
 </head>
 
 <body>
-	<div id="title">台科大智慧枕墊資料收集系統</div>
+	<header id="title">
+		<span>台科大智慧枕墊資料收集系統</span>
+		<button id="chartSidebarToggle" class="chart-sidebar-toggle" type="button" aria-expanded="true" aria-controls="chartPanel" aria-label="收合線圖監測側欄" title="收合線圖監測側欄">線圖監測</button>
+	</header>
 
 	<main id="appLayout" class="app-layout">
 		<aside class="left-panel">
@@ -445,6 +448,7 @@ https://fustyles.github.io/webduino/WebSerial.html
 			aria-label="調整左側與右側欄寬"
 			title="拖曳調整左右欄位寬度"></div>
 
+		<aside class="chart-sidebar" aria-label="線圖監測側欄">
 		<section id="chartPanel" class="right-panel chart-monitor-panel">
 			<div class="chart-panel-header">
 				<div class="chart-title-row">
@@ -512,6 +516,7 @@ https://fustyles.github.io/webduino/WebSerial.html
 				<canvas id="poseChart"></canvas>
 			</div>
 		</section>
+		</aside>
 	</main>
 
 	<div id="modal" class="modal">
