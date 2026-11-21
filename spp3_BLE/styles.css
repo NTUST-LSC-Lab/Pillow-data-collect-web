@@ -2964,15 +2964,21 @@ button.full {
 .occupancy-setup > summary { font-weight: 600; }
 .occupancy-setup > .comfort-experiment { margin-top: 6px; }
 .occupancy-setup .comfort-section { border: 0; border-radius: 0; padding: 0; background: transparent; }
-.occupancy-setup .occupancy-subject { grid-template-columns: auto minmax(100px, 1fr) auto; align-items: center; }
-.occupancy-subject h4 { display: none; }
-.occupancy-subject #comfortProfile { grid-column: 1 / 3; grid-row: 2; }
-.occupancy-subject #comfortFolder { grid-column: 3; grid-row: 1; }
-.occupancy-subject #comfortFolderStatus { grid-column: 3; grid-row: 2; }
+.occupancy-setup .occupancy-subject {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.occupancy-subject > :is(h4, #comfortProfile, #comfortFolder, #comfortFolderStatus) { grid-column: 1 / -1; }
+.occupancy-subject > label { align-self: center; }
+.occupancy-setup .pressure-calibration-saved > section {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  justify-items: start;
+}
 @media (max-width: 780px) {
   .occupancy-groups { grid-template-columns: minmax(0, 1fr); }
-  .occupancy-setup .occupancy-subject { grid-template-columns: auto minmax(0, 1fr); }
-  .occupancy-subject #comfortProfile, .occupancy-subject #comfortFolder, .occupancy-subject #comfortFolderStatus { grid-column: 1 / -1; grid-row: auto; }
 }
 
 /* EXP03 layout only: existing controls and live state remain in the same recorder. */
@@ -3021,8 +3027,7 @@ main:has(> #previewHost) {
 }
 
 @container experiment-hub (min-width: 1000px) {
-  .comfort-experiment:has(> .comfort-section:not([hidden]) > #comfortTrial),
-  div:has(> .occupancy-setup[open]) {
+  .comfort-experiment:has(> .comfort-section:not([hidden]) > #comfortTrial) {
     display: grid;
     grid-template-columns: minmax(340px, 0.9fr) minmax(0, 1.6fr);
     gap: 12px;
@@ -3066,9 +3071,6 @@ main:has(> #previewHost) {
     text-align: right;
     align-self: center;
   }
-  div:has(> .occupancy-setup[open]) > .occupancy-test {
-    margin-top: 0;
-  }
   .rapid-setup, .occupancy-setup {
     min-width: 0;
   }
@@ -3105,7 +3107,34 @@ main:has(> #previewHost) {
 :is(.rapid-records, .occupancy-records) summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 @container experiment-hub (min-width: 1000px) {
-  div:has(> .occupancy-setup[open]) > .occupancy-records { margin-top: 0; }
+  /* EXP04 setup occupies one row instead of leaving a tall empty sidebar. */
+  div:has(> .occupancy-setup) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+  }
+  .occupancy-setup > .comfort-experiment {
+    grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.7fr);
+    grid-template-rows: auto auto 1fr auto auto;
+    gap: 8px 16px;
+  }
+  .occupancy-setup > .comfort-experiment > .comfort-section:is(.occupancy-subject, :has(> #comfortAnchorShot)) {
+    grid-row: 1 / 6;
+    grid-template-rows: subgrid;
+    align-items: start;
+  }
+  .occupancy-setup .occupancy-subject {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+  .occupancy-setup .comfort-section:has(> #comfortAnchorShot) {
+    grid-column: 2;
+    padding-left: 16px;
+    border-left: 1px solid var(--line);
+  }
+  .occupancy-setup .pressure-calibration-saved { grid-row: 2 / 4; }
+  div:has(> .occupancy-setup) > :is(.occupancy-test, .occupancy-records) { margin-top: 0; }
   .occupancy-records .occupancy-detail-body {
     grid-template-columns: minmax(0, 0.9fr) minmax(500px, 1.1fr);
     align-items: start;
